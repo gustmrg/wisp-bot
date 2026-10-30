@@ -32,4 +32,17 @@ describe("readServerSentEvents", () => {
     ]);
     expect(activity).toBe(4);
   });
+
+  it("reports a block with only an id as the cursor, not as an event", async () => {
+    const messages: SseMessage[] = [];
+    const cursors: string[] = [];
+    await readServerSentEvents(
+      streamOf(["retry: 2000\n\nid: b:7\n\n", "id: b:8\nevent: x\ndata: {}\n\n"]),
+      (message) => messages.push(message),
+      () => undefined,
+      (id) => cursors.push(id),
+    );
+    expect(cursors).toEqual(["b:7"]);
+    expect(messages).toEqual([{ id: "b:8", event: "x", data: "{}" }]);
+  });
 });

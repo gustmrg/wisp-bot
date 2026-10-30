@@ -349,6 +349,9 @@ export class RemoteSession {
                 else if (type === "hostRequest") void this.answer(client, payload as HostRequest);
                 else this.options.onEvent(type, payload);
               },
+              onCursor: (id) => {
+                this.cursor = id;
+              },
             },
             signal,
           );

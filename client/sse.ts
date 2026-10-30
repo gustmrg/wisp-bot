@@ -6,12 +6,14 @@ export interface SseMessage {
 
 /**
  * Reads a server-sent event stream until it ends, calling `onMessage` for each
- * event. Comments (keep-alives) call `onActivity` only.
+ * event. Comments (keep-alives) call `onActivity` only, and a block with only
+ * an `id` calls `onLastEventId`: it moves the cursor without being an event.
  */
 export async function readServerSentEvents(
   body: ReadableStream<Uint8Array>,
   onMessage: (message: SseMessage) => void,
   onActivity: () => void = () => undefined,
+  onLastEventId: (id: string) => void = () => undefined,
 ): Promise<void> {
   const decoder = new TextDecoder();
   const reader = body.getReader();
@@ -24,6 +26,8 @@ export async function readServerSentEvents(
         event: fields.event ?? "message",
         data: fields.data.join("\n"),
       });
+    } else if (fields.id !== undefined) {
+      onLastEventId(fields.id);
     }
     fields = { data: [] };
   };

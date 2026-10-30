@@ -196,6 +196,62 @@ describe("RemoteSession", () => {
     expect(await client.instance.call("getConversationState", {})).toMatchObject({ ok: true });
   });
 
+  it("replays what a dropped stream missed without a reload, even before its first event", async () => {
+    const { server, directory } = await setup();
+    const streams: AbortController[] = [];
+    const cursors: Array<string | undefined> = [];
+    let holdStream = Promise.resolve();
+    const droppable: typeof fetch = async (input, init) => {
+      if (!String(input).endsWith("/events")) return fetch(input, init);
+      await holdStream;
+      const controller = new AbortController();
+      streams.push(controller);
+      init?.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+      cursors.push(new Headers(init?.headers).get("Last-Event-ID") ?? undefined);
+      return fetch(input, { ...init, signal: controller.signal });
+    };
+    const client = session("", {
+      openTransport: async () => ({
+        baseUrl: server.url,
+        fetch: droppable,
+        closed: new Promise(() => undefined),
+        close: () => undefined,
+        requestPairingCode: () => pairCode(directory),
+      }),
+    });
+    const other = session(server.url, { requestPairingCode: () => pairCode(directory) });
+    other.instance.start();
+    await waitUntil(() => other.phase() === "connected", "the other device");
+    client.instance.start();
+    await waitUntil(() => client.phase() === "connected", "the connection");
+    expect(client.resets()).toBe(1);
+    // The cursor comes down the stream just after it opens.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(client.events).toEqual([]);
+
+    let release = (): void => undefined;
+    holdStream = new Promise((resolve) => {
+      release = resolve;
+    });
+    streams[0]?.abort();
+    await waitUntil(() => client.phase() === "reconnecting", "the drop to be noticed");
+    await other.instance.call("saveAiSettings", {
+      selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" },
+      apiKey: "test-key",
+    });
+    await other.instance.call("createWisp", {
+      wisp: { id: "atlas", name: "Atlas", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE },
+      notifyOnUpdatesEnabled: true,
+    });
+    release();
+
+    await waitUntil(() => client.events.some(([type]) => type === "wispsChanged"), "the missed event");
+    expect(client.phase()).toBe("connected");
+    expect(client.resets()).toBe(1);
+    expect(cursors[0]).toBeUndefined();
+    expect(cursors[1]).toMatch(/:\d+$/);
+  });
+
   it("stops at pairing after the device is revoked, without pairing again by itself", async () => {
     const { server, directory } = await setup();
     let codes = 0;

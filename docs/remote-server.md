@@ -544,10 +544,12 @@ The API mirrors the desktop bridge, so a client implements it mechanically:
   `createConversation`) with the same request the desktop sends over IPC, and
   answers its `BackendResult`. Byte arrays travel as `{ "$bytes": "<base64>" }`.
 - `GET /api/v1/events` streams server-sent events: `agentEvent`,
-  `conversationChanged`, and `mcpSettingsChanged`. Each event has an id;
-  reconnecting with `Last-Event-ID` replays what was missed. When that is not
-  possible (the server restarted, or the gap is too long) the stream starts
-  with a `resync` event, and the client reloads state before continuing.
+  `conversationChanged`, and `mcpSettingsChanged`. Each event has an id, and a
+  stream opened without `Last-Event-ID` starts with a block holding only the
+  current id, so a client has a cursor before the first event. Reconnecting
+  with `Last-Event-ID` replays what was missed. When that is not possible (the
+  server restarted, or the gap is too long) the stream starts with a `resync`
+  event, and the client reloads state before continuing.
 - `POST /api/v1/workspace-files?conversationId=<id>&name=<file name>` stores
   one file in a Wisp's workspace `inbox/` folder. The body is the file's raw
   bytes and must declare its `Content-Length`; the answer is a

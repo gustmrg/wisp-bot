@@ -335,6 +335,36 @@ describe("Wisp server", () => {
     expect(resync.id).toMatch(/:\d+$/);
   });
 
+  it("tells a stream without a cursor where it starts, and not one that has a cursor", async () => {
+    const harness = await start();
+    const credentials = await pair(harness);
+    const firstBlocks = async (lastEventId?: string): Promise<string> => {
+      const controller = new AbortController();
+      streams.push(controller);
+      const response = await fetch(`${harness.server.url}/api/v1/events`, {
+        headers: {
+          Authorization: `Bearer ${credentials.accessToken}`,
+          ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
+        },
+        signal: controller.signal,
+      });
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+      const { value } = await reader.read();
+      // Both blocks are written together; give a split read a moment to catch up.
+      const more = await Promise.race([
+        reader.read(),
+        new Promise<{ value?: undefined }>((resolve) => setTimeout(() => resolve({}), 100)),
+      ]);
+      return new TextDecoder().decode(value) + new TextDecoder().decode(more.value);
+    };
+
+    const fresh = await firstBlocks();
+    const cursor = fresh.match(/^id: (\S+:\d+)$/m)?.[1];
+    expect(cursor).toBeDefined();
+    expect(fresh).not.toContain("event:");
+    expect(await firstBlocks(cursor)).not.toContain("id:");
+  });
+
   it("keeps an event stream open when the access token expires, and refreshes for new requests", async () => {
     const harness = await start();
     const credentials = await pair(harness);

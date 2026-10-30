@@ -101,6 +101,8 @@ export interface EventStreamHandlers {
   /** The stream is open and authorized. */
   onOpen(): void;
   onEvent(id: string | undefined, type: RemoteEventType, payload: unknown): void;
+  /** Where the stream stands when it starts, before any event. Older servers do not say. */
+  onCursor(id: string): void;
 }
 
 /** Speaks the Wisp server protocol for one paired device. */
@@ -204,6 +206,7 @@ export class RemoteClient {
           handlers.onEvent(message.id, message.event as RemoteEventType, decodeRemoteJson(message.data || "null"));
         },
         resetIdle,
+        handlers.onCursor,
       );
     } catch (error) {
       if (error instanceof RemoteError) throw error;
