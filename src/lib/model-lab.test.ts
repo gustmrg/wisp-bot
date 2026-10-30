@@ -10,6 +10,7 @@ describe("modelLab", () => {
     ["meta", "muse-spark-1.3", "meta"],
     ["google", "deep-research-preview-04-2026", "google"],
     ["claude-code", "opus", "anthropic"],
+    ["azure", "prod-chat", "openai"],
   ])("uses the lab running provider %s for %s", (providerId, modelId, lab) => {
     expect(modelLab({ providerId, modelId })).toBe(lab);
   });
@@ -27,6 +28,7 @@ describe("modelLab", () => {
     ["together", "MiniMaxAI/MiniMax-M3", "minimax"],
     ["fireworks", "accounts/fireworks/models/nemotron-3-ultra-nvfp4", "nvidia"],
     ["github-copilot", "mai-code-1.1-flash", "microsoft"],
+    ["azure", "deepseek-v4-pro", "deepseek"],
   ])("finds the lab behind reseller %s for %s", (providerId, modelId, lab) => {
     expect(modelLab({ providerId, modelId })).toBe(lab);
   });
