@@ -182,6 +182,24 @@ export function getToolMetadata(name: string): ToolMetadata | undefined {
   return metadataByName.get(name);
 }
 
+/** A tool's name in words, for a tool nothing labels: "getEntry" and "get_entry" both read "Get entry". */
+export function humanizeToolName(name: string): string {
+  const source = name === name.toUpperCase() ? name.toLowerCase() : name;
+  const words = source
+    .replaceAll(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
+    .replaceAll(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .map((word) => (word.length > 1 && word === word.toUpperCase() ? word : word.toLowerCase()));
+  const text = words.join(" ");
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : name;
+}
+
+/** How the interface names a tool it may know only by name: never by the identifier itself. */
+export function toolDisplayLabel(name: string): string {
+  return getToolMetadata(name)?.label ?? describeMcpAlias(name)?.label ?? humanizeToolName(name);
+}
+
 /**
  * Display fallback for an MCP tool alias with no registered metadata (for
  * example after the server was removed). This is descriptive only: it must not

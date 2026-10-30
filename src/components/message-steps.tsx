@@ -15,7 +15,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { TurnItem } from "../../shared/contracts";
-import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
+import { describeMcpAlias, getToolMetadata, toolDisplayLabel } from "../../shared/tool-catalog";
 
 /** The latest state each background process was seen in, by its ID, across the loaded transcript. */
 export type ProcessStates = ReadonlyMap<string, string>;
@@ -42,8 +42,15 @@ function firstLine(text: string): string {
   return text.includes("\n") ? `${line} …` : line;
 }
 
-function toolLabel(toolName: string): string {
-  return getToolMetadata(toolName)?.label ?? describeMcpAlias(toolName)?.label ?? toolName;
+function toolLabel(step: TurnItem): string {
+  return step.toolLabel ?? toolDisplayLabel(step.toolName);
+}
+
+/** What a running tool is doing, in the words the header uses; the summary adds its own ellipsis. */
+function toolActivity(step: TurnItem): string {
+  const activity =
+    step.label ?? getToolMetadata(step.toolName)?.activityLabel ?? describeMcpAlias(step.toolName)?.activityLabel;
+  return activity ? activity.replace(/…$/u, "") : toolLabel(step);
 }
 
 function hostOf(url: string): string {
@@ -98,7 +105,7 @@ export function summarizeSteps(steps: ReadonlyArray<TurnItem>): string {
         browser = true;
         break;
       case "tool": {
-        const label = toolLabel(step.toolName);
+        const label = toolLabel(step);
         if (!tools.includes(label)) tools.push(label);
         break;
       }
@@ -254,7 +261,7 @@ export function viewOfStep(step: TurnItem, processStates?: ProcessStates): StepV
     case "tool":
       break;
   }
-  return { icon: WrenchIcon, verb: toolLabel(step.toolName) };
+  return { icon: WrenchIcon, verb: running ? toolActivity(step) : toolLabel(step) };
 }
 
 function runningSummary(view: StepView): string {

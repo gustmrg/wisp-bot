@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ShieldAlertIcon } from "lucide-react";
 
-import { getToolMetadata } from "../../shared/tool-catalog";
+import { toolDisplayLabel } from "../../shared/tool-catalog";
 import { isWorkspaceFileCategory } from "../../shared/tool-policy";
 import type {
   JobApprovalDetails,
@@ -87,7 +87,7 @@ function JobDetails({ job }: { job: JobApprovalDetails }) {
         ...clockTimeOptions(timeFormat),
       })
     : "None";
-  const tools = job.tools.map((name) => getToolMetadata(name)?.label ?? name);
+  const tools = job.tools.map(toolDisplayLabel);
   return (
     <dl className="my-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
       <dt className="text-dim">Job</dt>
@@ -251,7 +251,8 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
               </>
             ) : (
               <>
-                {wispName} requested {request.toolName} for {request.scope.display}.{" "}
+                {wispName} requested {request.toolLabel ?? toolDisplayLabel(request.toolName)} for{" "}
+                {request.scope.display}.{" "}
                 {integration
                   ? "This action can change data in the connected service."
                   : request.category === "browser_submit"

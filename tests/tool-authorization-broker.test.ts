@@ -5,6 +5,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { evaluateToolPolicy, ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
+import { mcpToolAlias } from "../shared/mcp.js";
+import { registerDynamicToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
 import { ToolPolicyStore } from "../backend/tool-policy-store.js";
 import { WispToolPolicyStore } from "../backend/wisp-tool-policy-store.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
@@ -67,6 +69,44 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(blocked, "container_command", "container")).toBe("block");
     // Pi's own shell stays blocked whatever the scope.
     expect(evaluateToolPolicy(settings, "shell", "container")).toBe("block");
+  });
+
+  it("names an MCP tool in words on its approval card, and leaves the catalog's tools to the client", async () => {
+    const alias = mcpToolAlias("server-a", "getEntry");
+    registerDynamicToolMetadata([{ name: alias, label: "Get entry", mcpServerId: "server-a" }]);
+    try {
+      const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-tool-label-"));
+      const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+      const events: ConversationAgentEvent[] = [];
+      let nextId = 0;
+      const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+        createId: () => `approval-${(nextId += 1)}`,
+        selectWindowId: () => 7,
+      });
+      const action = {
+        conversationId: "one",
+        wispId: "one",
+        category: "integration_call" as const,
+        scope: { kind: "integration" as const, value: "Journal" },
+        summary: "Get entry — id: 42",
+      };
+      const mcp = broker.authorize({ ...action, toolCallId: "mcp-1", toolName: alias });
+      const bundled = broker.authorize({ ...action, toolCallId: "linear-1", toolName: "linear_update_issue" });
+      const denied = [mcp, bundled].map((pending) => expect(pending).rejects.toMatchObject({ code: "tool_blocked" }));
+
+      expect(events[0]).toMatchObject({ request: { toolName: alias, toolLabel: "Get entry" } });
+      expect(events[1]).toMatchObject({ request: { toolName: "linear_update_issue" } });
+      expect(events[1]).not.toHaveProperty("request.toolLabel");
+
+      for (const event of events) {
+        if (event.type !== "tool_approval_requested") continue;
+        const { approvalId, conversationId, toolCallId } = event.request;
+        await broker.resolve({ approvalId, conversationId, toolCallId, decision: "deny" }, 7);
+      }
+      await Promise.all(denied);
+    } finally {
+      resetDynamicToolMetadata();
+    }
   });
 
   it("requires approval for external writes regardless of workspace allows and auto-review", () => {

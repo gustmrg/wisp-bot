@@ -134,6 +134,34 @@ describe("ToolApprovalCard", () => {
     expect(onResolve).toHaveBeenCalledWith("deny");
   });
 
+  it("names the tool in words, never by its identifier", () => {
+    const request = {
+      approvalId: "approval-5",
+      conversationId: "atlas",
+      toolCallId: "tool-5",
+      toolName: "mcp_ee86e536b696_getentry",
+      category: "integration_call" as const,
+      scope: { kind: "integration" as const, display: "Journal" },
+      summary: "Get entry — id: 42",
+      expiresAt: "2026-09-07T12:01:00.000Z",
+    };
+    const { rerender } = render(
+      <ToolApprovalCard request={{ ...request, toolLabel: "Get entry" }} wispName="Atlas" onResolve={vi.fn()} />,
+    );
+    expect(screen.getByText(/Atlas requested Get entry for Journal/)).toBeVisible();
+    expect(screen.queryByText(/mcp_ee86e536b696/)).not.toBeInTheDocument();
+
+    // A server too old to send the label still gets words from the catalog or the name.
+    rerender(
+      <ToolApprovalCard
+        request={{ ...request, toolName: "linear_update_issue", category: "external_write" }}
+        wispName="Atlas"
+        onResolve={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Atlas requested Update Linear issue for Journal/)).toBeVisible();
+  });
+
   it("names the button and the site of a browser action", async () => {
     const user = userEvent.setup();
     const onResolve = vi.fn();
@@ -281,7 +309,7 @@ describe("ToolApprovalCard", () => {
       />,
     );
 
-    expect(screen.getByText(/Atlas requested write for notes\.txt/)).toBeVisible();
+    expect(screen.getByText(/Atlas requested Write file for notes\.txt/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Allow once" }));
     expect(onResolve).toHaveBeenCalledWith("allow_once");
   });

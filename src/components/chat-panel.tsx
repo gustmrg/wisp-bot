@@ -236,7 +236,9 @@ function ChatPanel({
     messages.some(
       (message) => message.type === "incoming" && message.status === "streaming" && Boolean(message.text.trim()),
     );
-  const showActivity = attached && working && !responding;
+  const reportActivity = attached && working && !responding;
+  // While an approval waits, the Wisp is doing nothing until the person answers.
+  const showActivity = reportActivity && !approvals.length;
   const openKey = transcript && !hidden ? `${chat.id}:${transcript.epoch}` : null;
   // Steps arrive in a message of their own, so a new one moves the end as text does.
   const lastSteps = lastMessage?.type === "incoming" ? (lastMessage.steps?.length ?? 0) : 0;
@@ -562,7 +564,12 @@ function ChatPanel({
                     />
                   ))}
                 </span>
-                {activity ? <span>{activity}</span> : <span className="sr-only">{`${name} is working…`}</span>}
+                {/* The header and the running step say it on screen. */}
+                <span className="sr-only">{activity ?? `${name} is working…`}</span>
+              </div>
+            ) : reportActivity ? (
+              <div role="status" className="sr-only">
+                {subline.text}
               </div>
             ) : null}
           </div>

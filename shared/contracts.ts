@@ -512,6 +512,8 @@ export type TurnItem = {
   completedAt?: string;
   /** The tool's own progress text while it runs. */
   label?: string;
+  /** The tool's name in words, for a tool the client's catalog cannot name, such as an MCP server's. */
+  toolLabel?: string;
 } & (
   | {
       type: "command_execution";

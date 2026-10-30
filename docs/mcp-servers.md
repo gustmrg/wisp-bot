@@ -89,6 +89,10 @@ Tools get deterministic aliases derived from the immutable server ID plus the
 original tool name, so server-side renames preserve identity and two servers
 cannot shadow each other, the built-in tools, or bundled plugin tools.
 
+The conversation and approval cards name a tool in words taken from its name, so
+`getEntry` reads "Get entry". If two tools of a server would read the same, the
+second keeps its own name. **Reviewed tools** lists the names the server uses.
+
 When a snapshot changes (a new server is granted, tools are added or changed,
 or a server is removed), the change is applied by rebuilding the Wisp's Pi
 session at the next idle message boundary: the next message triggers the

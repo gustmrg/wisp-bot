@@ -1,4 +1,5 @@
 import type { BackgroundProcessAction, TurnItem, TurnItemStatus } from "../shared/contracts.js";
+import { getToolMetadata } from "../shared/tool-catalog.js";
 
 /**
  * Reads what a tool call did from its arguments and result, for the
@@ -252,15 +253,19 @@ function itemBody(call: ToolCall, workspaceDirectory: string): ItemBody {
   }
 }
 
-/** The conversation's view of a tool call so far. */
+/** The conversation's view of a tool call so far. Only the backend knows an MCP tool's words, so they travel with it. */
 export function describeToolCall(call: ToolCall, workspaceDirectory: string): TurnItem {
+  const metadata = getToolMetadata(call.toolName);
+  const mcpTool = metadata?.mcpServerId ? metadata : undefined;
+  const label = call.label ?? (call.status === "running" ? mcpTool?.activityLabel : undefined);
   return {
     id: call.id,
     toolName: call.toolName,
     status: call.status,
     startedAt: call.startedAt,
     ...(call.completedAt ? { completedAt: call.completedAt } : {}),
-    ...(call.label ? { label: call.label } : {}),
+    ...(label ? { label } : {}),
+    ...(mcpTool ? { toolLabel: mcpTool.label } : {}),
     ...itemBody(call, workspaceDirectory),
   } as TurnItem;
 }

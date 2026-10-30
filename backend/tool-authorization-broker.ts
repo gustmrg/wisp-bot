@@ -257,6 +257,7 @@ export class ToolAuthorizationBroker {
 
     const approvalId = actionId;
     const expiresAt = new Date(this.now().getTime() + this.approvalTtlMs).toISOString();
+    const metadata = getToolMetadata(action.toolName);
     const request: ToolApprovalRequest = {
       approvalId,
       conversationId: action.conversationId,
@@ -264,6 +265,7 @@ export class ToolAuthorizationBroker {
       ...(action.wispId === action.conversationId ? {} : { wispId: action.wispId }),
       toolCallId: safeId(action.toolCallId),
       toolName: safeToolName(action.toolName),
+      ...(metadata?.mcpServerId ? { toolLabel: metadata.label } : {}),
       category: action.category,
       scope: { kind: action.scope.kind, display: sanitizeSummary(action.scope.value) },
       summary: sanitizeSummary(action.summary),

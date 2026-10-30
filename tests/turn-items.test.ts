@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { ClaudeCodeEventConverter } from "../backend/claude-code/claude-code-events.js";
 import { PiEventTranslator, type PiAgentEvent } from "../backend/pi-event-translator.js";
@@ -10,6 +10,8 @@ import {
   type ToolCall,
 } from "../backend/turn-items.js";
 import type { ConversationAgentEvent, TurnItem } from "../shared/contracts.js";
+import { mcpToolAlias } from "../shared/mcp.js";
+import { registerDynamicToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
 
 const WORKSPACE = "/data/wisps/atlas/workspace";
 
@@ -26,6 +28,54 @@ function itemFor(
 }
 
 const text = (value: string) => ({ content: [{ type: "text", text: value }] });
+
+describe("how a tool call names its tool", () => {
+  const alias = mcpToolAlias("server-a", "getEntry");
+
+  afterEach(() => resetDynamicToolMetadata());
+
+  it("sends an MCP tool's words, which the client's catalog does not have", () => {
+    registerDynamicToolMetadata([
+      { name: alias, label: "Get entry", activityLabel: "Calling Get entry…", mcpServerId: "server-a" },
+    ]);
+
+    expect(itemFor(alias, {}, undefined, "running")).toMatchObject({
+      toolLabel: "Get entry",
+      label: "Calling Get entry…",
+    });
+    // The label is for while it runs; the name stays with the step.
+    const finished = itemFor(alias, {});
+    expect(finished).toMatchObject({ toolLabel: "Get entry" });
+    expect(finished).not.toHaveProperty("label");
+  });
+
+  it("lets a tool's own progress win over the catalog's words", () => {
+    registerDynamicToolMetadata([
+      { name: alias, label: "Get entry", activityLabel: "Calling Get entry…", mcpServerId: "server-a" },
+    ]);
+
+    expect(
+      describeToolCall(
+        {
+          id: "call-1",
+          toolName: alias,
+          args: {},
+          status: "running",
+          startedAt: "2026-10-22T10:00:00.000Z",
+          label: "Page 2 of 5…",
+        },
+        WORKSPACE,
+      ),
+    ).toMatchObject({ label: "Page 2 of 5…" });
+  });
+
+  it("leaves a tool the client's catalog can name as it was", () => {
+    const item = itemFor("linear_create_issue", {}, undefined, "running");
+
+    expect(item).not.toHaveProperty("toolLabel");
+    expect(item).not.toHaveProperty("label");
+  });
+});
 
 describe("describeToolCall", () => {
   it("shows a command with its purpose, exit code, and the end of its output", () => {

@@ -113,8 +113,8 @@ describe("ChatPanel transcript", () => {
       activity: "Searching the web…",
     });
 
-    // The header says it too; below the messages it shows once.
-    expect(within(scroller).getAllByText("Searching the web…")).toHaveLength(1);
+    // The header says it on screen; beside the bubble only a screen reader hears it.
+    expect(within(scroller).getByText("Searching the web…")).toHaveClass("sr-only");
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
 
@@ -412,6 +412,72 @@ describe("ChatPanel identity", () => {
     expect(screen.getByText("Working…")).toBeInTheDocument();
     show(transcript([{ id: "f", type: "incoming", text: "", status: "failed" }]), { status: "idle" });
     expect(screen.getByText("Couldn't reply")).toBeInTheDocument();
+  });
+
+  it("keeps the bubble while a tool runs, with the tool named only in its step and the header", () => {
+    const withStep = (status: "running" | "completed"): Message => ({
+      id: "r:work",
+      type: "incoming",
+      text: "",
+      status: "streaming",
+      steps: [
+        { id: "1", toolName: "linear_create_issue", status, startedAt: "2026-10-22T10:00:00.000Z", type: "tool" },
+      ],
+    });
+    const { scroller, show } = renderPanel(transcript([withStep("running")]), {
+      status: "working",
+      activity: "Creating a Linear issue…",
+    });
+
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    expect(document.querySelector(".message-steps-label")).toHaveTextContent("Creating a Linear issue…");
+    expect(document.querySelector(".chat-subline")).toHaveTextContent("Creating a Linear issue…");
+    // Beside the bubble only a screen reader hears it.
+    expect(within(scroller).getByRole("status")).toHaveTextContent("Creating a Linear issue…");
+    expect(within(within(scroller).getByRole("status")).getByText("Creating a Linear issue…")).toHaveClass("sr-only");
+
+    show(transcript([withStep("completed")]), { status: "working", activity: undefined });
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    expect(within(scroller).getByText("Atlas is working…")).toHaveClass("sr-only");
+  });
+
+  it("says a notice in the header, not beside the bubble", () => {
+    const notice = "The model failed. Answering with the fallback model…";
+    const { scroller } = renderPanel(
+      transcript([{ id: "request", type: "outgoing", text: "Hello", status: "complete" }]),
+      {
+        status: "working",
+        activity: notice,
+      },
+    );
+
+    expect(document.querySelector(".chat-subline")).toHaveTextContent(notice);
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    expect(within(scroller).getByText(notice)).toHaveClass("sr-only");
+  });
+
+  it("shows no typing bubble while the Wisp waits for an approval", () => {
+    const { scroller } = renderPanel(
+      transcript([{ id: "request", type: "outgoing", text: "Hello", status: "complete" }]),
+      {
+        status: "working",
+        approvals: [
+          {
+            approvalId: "approval-1",
+            conversationId: "atlas",
+            toolCallId: "tool-1",
+            toolName: "write",
+            category: "create_file",
+            scope: { kind: "workspace_path", display: "notes.txt" },
+            summary: "Create notes.txt",
+            expiresAt: "2026-10-22T10:30:00.000Z",
+          },
+        ],
+      },
+    );
+
+    expect(document.querySelector(".chat-activity-bubble")).not.toBeInTheDocument();
+    expect(within(scroller).getByRole("status")).toHaveTextContent("Waiting for your approval");
   });
 
   it("says under its name what the Wisp is doing while it works", () => {

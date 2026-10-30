@@ -158,6 +158,8 @@ export interface ToolApprovalRequest {
   wispId?: string;
   toolCallId: string;
   toolName: string;
+  /** The tool's name in words, for a tool the client's catalog cannot name, such as an MCP server's. */
+  toolLabel?: string;
   category: ToolActionCategory;
   scope: {
     kind: "workspace_path" | "integration" | "skill" | "memory" | "container" | "browser" | "job" | "wisp";
