@@ -80,7 +80,7 @@ it("resizes the workspace, offering only sizes the disk has room for", async () 
   const size = await screen.findByRole("combobox", { name: "Size" });
   expect(size).toHaveTextContent("512 MiB");
   await user.click(size);
-  expect(screen.getByRole("option", { name: "50.0 GiB" })).toHaveAttribute("aria-disabled", "true");
+  expect(await screen.findByRole("option", { name: "50.0 GiB" })).toHaveAttribute("aria-disabled", "true");
   await user.click(screen.getByRole("option", { name: "10.0 GiB" }));
 
   expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "one", quotaBytes: 10 * GIB });
