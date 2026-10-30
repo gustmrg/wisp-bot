@@ -10,6 +10,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
@@ -72,9 +73,12 @@ export function NotificationSettingsSection({
       aria-labelledby="notification-settings-title"
       className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
     >
-      <h2 id="notification-settings-title" className="mb-[22px] mt-0 text-lg font-semibold">
+      <h2 id="notification-settings-title" className="mb-1 mt-0 text-lg font-semibold">
         Notifications
       </h2>
+      <p className="mb-[22px] text-xs leading-relaxed text-dim">
+        <SettingsScopeNote scope="device" />
+      </p>
       <div className="animate-tab-forward">
         <SettingsGroup label="Channels">
           <SettingsCard variant="stacked">

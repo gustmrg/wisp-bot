@@ -17,6 +17,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
@@ -284,7 +285,7 @@ function ModelSettingsSection({
       {showHeading ? (
         <p className="mb-[22px] text-dim text-xs leading-relaxed">
           Default provider and model for Wisps without their own selection. Saved provider keys are shared with all
-          Wisps.
+          Wisps. <SettingsScopeNote scope="environment" />
         </p>
       ) : null}
 

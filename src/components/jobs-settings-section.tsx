@@ -10,6 +10,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useJobs, type JobsController } from "@/hooks/use-jobs";
@@ -71,7 +72,8 @@ export function JobsSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wisp
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
         Tasks your Wisps run on a schedule in the background, sending you only their results. To create or change a job,
-        ask a Wisp, for example: “Every weekday at 9:00, look for new openings and send me a summary.”
+        ask a Wisp, for example: “Every weekday at 9:00, look for new openings and send me a summary.”{" "}
+        <SettingsScopeNote scope="environment" />
       </p>
       {listed.length === 0 ? (
         <p role="status" className="mx-0.5 text-xs text-dim">

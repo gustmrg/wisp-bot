@@ -47,6 +47,7 @@ import {
   StatusDot,
   type StatusTone,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -219,7 +220,8 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
         Connect remote MCP servers over HTTPS, then choose which Wisps can use them, here or in each Wisp's Access tab.
-        Adding a server never gives any Wisp access automatically, and every tool call requires approval.
+        Adding a server never gives any Wisp access automatically, and every tool call requires approval.{" "}
+        <SettingsScopeNote scope="environment" />
       </p>
       {view ? (
         <div className="animate-tab-forward">

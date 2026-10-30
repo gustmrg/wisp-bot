@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { XIcon } from "lucide-react";
 
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import {
@@ -10,34 +9,20 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { Button } from "@/components/ui/button";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { AppPreferences, AutoReviewRule, RuleBehavior } from "@/lib/app-preferences";
+import type { AppPreferences } from "@/lib/app-preferences";
 import { clockTimeOptions, type TimeFormat } from "@/lib/clock-time";
 import { settingsSelect } from "@/lib/ui-classes";
-import { withWorkspaceFileBehavior, workspaceFileBehavior, type WorkspaceFileCategory } from "../../shared/tool-policy";
 import { systemTimeZone } from "../../shared/time-zone";
 
-const RULE_BEHAVIORS: ReadonlyArray<{ value: RuleBehavior; label: string }> = [
-  { value: "allow", label: "Allow" },
-  { value: "ask", label: "Ask" },
-  { value: "block", label: "Block" },
-];
 const TIME_FORMAT_OPTIONS: ReadonlyArray<{ value: TimeFormat; label: string }> = [
   { value: "auto", label: "Auto" },
   { value: "24h", label: "24-hour" },
   { value: "12h", label: "12-hour" },
 ];
-const FILE_CATEGORIES: ReadonlyArray<{ value: WorkspaceFileCategory; label: string; description: string }> = [
-  { value: "create_file", label: "Create files", description: "New files in the workspace." },
-  { value: "modify_file", label: "Modify files", description: "Edits to existing workspace files." },
-];
-const INTEGRATION_ACTION_LABELS: Record<string, string> = {
-  external_write: "Changes to integrations",
-  integration_call: "MCP tool calls",
-};
 const TIMEZONES = Array.from(new Set(["UTC", ...Intl.supportedValuesOf("timeZone")]));
 
 interface SettingsOption {
@@ -111,7 +96,6 @@ function sampleTime(format: TimeFormat): string {
 
 function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSettingsSectionsProps) {
   const [detectedTimezone] = useState(systemTimeZone);
-  const [ruleNotice, setRuleNotice] = useState("");
 
   const timezoneOptions = [
     { value: "auto", label: `Auto-detect (${detectedTimezone})` },
@@ -119,23 +103,10 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
       (zone) => ({ value: zone, label: zone }),
     ),
   ];
-  const integrationRules = preferences.autoReviewRules.filter((rule) => rule.scope === "integration");
-
-  function setFileBehavior(category: WorkspaceFileCategory, behavior: RuleBehavior) {
-    onPreferencesChange({
-      ...preferences,
-      autoReviewRules: withWorkspaceFileBehavior(preferences.autoReviewRules, category, behavior, () =>
-        crypto.randomUUID(),
-      ) as AutoReviewRule[],
-    });
-    const label = FILE_CATEGORIES.find(({ value }) => value === category)?.label ?? category;
-    const behaviorLabel = RULE_BEHAVIORS.find(({ value }) => value === behavior)?.label ?? behavior;
-    setRuleNotice(`${label}: ${behaviorLabel}.`);
-  }
 
   return (
     <>
-      <SettingsGroup label="Wisp">
+      <SettingsGroup label="Date and time" note={<SettingsScopeNote scope="device" />}>
         <SettingsCard variant="stacked">
           <SettingsRow>
             <SettingsRowCopy>
@@ -170,78 +141,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
               onChange={(timeFormat) => onPreferencesChange({ ...preferences, timeFormat })}
             />
           </SettingsRow>
-          <SettingsRow>
-            <SettingsRowCopy>
-              <SettingsRowTitle>Auto-review file changes</SettingsRowTitle>
-              <SettingsRowDescription>
-                {preferences.autoReview
-                  ? "Wisp follows the rules below before changing workspace files."
-                  : "Wisp asks before every file change. Turn on to use the rules below."}
-              </SettingsRowDescription>
-            </SettingsRowCopy>
-            <PreferenceSwitch
-              label="Auto-review file changes"
-              checked={preferences.autoReview}
-              onChange={() => onPreferencesChange({ ...preferences, autoReview: !preferences.autoReview })}
-            />
-          </SettingsRow>
-          {FILE_CATEGORIES.map((category) => (
-            <SettingsRow key={category.value} aria-disabled={!preferences.autoReview || undefined}>
-              <SettingsRowCopy className={preferences.autoReview ? undefined : "opacity-50"}>
-                <SettingsRowTitle>{category.label}</SettingsRowTitle>
-                <SettingsRowDescription>{category.description}</SettingsRowDescription>
-              </SettingsRowCopy>
-              <SegmentedControl
-                label={`When Wisp wants to ${category.label.toLocaleLowerCase()}`}
-                value={workspaceFileBehavior(preferences.autoReviewRules, category.value)}
-                options={RULE_BEHAVIORS}
-                disabled={!preferences.autoReview}
-                onChange={(behavior) => setFileBehavior(category.value, behavior)}
-              />
-            </SettingsRow>
-          ))}
-          {integrationRules.length ? (
-            <SettingsRow className="flex-col items-stretch gap-[5px]">
-              <SettingsRowTitle>Integration blocks</SettingsRowTitle>
-              <SettingsRowDescription>
-                Changes to integrations always ask first. Actions you block from an approval prompt are listed here.
-              </SettingsRowDescription>
-              <ul className="m-0 mt-[3px] flex list-none flex-col p-0" aria-label="Integration blocks">
-                {integrationRules.map((rule) => (
-                  <li key={rule.id} className="flex items-center gap-3 border-t border-border py-2">
-                    <span className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
-                      {INTEGRATION_ACTION_LABELS[rule.action] ?? rule.action}
-                      <span className="mt-0.5 block text-xs text-dim">
-                        {RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}
-                      </span>
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label={`Remove rule: ${INTEGRATION_ACTION_LABELS[rule.action] ?? rule.action}`}
-                      onClick={() => {
-                        onPreferencesChange({
-                          ...preferences,
-                          autoReviewRules: preferences.autoReviewRules.filter((item) => item.id !== rule.id),
-                        });
-                        setRuleNotice("Rule removed.");
-                      }}
-                    >
-                      <XIcon aria-hidden="true" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </SettingsRow>
-          ) : null}
         </SettingsCard>
-        <p className="mx-0.5 mt-[7px] text-dim text-xs leading-[1.45]">
-          Rules are enforced in the desktop backend before the Wisp can create or modify a file. Shell execution remains
-          blocked.
-        </p>
-        <span className="sr-only" role="status">
-          {ruleNotice}
-        </span>
       </SettingsGroup>
     </>
   );

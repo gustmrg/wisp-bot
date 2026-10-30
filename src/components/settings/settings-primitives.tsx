@@ -7,19 +7,25 @@ import { cn } from "@/lib/utils";
 
 export function SettingsGroup({
   label,
+  note,
   children,
   className,
 }: {
   label: ReactNode;
+  /** A remark beside the label, such as where the group is saved; not part of the group's name. */
+  note?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   const headingId = useId();
   return (
     <section className={className} aria-labelledby={headingId}>
-      <h3 id={headingId} className="mx-0.5 mb-[7px] mt-[18px] text-xs font-normal text-dim">
-        {label}
-      </h3>
+      <div className="mx-0.5 mb-[7px] mt-[18px] flex flex-wrap items-baseline justify-between gap-x-3">
+        <h3 id={headingId} className="m-0 text-xs font-normal text-dim">
+          {label}
+        </h3>
+        {note ? <span className="text-2xs text-faint">{note}</span> : null}
+      </div>
       {children}
     </section>
   );

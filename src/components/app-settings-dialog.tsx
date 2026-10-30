@@ -24,6 +24,7 @@ import {
   RefreshCwIcon,
   ServerIcon,
   SettingsIcon,
+  ShieldCheckIcon,
   SmartphoneIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import { NotificationSettingsSection } from "@/components/notification-settings-
 import { StorageSettingsSection } from "@/components/storage-settings-section";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { JobsSettingsSection } from "@/components/jobs-settings-section";
+import { PermissionSettingsSection } from "@/components/permission-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
 import { McpSettingsSection } from "@/components/mcp-settings-section";
@@ -54,6 +56,7 @@ import {
   SettingsRowTitle,
   SoonBadge,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
 import type { AppPreferences, ChatListOrder, ReplyPace } from "@/lib/app-preferences";
@@ -77,6 +80,7 @@ type SettingsSection =
   | "voice"
   | "plugins"
   | "mcp"
+  | "permissions"
   | "shortcuts"
   | "about"
   | "usage"
@@ -151,6 +155,13 @@ const NAV_ITEMS: ReadonlyArray<
     icon: ServerIcon,
   },
   {
+    section: "permissions",
+    panelId: "permission-settings-panel",
+    label: "Permissions",
+    description: "What Wisps can do without asking",
+    icon: ShieldCheckIcon,
+  },
+  {
     section: "jobs",
     panelId: "jobs-settings-panel",
     label: "Jobs",
@@ -194,10 +205,10 @@ const NAV_ITEMS: ReadonlyArray<
   },
 ];
 
-/** How the mobile overview groups the sections, under the profile card. */
-const MOBILE_NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
+/** How the navigation groups the sections, on the desktop and under the profile card on mobile. */
+const NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
   { label: "Account and server", sections: ["general", "connections", "remote-access"] },
-  { label: "Wisps", sections: ["model", "voice", "plugins", "mcp", "jobs"] },
+  { label: "Wisps", sections: ["model", "voice", "plugins", "mcp", "permissions", "jobs"] },
   { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
   { label: "Storage and data", sections: ["storage", "usage"] },
   { label: "App", sections: ["about"] },
@@ -301,6 +312,7 @@ function AppSettingsDialog({
     shortcuts: "Shortcuts",
     plugins: "Plugins",
     mcp: "MCP servers",
+    permissions: "Permissions",
     about: "About",
     usage: "Token usage",
     storage: "Storage",
@@ -424,7 +436,7 @@ function AppSettingsDialog({
         <nav
           hidden={mobile && !showOverview}
           className={cn(
-            "settings-navigation flex flex-col gap-[3px] border-r border-border bg-sidebar px-2.5 py-[18px]",
+            "settings-navigation flex flex-col gap-[3px] overflow-y-auto border-r border-border bg-sidebar px-2.5 py-[18px]",
             mobile && !showOverview && "hidden",
           )}
           aria-label="Settings sections"
@@ -463,26 +475,28 @@ function AppSettingsDialog({
                   <ChevronRightIcon aria-hidden="true" className="mobile-settings-chevron" />
                 </button>
               ) : null}
-              {MOBILE_NAV_GROUPS.map((group) => (
-                <div
-                  key={group.label}
-                  className="mobile-settings-group"
-                  role="group"
-                  aria-labelledby={`settings-group-${group.sections[0]}`}
-                >
-                  <h3 id={`settings-group-${group.sections[0]}`}>{group.label}</h3>
-                  {navItems
-                    .filter((item) => "section" in item && group.sections.includes(item.section))
-                    .map(renderNavItem)}
-                </div>
-              ))}
             </>
           ) : (
-            <>
-              <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
-              {navItems.map(renderNavItem)}
-            </>
+            <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
           )}
+          {NAV_GROUPS.map((group) => (
+            <div
+              key={group.label}
+              className={
+                mobile ? "mobile-settings-group" : "flex flex-none flex-col gap-[3px] not-first-of-type:mt-2.5"
+              }
+              role="group"
+              aria-labelledby={`settings-group-${group.sections[0]}`}
+            >
+              <h3
+                id={`settings-group-${group.sections[0]}`}
+                className={mobile ? undefined : "mx-[9px] mt-0 mb-1 text-2xs font-normal text-faint"}
+              >
+                {group.label}
+              </h3>
+              {navItems.filter((item) => "section" in item && group.sections.includes(item.section)).map(renderNavItem)}
+            </div>
+          ))}
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
         {section === "jobs" && open && !showOverview ? <JobsSettingsSection wisps={wisps} /> : null}
@@ -520,7 +534,7 @@ function AppSettingsDialog({
                 <UserMemorySettings />
               </UserProfileSettings>
             )}
-            <SettingsGroup label="Application">
+            <SettingsGroup label="Application" note={<SettingsScopeNote scope="device" />}>
               <SettingsCard variant="stacked">
                 <SettingsRow>
                   <SettingsRowCopy>
@@ -617,6 +631,9 @@ function AppSettingsDialog({
             </p>
           </div>
         </section>
+        {section === "permissions" && open && !showOverview ? (
+          <PermissionSettingsSection preferences={preferences} onPreferencesChange={onPreferencesChange} />
+        ) : null}
         {section === "notifications" && open && !showOverview ? (
           <NotificationSettingsSection
             preferences={preferences}
