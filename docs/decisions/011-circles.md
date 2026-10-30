@@ -51,7 +51,7 @@ keeps holds it, with no column of its own.
 `responder: "auto"` lets the decision model
 ([ADR 012](012-auxiliary-models.md#decision-model)) choose who answers a message
 that mentions no one. The lead stays the default, and the fallback whenever the
-model is below a probability of 0.6, takes over 1.5 seconds, or fails, so a
+model is below a probability of 0.6, takes over 3 seconds, or fails, so a
 message is never lost or held up by it. Mentions and handoffs never reach the
 model. The choice belongs to the circle because one Wisp is in several; it is
 kept in a table of its own, `circle_responders`, holding a row only for `auto`,
@@ -59,7 +59,7 @@ which older builds ignore and keep.
 
 - **What the model reads:** the circle's name and purpose, up to 4,000 characters
   of its latest messages, the new message, and for each member its name, its role
-  when it has one, and the start of its soul (up to 800 characters, and 4,000 for
+  when it has one, and the start of its soul (up to 1,500 characters, and 6,000 for
   all members together). The soul is the one description every Wisp has, since a
   role is optional, and it says who the Wisp is first.
 - **What the model does not read:** members' IDs, replaced by `member_1` and so on.
@@ -68,8 +68,18 @@ which older builds ignore and keep.
 - **Usage:** the decision runs before any member's session exists, so its calls go
   to `circle-config/<storage ID>/decision-usage` as session entries, read into a
   **Decision model** row of the usage reports.
-- **Who decides later:** whoever answers can still hand off, and the prompt now
-  says to when a request clearly belongs to another member.
+- **How much of a soul:** a member whose specialty comes after the limit is never
+  chosen, and the lead answers. In testing, 800 characters missed a specialty
+  after a long introduction, so the limit is 1,500. It is a limit, not a cure: a
+  soul should say early what the Wisp does.
+- **Time limit:** 1.5 seconds was too little. In testing with Jev, calls took
+  about 0.5 to 1.2 seconds while the circle was busy, but the first one of a
+  session and those after a pause of a few minutes passed the limit. A call past
+  the limit is left to finish, not cancelled: the provider may bill it, and
+  cancelling it left the next call slow too.
+- **Who decides later:** whoever answers can still hand off, and the prompt says
+  to only when the task is another member's role and it cannot do it well. A
+  stronger instruction made Wisps pass on work they had just done.
 
 A mention is `@` and a member's name, matched without regard to case, and
 not followed by a letter or digit, so `@Ada` does not match `@Adam`. The

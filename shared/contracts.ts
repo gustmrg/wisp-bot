@@ -752,6 +752,8 @@ export interface WispUsageRow {
   totals: SessionReportTotals;
   /** The same usage split by model; together the rows add up to `totals`. Absent from older servers. */
   models?: ReadonlyArray<ModelUsageRow>;
+  /** Set on the row of what decision models used, which belongs to no Wisp. */
+  decisionModel?: true;
 }
 
 /** One model's usage in a usage report, or context summaries, whose model is not recorded. */

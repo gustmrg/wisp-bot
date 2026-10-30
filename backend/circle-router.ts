@@ -7,15 +7,21 @@ import type { ModelSelection } from "../shared/contracts.js";
 import { AUXILIARY_USAGE_ENTRY } from "./image-transcriber.js";
 
 /** How long a message waits for the decision; after this the lead answers. */
-const ROUTING_TIMEOUT_MS = 1_500;
+const ROUTING_TIMEOUT_MS = 3_000;
+/**
+ * How long a call that came too late may still run. It is not cancelled at the
+ * timeout: the provider may bill it, and finishing keeps the connection warm for
+ * the next message, which is otherwise slow as well.
+ */
+const MAX_CALL_MS = 30_000;
 /** How sure the model must be of one member. */
 const ROUTING_THRESHOLD = 0.6;
 /** How much of the circle the model reads; the newest messages are kept. */
 const MAX_TRANSCRIPT_CHARACTERS = 4_000;
 /** How much of each soul the model reads: its start, which says who the Wisp is. */
-const MAX_SOUL_CHARACTERS = 800;
+const MAX_SOUL_CHARACTERS = 1_500;
 /** How much of all the souls together, so a large circle costs no more per message than a small one. */
-const MAX_SOULS_CHARACTERS = 4_000;
+const MAX_SOULS_CHARACTERS = 6_000;
 const QUESTION = "responder";
 const USAGE_FILE = "usage.jsonl";
 
@@ -47,7 +53,7 @@ export interface CircleRouterOptions {
   getSelection: () => Promise<ModelSelection | null>;
   runtime: Pick<ModelRuntime, "getModelOfType" | "classify">;
   recordUsage: (conversationId: string, entry: DecisionUsageEntry) => Promise<void>;
-  /** Hears a call that failed, not one that was too slow or stopped. */
+  /** Hears a call that failed, even after the lead took over; not one that was stopped. */
   onFailed?: (conversationId: string) => void;
   timeoutMs?: number;
 }
@@ -105,14 +111,23 @@ export class CircleRouter {
     this.timeoutMs = options.timeoutMs ?? ROUTING_TIMEOUT_MS;
   }
 
-  /** Resolves with the chosen member's ID, or null for the lead, within the timeout. */
+  /**
+   * Resolves with the chosen member's ID, or null for the lead, within the
+   * timeout. Only `signal`, the person's Stop, cancels the call itself.
+   */
   async choose(input: CircleRoutingInput, signal: AbortSignal): Promise<string | null> {
-    const deadline = AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]);
-    const timedOut = new Promise<null>((resolve) => {
-      if (deadline.aborted) resolve(null);
-      else deadline.addEventListener("abort", () => resolve(null), { once: true });
+    const call = AbortSignal.any([signal, AbortSignal.timeout(MAX_CALL_MS)]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const givenUp = new Promise<null>((resolve) => {
+      if (signal.aborted) return resolve(null);
+      signal.addEventListener("abort", () => resolve(null), { once: true });
+      timer = setTimeout(() => resolve(null), this.timeoutMs);
     });
-    return Promise.race([this.ask(input, deadline), timedOut]);
+    try {
+      return await Promise.race([this.ask(input, call), givenUp]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async ask(input: CircleRoutingInput, signal: AbortSignal): Promise<string | null> {

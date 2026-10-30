@@ -139,11 +139,19 @@ describe("CircleRouter", () => {
     expect(seen?.aborted).toBe(true);
   });
 
-  it("records a call that came too late", async () => {
+  it("lets a call that comes too late finish, records it, and ignores its choice", async () => {
     let finish: (value: unknown) => void = () => undefined;
-    const { router, recordUsage } = createRouter(() => new Promise((resolve) => (finish = resolve)), { timeoutMs: 5 });
+    let seen: AbortSignal | undefined;
+    const { router, recordUsage } = createRouter(
+      ((_model: unknown, _context: unknown, options: { signal: AbortSignal }) => {
+        seen = options.signal;
+        return new Promise((resolve) => (finish = resolve));
+      }) as never,
+      { timeoutMs: 5 },
+    );
 
     await expect(choose(router)).resolves.toBeNull();
+    expect(seen?.aborted).toBe(false);
     finish(answer("member_2", 0.9, { usage: USAGE }));
 
     await vi.waitFor(() => expect(recordUsage).toHaveBeenCalled());
@@ -174,9 +182,9 @@ describe("routingContext", () => {
         ).criteria,
       )[0]!;
 
-    expect(criteria(2).length).toBeLessThan(820);
-    expect(criteria(2).length).toBeGreaterThan(800);
-    expect(criteria(10).length).toBeLessThan(420);
+    expect(criteria(2).length).toBeLessThan(1_520);
+    expect(criteria(2).length).toBeGreaterThan(1_500);
+    expect(criteria(10).length).toBeLessThan(620);
   });
 
   it("keeps the newest messages within its limit", () => {
@@ -240,6 +248,7 @@ describe("decision usage", () => {
     const report = await service.getUsageReport({ ...request, conversationId: "crew" });
     expect(report.totals.totalTokens).toBe(120);
     expect(report.models?.[0]).toMatchObject({ modelId: "jev", decisionCalls: 1 });
+    expect(report.wisps.at(-1)).toMatchObject({ name: "Decision model", decisionModel: true });
   });
 
   it("is stored without content and counted as decisions in usage reports", async () => {

@@ -31,7 +31,7 @@ label, description, notifications), **Members** (members and lead),
   **Settings → AI Model**. The model reads the message, the circle's recent
   messages, and each member's name, role, and the start of its soul, and the
   member it is sure of answers. That reply says **Chosen automatically**. When
-  it is not sure, takes over 1.5 seconds, or fails, the lead answers, so a
+  it is not sure, takes over 3 seconds, or fails, the lead answers, so a
   message is never lost or held up by it. Mentions and handoffs never go through
   the model.
 - Wisps answer one at a time. Each reply finishes before the next Wisp
@@ -39,8 +39,8 @@ label, description, notifications), **Members** (members and lead),
   authors. Every reply shows its author's avatar and name, in its color, and
   the activity line names the Wisp working.
 - A Wisp can hand the task to another member by mentioning it in its reply.
-  Wisps are told to do this when a request clearly belongs to another member,
-  so a lead hands over work that is not its own.
+  Wisps are told to do this only when the task is another member's role and
+  they cannot do it well themselves.
   One message from you allows at most three handoffs; then the circle waits
   for you. A Wisp cannot hand off to itself or to a Wisp outside the circle,
   and a Wisp whose turn already failed for your message is skipped.

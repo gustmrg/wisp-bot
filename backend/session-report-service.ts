@@ -85,7 +85,7 @@ export class SessionReportService {
       });
     }
     // A row only once it was used; a Wisp has one either way.
-    if (decisions.totals.totalTokens > 0) rows.push(decisions);
+    if (decisions.totals.totalTokens > 0) rows.push({ ...decisions, decisionModel: true });
     const models: ModelUsage = new Map();
     for (const row of rows) {
       addTotals(report.totals, row.totals);
