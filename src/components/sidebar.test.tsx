@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ConnectionsView } from "../../shared/connections";
 import type { ChatView, ChatViewCollection } from "@/chat-data";
 import type { CurrentUser } from "@/config/app-metadata";
 import { Sidebar } from "@/components/sidebar";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import { wispChatView } from "@/test/chat-fixtures";
 
 const currentUser: CurrentUser = {
@@ -101,6 +103,51 @@ describe("Sidebar current user", () => {
     expect(screen.getByRole("heading", { name: "Create new Wisp" })).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "Circle" }));
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
+  });
+});
+
+describe("Sidebar connection", () => {
+  const connections: ConnectionsView = {
+    activeId: "local",
+    profiles: [
+      { id: "local", kind: "local", name: "This computer", paired: true },
+      { id: "home", kind: "url", name: "Home server", url: "https://test-host.invalid", paired: true },
+    ],
+    status: { profileId: "local", phase: "local", epoch: 1 },
+    secureStorageAvailable: true,
+  };
+
+  it("shows the connection in use on the desktop, and goes to its settings", async () => {
+    const user = userEvent.setup();
+    const onManageConnections = vi.fn();
+    Object.assign(window.wisp, { getRemoteAccess: vi.fn(async () => ({ ok: true, value: { enabled: false } })) });
+    render(
+      <ActiveConnectionContext.Provider value={connections}>
+        <Sidebar
+          activeChatId=""
+          chats={{}}
+          currentUser={currentUser}
+          width={280}
+          {...callbacks}
+          onManageConnections={onManageConnections}
+        />
+      </ActiveConnectionContext.Provider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Using This computer. Switch connection" }));
+    await user.click(await screen.findByRole("button", { name: "Manage connections" }));
+
+    expect(onManageConnections).toHaveBeenCalledOnce();
+    expect(callbacks.onOpenSettings).not.toHaveBeenCalled();
+  });
+
+  it("leaves it to the Settings overview on mobile", () => {
+    render(
+      <ActiveConnectionContext.Provider value={connections}>
+        <Sidebar mobile activeChatId="" chats={{}} currentUser={currentUser} width={280} {...callbacks} />
+      </ActiveConnectionContext.Provider>,
+    );
+    expect(screen.queryByRole("button", { name: /Switch connection/ })).toBeNull();
   });
 });
 

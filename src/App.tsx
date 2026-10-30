@@ -309,6 +309,7 @@ function Workspace({
               }}
               onOpenSearch={() => showSearch(true)}
               onOpenSettings={() => showSettings("general")}
+              onManageConnections={() => showSettings("connections")}
               onOpenApprovals={showApprovals}
               onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
               onResizeStart={sidebarPanel.onResizeStart}

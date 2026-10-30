@@ -25,7 +25,7 @@ const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
   error: "Cannot connect",
 };
 
-function phaseTone(phase: ConnectionStatus["phase"]): StatusTone {
+export function phaseTone(phase: ConnectionStatus["phase"]): StatusTone {
   if (phase === "choosing") return "muted";
   if (phase === "local" || phase === "connected") return "success";
   if (phase === "connecting" || phase === "reconnecting") return "warning";
