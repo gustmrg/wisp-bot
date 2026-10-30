@@ -113,6 +113,8 @@ export interface CircleAgentContext {
   conversationId: string;
   /** Each member's context in the circle, in member order: the lead first. */
   members: ReadonlyArray<ConversationAgentContext>;
+  /** Set when the decision model chooses who answers a message that mentions no one. */
+  responder?: "auto";
   /** The person's preferred name, which labels their messages to the members. */
   userName?: string;
 }

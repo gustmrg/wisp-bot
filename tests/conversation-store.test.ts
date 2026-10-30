@@ -248,6 +248,45 @@ describe("ConversationStore versions", () => {
     store.close();
   });
 
+  it("keeps who answers a circle's unaddressed messages, only while it is the decision model", async () => {
+    const file = await databasePath();
+    const store = ConversationStore.open(file);
+    const record = circleRecord("crew", []);
+    const chatsOf = (opened: ConversationStore) =>
+      opened.read().conversations as Record<string, { chat: { responder?: string } }>;
+    const auto = { ...record, chat: { ...record.chat, responder: "auto" } } as ConversationRecord;
+    store.transaction(() => store.putConversation(record));
+    expect(chatsOf(store).crew?.chat).not.toHaveProperty("responder");
+    store.transaction(() => store.putConversation(auto));
+    store.close();
+
+    const reopened = ConversationStore.open(file);
+    expect(chatsOf(reopened).crew?.chat.responder).toBe("auto");
+    reopened.transaction(() => reopened.putConversation(record));
+    expect(chatsOf(reopened).crew?.chat).not.toHaveProperty("responder");
+    reopened.close();
+  });
+
+  it("adds the responder table to a store from the previous version, keeping what it holds", async () => {
+    const file = await databasePath();
+    const created = ConversationStore.open(file);
+    created.transaction(() => created.setInitialized(true));
+    created.close();
+    const db = new DatabaseSync(file);
+    db.exec("DROP TABLE circle_responders");
+    db.exec("UPDATE meta SET value = '15' WHERE key = 'store_version'");
+    db.close();
+
+    const upgraded = ConversationStore.open(file);
+    expect(upgraded.read().initialized).toBe(true);
+    const record = circleRecord("crew", []);
+    upgraded.transaction(() =>
+      upgraded.putConversation({ ...record, chat: { ...record.chat, responder: "auto" } } as ConversationRecord),
+    );
+    expect(meta(file)).toMatchObject({ store_version: "16" });
+    upgraded.close();
+  });
+
   it("reads a newer store that older readers may still use, and refuses one they may not", async () => {
     const readable = await databasePath();
     const store = ConversationStore.open(readable);
@@ -260,19 +299,19 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "16", "12");
+    raise(readable, "17", "12");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "16", min_reader_version: "12" });
+    expect(meta(readable)).toMatchObject({ store_version: "17", min_reader_version: "12" });
 
-    raise(readable, "17", "16");
+    raise(readable, "18", "17");
     expect(() => ConversationStore.open(readable)).toThrow(IntactDatabaseError);
     expect(() => ConversationStore.open(readable)).toThrow("saved by a newer version of Wisp Bot");
     // Refusing leaves the newer build's layout exactly as it was.
-    expect(meta(readable)).toMatchObject({ store_version: "17", min_reader_version: "16" });
+    expect(meta(readable)).toMatchObject({ store_version: "18", min_reader_version: "17" });
   });
 
   it("refuses a store older than the oldest release it opens, and leaves it as it was", async () => {

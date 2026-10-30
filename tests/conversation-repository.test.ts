@@ -507,6 +507,28 @@ describe("ConversationRepository", () => {
     expect(restored.getChats().crew).toMatchObject({ memberIds: ["second"] });
   });
 
+  it("persists who answers a circle's unaddressed messages and tells its agent", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-responder-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await seedConversations(repository, {
+      first: chat("first"),
+      crew: { ...chat("crew", true), memberIds: ["first"] },
+    });
+    expect(repository.getChats().crew).not.toHaveProperty("responder");
+    expect(repository.getCircleAgentContext("crew")).not.toHaveProperty("responder");
+
+    await repository.update("crew", { kind: "circle", responder: "auto" });
+
+    expect(repository.getCircleAgentContext("crew").responder).toBe("auto");
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getChats().crew).toMatchObject({ responder: "auto", memberIds: ["first"] });
+
+    await restored.update("crew", { kind: "circle", responder: "lead" });
+    expect(restored.getChats().crew).not.toHaveProperty("responder");
+    expect(restored.getCircleAgentContext("crew")).not.toHaveProperty("responder");
+  });
+
   it("normalizes and persists an ordered circle membership replacement", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-update-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

@@ -4,6 +4,7 @@ import { circleRecipients, mentionedMembers } from "../shared/circle-mentions.js
 import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../shared/contracts.js";
 import { assistantMessageId, type Message, type MessagePage } from "../shared/conversations.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
+import type { CircleRoutingInput } from "./circle-router.js";
 import {
   isCircleContext,
   type AgentContext,
@@ -22,6 +23,8 @@ export const MAX_CIRCLE_HANDOFFS = 3;
 export interface CircleAgentOptions {
   /** The circle's latest messages, replies not stored yet included. */
   readTranscript: (conversationId: string) => Promise<MessagePage>;
+  /** Asks the decision model who answers; null leaves the message to the lead. Never needs to fail. */
+  chooseResponder?: (input: CircleRoutingInput, signal: AbortSignal) => Promise<string | null>;
 }
 
 /**
@@ -58,6 +61,10 @@ interface Round {
   /** Members whose turn failed; they are not handed the task again (ADR 033). */
   failed: Set<string>;
   handoffs: number;
+  /** Stops asking the decision model, while it is asked. */
+  routing?: AbortController;
+  /** The member the decision model chose, until its turn starts. */
+  chosen?: string;
 }
 
 export class CircleConversationAgent implements ConversationAgent {
@@ -91,8 +98,8 @@ export class CircleConversationAgent implements ConversationAgent {
 
   /**
    * Answers the person's message with the members it mentions, or else the
-   * lead, one after another. A member that fails gets a failed reply, and the
-   * next one answers all the same.
+   * lead or the member the decision model chooses, one after another. A member
+   * that fails gets a failed reply, and the next one answers all the same.
    */
   async send(request: SendMessageRequest): Promise<void> {
     this.assertNotDisposed();
@@ -122,6 +129,7 @@ export class CircleConversationAgent implements ConversationAgent {
     this.round = round;
     this.emit({ type: "conversation_status", conversationId: this.context.conversationId, status: "working" });
     try {
+      await this.chooseResponder(request, round);
       while (round.queue.length && !round.cancelled && !this.disposed) {
         const wispId = round.queue.shift()!;
         const member = this.members.get(wispId);
@@ -132,7 +140,9 @@ export class CircleConversationAgent implements ConversationAgent {
           conversationId: this.context.conversationId,
           requestId: request.requestId,
           wispId,
+          ...(round.chosen === wispId ? { chosenAutomatically: true as const } : {}),
         });
+        round.chosen = undefined;
         if (await this.runTurn(member, request, round)) this.handOff(wispId, round);
         else if (!round.cancelled) round.failed.add(wispId);
       }
@@ -142,6 +152,81 @@ export class CircleConversationAgent implements ConversationAgent {
         this.emit({ type: "conversation_status", conversationId: this.context.conversationId, status: "idle" });
       }
     }
+  }
+
+  /**
+   * In a circle that lets the decision model choose, gives it a message that
+   * mentions no one. The lead stays in line unless the model picks someone.
+   * The round exists by now, so Stop and a second message behave as in a turn.
+   */
+  private async chooseResponder(request: SendMessageRequest, round: Round): Promise<void> {
+    const { chooseResponder } = this.options;
+    const present = this.context.members.filter(({ wispId }) => this.members.has(wispId));
+    if (this.context.responder !== "auto" || !chooseResponder || present.length < 2) return;
+    const people = present.map(({ wispId, name }) => ({ id: wispId, name }));
+    if (mentionedMembers(request.text, people).length) return;
+    const lead = round.queue[0];
+    const routing = new AbortController();
+    round.routing = routing;
+    let chosen: string | null = null;
+    try {
+      chosen = await chooseResponder(await this.routingInput(request, present), routing.signal);
+    } catch {
+      // The lead answers, as it does whenever the model cannot decide.
+    } finally {
+      round.routing = undefined;
+    }
+    if (round.cancelled) {
+      if (lead && !this.disposed) this.reportStopped(request, lead);
+      return;
+    }
+    if (!chosen || !this.members.has(chosen)) return;
+    round.queue = [chosen];
+    round.chosen = chosen;
+  }
+
+  /** The person's message was stopped before any member started: it shows as the lead's stopped reply. */
+  private reportStopped(request: SendMessageRequest, wispId: string): void {
+    const { conversationId } = this.context;
+    const { requestId } = request;
+    const messageId = assistantMessageId(circleTurnId(requestId, wispId));
+    const createdAt = new Date().toISOString();
+    this.emit({ type: "assistant_message_started", conversationId, requestId, messageId, createdAt, wispId });
+    this.emit({ type: "assistant_message_cancelled", conversationId, requestId, messageId, wispId });
+  }
+
+  private async routingInput(
+    request: SendMessageRequest,
+    present: ReadonlyArray<ConversationAgentContext>,
+  ): Promise<CircleRoutingInput> {
+    let messages: ReadonlyArray<Message> = [];
+    try {
+      messages = (await this.options.readTranscript(this.context.conversationId)).messages;
+    } catch {
+      // It decides from the message alone.
+    }
+    const setting = present[0]?.circle;
+    return {
+      conversationId: this.context.conversationId,
+      circle: { name: setting?.name ?? "", description: setting?.description ?? "" },
+      members: present.map(({ wispId, name, role, soul }) => ({ id: wispId, name, role, soul })),
+      transcript: messages.flatMap((message) =>
+        (message.type === "incoming" || message.type === "outgoing") &&
+        message.id !== request.requestId &&
+        message.status !== "streaming" &&
+        message.text.trim()
+          ? [{ speaker: this.speakerOf(message), text: message.text.trim() }]
+          : [],
+      ),
+      text: request.text,
+    };
+  }
+
+  /** Who wrote a message, as the members are told. */
+  private speakerOf(message: Message & { type: "incoming" | "outgoing" }): string {
+    if (message.type === "outgoing") return `${this.context.userName ?? "The user"} (the user)`;
+    const member = this.context.members.find(({ wispId }) => wispId === message.authorId);
+    return member?.name ?? message.authorName ?? "A Wisp";
   }
 
   /** Runs a member's turn; resolves whether it answered. */
@@ -209,16 +294,10 @@ export class CircleConversationAgent implements ConversationAgent {
     }
     const unseen = unseenMessages(messages, context.wispId);
     if (!unseen.length || (unseen.length === 1 && unseen[0]!.id === request.requestId)) return request.text;
-    const names = new Map(this.context.members.map(({ wispId, name }) => [wispId, name]));
-    const userName = this.context.userName ?? "The user";
     const lines: string[] = [];
     let length = 0;
     for (const message of [...unseen].reverse()) {
-      const speaker =
-        message.type === "outgoing"
-          ? `${userName} (the user)`
-          : `${names.get(message.authorId ?? "") ?? message.authorName ?? "A Wisp"}`;
-      const line = `${speaker}: ${message.text.trim()}`;
+      const line = `${this.speakerOf(message)}: ${message.text.trim()}`;
       if (length + line.length > MAX_TRANSCRIPT_CHARACTERS) {
         if (!lines.length) lines.push(`${line.slice(0, MAX_TRANSCRIPT_CHARACTERS - 1)}…`);
         break;
@@ -241,6 +320,7 @@ export class CircleConversationAgent implements ConversationAgent {
     if (!round) return;
     round.cancelled = true;
     round.queue = [];
+    round.routing?.abort();
     const current = round.current ? this.members.get(round.current) : undefined;
     await current?.agent.abort();
   }
@@ -294,6 +374,7 @@ export class CircleConversationAgent implements ConversationAgent {
     if (this.disposed) return;
     this.disposed = true;
     if (this.round) this.round.cancelled = true;
+    this.round?.routing?.abort();
     await this.mutation.catch(() => undefined);
     await Promise.allSettled([...this.members].map(([wispId, member]) => this.removeMember(wispId, member)));
     this.emit({ type: "conversation_status", conversationId: this.context.conversationId, status: "disposed" });

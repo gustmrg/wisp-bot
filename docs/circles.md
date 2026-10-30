@@ -25,11 +25,22 @@ label, description, notifications), **Members** (members and lead),
   crown marks the lead on its avatar wherever its replies appear, after its
   name under the circle's name, and beside it in the **Members** list. A
   circle with one member shows no crown.
+- A circle can let a [decision model](models.md#decision-model) choose instead.
+  In its **Members** tab, **Without a mention, who answers** is **Lead** by
+  default; **Decision model** stays disabled until one is chosen in
+  **Settings → AI Model**. The model reads the message, the circle's recent
+  messages, and each member's name, role, and the start of its soul, and the
+  member it is sure of answers. That reply says **Chosen automatically**. When
+  it is not sure, takes over 1.5 seconds, or fails, the lead answers, so a
+  message is never lost or held up by it. Mentions and handoffs never go through
+  the model.
 - Wisps answer one at a time. Each reply finishes before the next Wisp
   starts, and each Wisp sees the replies before its own, labeled with their
   authors. Every reply shows its author's avatar and name, in its color, and
   the activity line names the Wisp working.
 - A Wisp can hand the task to another member by mentioning it in its reply.
+  Wisps are told to do this when a request clearly belongs to another member,
+  so a lead hands over work that is not its own.
   One message from you allows at most three handoffs; then the circle waits
   for you. A Wisp cannot hand off to itself or to a Wisp outside the circle,
   and a Wisp whose turn already failed for your message is skipped.
@@ -60,4 +71,5 @@ own conversation.
 Removing a member forgets that Wisp's history in the circle; adding it again
 starts a new session. A circle's **Usage** tab counts only what each member
 used in that circle, while each Wisp's own usage and the
-[token usage](token-usage.md) dashboard keep counting per Wisp.
+[token usage](token-usage.md) dashboard keep counting per Wisp. What the
+decision model used is a **Decision model** row of its own in both.

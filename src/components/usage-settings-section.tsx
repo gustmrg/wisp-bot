@@ -386,8 +386,9 @@ function modelLabel(model: ModelUsageRow): string {
 function modelActivity(model: ModelUsageRow): string {
   if (model.kind === "compaction") return "summaries of long conversations";
   const parts = [
-    ...(model.turns > 0 || model.auxiliaryCalls === 0 ? [plural(model.turns, "turn")] : []),
+    ...(model.turns > 0 || (model.auxiliaryCalls === 0 && !model.decisionCalls) ? [plural(model.turns, "turn")] : []),
     ...(model.auxiliaryCalls > 0 ? [plural(model.auxiliaryCalls, "image read")] : []),
+    ...(model.decisionCalls ? [plural(model.decisionCalls, "decision")] : []),
   ];
   return parts.join(" · ");
 }

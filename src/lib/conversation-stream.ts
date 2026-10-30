@@ -18,6 +18,8 @@ export interface ConversationRuntimeState {
   activity: Record<string, string | undefined>;
   /** In a circle, the member whose turn is running (ADR 011). */
   turns: Record<string, string | undefined>;
+  /** The member the decision model chose for each circle's current turn. */
+  chosen: Record<string, string | undefined>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
 
@@ -46,6 +48,7 @@ export function createConversationRuntime(
     errors: {},
     activity: {},
     turns: {},
+    chosen: {},
     approvals: groupApprovals(pendingApprovals),
   };
 }
@@ -138,6 +141,9 @@ export function reduceConversationAgentEvent(
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...authorOf(event),
+        ...(event.wispId && next.chosen[event.conversationId] === event.wispId
+          ? { chosenAutomatically: true as const }
+          : {}),
       });
     }
     case "assistant_message_completed":
@@ -164,6 +170,7 @@ export function reduceConversationAgentEvent(
       return {
         ...next,
         turns: { ...next.turns, [event.conversationId]: event.wispId },
+        chosen: { ...next.chosen, [event.conversationId]: event.chosenAutomatically ? event.wispId : undefined },
         activity: { ...next.activity, [event.conversationId]: undefined },
       };
     case "conversation_error": {
@@ -287,6 +294,7 @@ export function reconcileConversationRuntime(
     errors: retain(state.errors),
     activity: retain(state.activity),
     turns: retain(state.turns),
+    chosen: retain(state.chosen),
     approvals: retain(state.approvals),
   };
 }
@@ -406,6 +414,7 @@ function finalizeAssistant(
     status,
     ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
     ...(fallbackModel ? { fallbackModel } : {}),
+    ...(current?.type === "incoming" && current.chosenAutomatically ? { chosenAutomatically: true as const } : {}),
     ...authorOf({ wispId }),
   });
 }

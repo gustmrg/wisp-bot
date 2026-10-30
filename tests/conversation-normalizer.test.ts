@@ -1,8 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import { applyWispChanges, normalizeMessage, normalizeWispChanges } from "../backend/conversation-normalizer.js";
+import {
+  applyWispChanges,
+  normalizeChatChanges,
+  normalizeMessage,
+  normalizeWispChanges,
+} from "../backend/conversation-normalizer.js";
+
+describe("normalizeChatChanges", () => {
+  it("takes who answers only for a circle, and only known values", () => {
+    expect(normalizeChatChanges({ kind: "circle", responder: "auto" })).toEqual({ kind: "circle", responder: "auto" });
+    expect(normalizeChatChanges({ kind: "circle", responder: "lead" })).toEqual({ kind: "circle", responder: "lead" });
+    expect(() => normalizeChatChanges({ kind: "circle", responder: "everyone" })).toThrow();
+    expect(() => normalizeChatChanges({ kind: "wisp", responder: "auto" })).toThrow();
+  });
+});
 
 describe("normalizeMessage", () => {
+  it("keeps that the decision model chose a reply's author, only on a reply", () => {
+    const reply = { id: "r", type: "incoming", text: "Hi", status: "complete", chosenAutomatically: true };
+    expect(normalizeMessage(reply)).toMatchObject({ chosenAutomatically: true });
+    expect(normalizeMessage({ ...reply, type: "outgoing" })).not.toHaveProperty("chosenAutomatically");
+  });
+
   it("keeps why a Wisp's reply failed", () => {
     const error = { code: "model_unavailable", message: "The provider is out of credits." };
     expect(normalizeMessage({ id: "r", type: "incoming", text: "", status: "failed", error })).toMatchObject({

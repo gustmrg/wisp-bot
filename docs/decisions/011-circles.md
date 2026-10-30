@@ -6,7 +6,7 @@
 - Scope: A conversation between the person and several Wisps
 - Related: [ADR 010](010-wisp-entity.md), [ADR 001](001-agent-runtime.md),
   [ADR 008](008-wisp-skills.md), [ADR 023](023-wisp-permissions.md),
-  [ADR 026](026-claude-code-runtime.md), SWE-114, SWE-176
+  [ADR 026](026-claude-code-runtime.md), SWE-114, SWE-176, SWE-242
 
 ## Context
 
@@ -45,8 +45,31 @@ model, grants, and permissions, on Pi or on Claude Code.**
 mentioned Wisps, in the order they are first mentioned. A message without
 mentions goes to the circle's lead. The lead is the first member: choosing a
 lead moves that Wisp to the front, so the member order the store already
-keeps holds it, with no column of its own. A router (C) can come later as a
-lead that delegates.
+keeps holds it, with no column of its own.
+
+**Added for SWE-242: C as a choice of each circle.** A circle's
+`responder: "auto"` lets the decision model
+([ADR 012](012-auxiliary-models.md#decision-model)) choose who answers a message
+that mentions no one. The lead stays the default, and the fallback whenever the
+model is below a probability of 0.6, takes over 1.5 seconds, or fails, so a
+message is never lost or held up by it. Mentions and handoffs never reach the
+model. The choice belongs to the circle because one Wisp is in several; it is
+kept in a table of its own, `circle_responders`, holding a row only for `auto`,
+which older builds ignore and keep.
+
+- **What the model reads:** the circle's name and purpose, up to 4,000 characters
+  of its latest messages, the new message, and for each member its name, its role
+  when it has one, and the start of its soul (up to 800 characters, and 4,000 for
+  all members together). The soul is the one description every Wisp has, since a
+  role is optional, and it says who the Wisp is first.
+- **What the model does not read:** members' IDs, replaced by `member_1` and so on.
+- **`several`, as in OpenMausBot, is left out:** a single choice cannot say which
+  members. That case goes to the lead, which can hand off.
+- **Usage:** the decision runs before any member's session exists, so its calls go
+  to `circle-config/<storage ID>/decision-usage` as session entries, read into a
+  **Decision model** row of the usage reports.
+- **Who decides later:** whoever answers can still hand off, and the prompt now
+  says to when a request clearly belongs to another member.
 
 A mention is `@` and a member's name, matched without regard to case, and
 not followed by a letter or digit, so `@Ada` does not match `@Adam`. The

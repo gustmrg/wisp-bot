@@ -662,6 +662,8 @@ type ConversationAgentEventBody =
       conversationId: string;
       requestId: string;
       wispId: string;
+      /** The decision model chose this member to answer. */
+      chosenAutomatically?: true;
     };
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
@@ -764,6 +766,8 @@ export interface ModelUsageRow {
   turns: number;
   /** Calls the model made as an auxiliary model, such as reading an image for a Wisp. */
   auxiliaryCalls: number;
+  /** Calls the model made to decide who answers in a circle. */
+  decisionCalls?: number;
   totals: SessionReportTotals;
 }
 

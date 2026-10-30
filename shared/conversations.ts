@@ -70,6 +70,9 @@ export interface WispChat extends ChatBase {
   wispId: WispId;
 }
 
+/** Who answers a circle's message that mentions no one: its lead, or the member the decision model chooses. */
+export type CircleResponder = "lead" | "auto";
+
 /** A conversation between the person and several Wisps. */
 export interface CircleChat extends ChatBase {
   kind: "circle";
@@ -78,6 +81,8 @@ export interface CircleChat extends ChatBase {
   description: string;
   /** The Wisps in the circle, in order. The first is its lead (ADR 011). */
   memberIds: ReadonlyArray<WispId>;
+  /** Set when the decision model chooses who answers; absent, the lead does (ADR 011). */
+  responder?: "auto";
 }
 
 /** The member that answers a message mentioning no one: the first (ADR 011). */
@@ -145,6 +150,8 @@ export interface TextMessage extends MessageMetadata {
   job?: JobOrigin;
   /** The fallback model's name, set on a reply it wrote because the Wisp's model failed. */
   fallbackModel?: string;
+  /** Set on a circle's reply from the member the decision model chose to answer. */
+  chosenAutomatically?: true;
   /**
    * Why a failed reply failed. Replies that failed before this was stored
    * carry the reason as their text instead.
@@ -200,7 +207,10 @@ type SharedChatChanges = Partial<Pick<ChatBase, "notifyOnUpdatesEnabled" | "unre
 
 export type WispChatChanges = SharedChatChanges & { kind: "wisp" };
 export type CircleChatChanges = SharedChatChanges &
-  Partial<Pick<CircleChat, "name" | "label" | "description" | "memberIds">> & { kind: "circle" };
+  Partial<Pick<CircleChat, "name" | "label" | "description" | "memberIds">> & {
+    kind: "circle";
+    responder?: CircleResponder;
+  };
 export type ChatChanges = WispChatChanges | CircleChatChanges;
 
 export type ChatCollection = Record<ChatId, Chat>;

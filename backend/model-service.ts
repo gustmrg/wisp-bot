@@ -51,8 +51,9 @@ export interface ModelRuntimeLike {
   getProvider(providerId: string): ReturnType<ModelRuntime["getProvider"]>;
   getModels(providerId?: string): ReturnType<ModelRuntime["getModels"]>;
   getModel(providerId: string, modelId: string): ReturnType<ModelRuntime["getModel"]>;
-  getModelsOfType(type: "classifier", providerId?: string): ReadonlyArray<{ id: string; name: string }>;
-  getModelOfType(type: "classifier", providerId: string, modelId: string): { id: string } | undefined;
+  getModelsOfType: ModelRuntime["getModelsOfType"];
+  getModelOfType: ModelRuntime["getModelOfType"];
+  classify: ModelRuntime["classify"];
   getError(): string | undefined;
   hasConfiguredAuth(providerId: string): boolean;
   setRuntimeApiKey(providerId: string, apiKey: string): Promise<void>;

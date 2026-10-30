@@ -35,6 +35,50 @@ function newWisp(id: string): Wisp {
   return { id, name: id, role: "Test", soul: "Test", appearance: DEFAULT_WISP_APPEARANCE };
 }
 
+describe("ConversationService with a decision model", () => {
+  it("stores that the chosen member's reply was chosen, and tells the circle when the choice changes", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-chosen-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const members: ConversationAgentFactory = {
+      create: (context) =>
+        new FakeConversationAgent(context.conversationId, { responseFor: () => `${context.name} here` }),
+    };
+    const chooseResponder = vi.fn(async () => "nova");
+    let service!: ConversationService;
+    const registry = new AgentRegistry(
+      new CircleAgentFactory(members, {
+        readTranscript: (conversationId) => service.getMessagePage({ conversationId, page: "latest" }),
+        chooseResponder,
+      }),
+      (event) => service.handleAgentEvent(event),
+    );
+    service = new ConversationService(repository, registry);
+    await service.start({ providerId: "test", modelId: "test" });
+    await seedConversations(repository, { atlas: chat("atlas"), nova: chat("nova") }).then(() => service.initialize());
+    await service.create({ ...(chat("crew", true) as CircleChat), memberIds: ["atlas", "nova"] });
+
+    await service.appendMessage("crew", { id: "m1", type: "outgoing", text: "First", status: "queued" });
+    await registry.dispatch({ conversationId: "crew", requestId: "m1", text: "First" });
+    expect(chooseResponder).not.toHaveBeenCalled();
+
+    await service.update("crew", { kind: "circle", responder: "auto" });
+    await service.appendMessage("crew", { id: "m2", type: "outgoing", text: "Second", status: "queued" });
+    await registry.dispatch({ conversationId: "crew", requestId: "m2", text: "Second" });
+    await service.appendMessage("crew", { id: "m3", type: "outgoing", text: "@atlas third", status: "queued" });
+    await registry.dispatch({ conversationId: "crew", requestId: "m3", text: "@atlas third" });
+
+    const { messages } = await service.getMessagePage({ conversationId: "crew", page: "latest" });
+    expect(messages.find(({ id }) => id === "m1:atlas:assistant")).not.toHaveProperty("chosenAutomatically");
+    expect(messages.find(({ id }) => id === "m2:nova:assistant")).toMatchObject({
+      status: "complete",
+      chosenAutomatically: true,
+    });
+    expect(messages.find(({ id }) => id === "m3:atlas:assistant")).not.toHaveProperty("chosenAutomatically");
+    expect(chooseResponder).toHaveBeenCalledOnce();
+    await service.dispose();
+  });
+});
+
 describe("ConversationService", () => {
   it("keeps one managed agent per Wisp and disposes it before archiving its workspace", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-"));

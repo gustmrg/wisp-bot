@@ -56,6 +56,7 @@ export class SessionReportService {
     await this.pricing.ensureFresh();
     const report = createUsageReport(request, new Date(), this.pricing.getUpdatedAt());
     const rows: WispUsageRow[] = [];
+    let decisions: WispUsageRow;
     if (request.conversationId !== undefined) {
       // A circle's members, counting only their sessions in it (ADR 011).
       for (const member of this.repository.getCircleAgentContext(request.conversationId).members) {
@@ -66,6 +67,9 @@ export class SessionReportService {
           }),
         );
       }
+      decisions = await this.usageRow(report, request.conversationId, DECISION_MODEL_ROW, "", {
+        optional: [this.repository.circleDecisionUsageDirectory(request.conversationId)],
+      });
     } else {
       for (const context of this.repository.listAgentContexts()) {
         // The Wisp's sessions in circles count as its own (ADR 011); one not started has no folder yet.
@@ -76,7 +80,12 @@ export class SessionReportService {
           }),
         );
       }
+      decisions = await this.usageRow(report, DECISION_MODEL_ROW_ID, DECISION_MODEL_ROW, "", {
+        optional: this.repository.listCircleDecisionUsageDirectories(),
+      });
     }
+    // A row only once it was used; a Wisp has one either way.
+    if (decisions.totals.totalTokens > 0) rows.push(decisions);
     const models: ModelUsage = new Map();
     for (const row of rows) {
       addTotals(report.totals, row.totals);
@@ -173,6 +182,10 @@ export class SessionReportService {
 }
 
 /** A session folder's history: its `.jsonl` files and its Claude Code fallback sessions. */
+/** The row of what decision models used, which belongs to no Wisp (ADR 011). */
+const DECISION_MODEL_ROW = "Decision model";
+const DECISION_MODEL_ROW_ID = "decision-model";
+
 async function sessionFiles(directory: string, files: ReadonlyArray<string>): Promise<string[]> {
   return [
     ...files.filter((file) => file.endsWith(".jsonl")).map((file) => path.join(directory, file)),
