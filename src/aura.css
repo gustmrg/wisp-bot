@@ -133,7 +133,7 @@
   height: 26px;
 }
 /* On the desktop the Wisp stands alone in the header: no disc, and no ring, since the subline says what it is doing. */
-@media (min-width: 761px) {
+@media (min-width: 761px) and (min-device-width: 600px) and (min-device-height: 600px) {
   .chat-heading .wisp-halo,
   .chat-heading .wisp-halo[data-state="error"] {
     width: 32px;
@@ -883,7 +883,7 @@
 }
 
 /* On the desktop the conversation reads as one centered column, pending messages and composer included. */
-@media (min-width: 761px) {
+@media (min-width: 761px) and (min-device-width: 600px) and (min-device-height: 600px) {
   .chat-panel .chat-messages {
     max-width: 880px;
   }
@@ -935,7 +935,7 @@
   content: " · ";
 }
 /* On a phone the summary needs the room; the open list still counts the steps. */
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-device-width: 599px), (max-device-height: 599px) {
   .message-steps-total {
     display: none;
   }

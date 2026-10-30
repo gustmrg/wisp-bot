@@ -1,11 +1,16 @@
 # Responsive mobile layout
 
-At viewport widths up to 760px the renderer shows one screen at a time: the
-conversation list, an active chat, Wisp settings, or pending approvals. The list includes live
+On a phone, whichever way it is held, and at viewport widths up to 760px, the
+renderer shows one screen at a time: the conversation list, an active chat, Wisp settings, or pending approvals. The list includes live
 Unread and Active filters and a bottom navigation bar. Search, Wisp creation,
 and application settings use full-screen dialogs with their existing backend
-actions and focus management. Wider windows keep the desktop panels. The
+actions and focus management. Wider windows and tablets keep the desktop panels. The
 Electron window can be resized down to 360px wide to use this layout locally.
+
+A phone stays in this layout on its side, without the sidebar, and the keyboard
+does not change the layout. A device counts as a phone when a side of its
+screen is shorter than 600px; see
+[ADR 038](decisions/038-phone-layout-in-any-orientation.md).
 
 ## Each Wisp's color
 
@@ -136,7 +141,8 @@ of its own color, so its glow and accents still show on the dark background.
 
 ## Scope
 
-The mobile layout applies wherever the renderer runs in a narrow viewport:
+The mobile layout applies wherever the renderer runs in a narrow viewport or on
+a phone's screen:
 
 - **Desktop app.** The Electron window switches to it below 761px wide.
 - **Browser app.** A Wisp server serves the same app to browsers through a web
@@ -144,7 +150,8 @@ The mobile layout applies wherever the renderer runs in a narrow viewport:
   one-time code from `wispctl pair` and then uses the Wisps on that server.
   On a phone it can be installed to the home screen and opens full screen.
   See [Use Wisp in a browser or on your phone](remote-server.md#use-wisp-in-a-browser-or-on-your-phone)
-  and [Pair devices](remote-server.md#pair-devices).
+  and [Pair devices](remote-server.md#pair-devices). Phones use the mobile
+  layout whichever way they are held.
 
 Opening the Vite dev server URL in a browser without either still shows the
 bridge-required screen.
