@@ -163,6 +163,7 @@ export function ChatComposer({
   latest.current = { draft, attachments, canSend, autoSend: voice.autoSend };
   useEffect(() => saveComposerDraft(chat.id, { text: draft, attachments }), [chat.id, draft, attachments]);
   const voiceInput = useVoiceInput({
+    conversationId: chat.id,
     deviceId: voice.deviceId,
     providerId: voice.providerId,
     modelId: voice.modelId,
@@ -289,7 +290,7 @@ export function ChatComposer({
     submit(text, attachments);
   }
 
-  function insertTranscript(text: string): void {
+  function insertTranscript(text: string, { review }: { review: boolean }): void {
     const current = latest.current;
     const [start, end] = insertAt.current ?? [current.draft.length, current.draft.length];
     const before = current.draft.slice(0, start);
@@ -297,7 +298,7 @@ export function ChatComposer({
     const lead = before && !/\s$/.test(before) ? " " : "";
     const trail = after && !/^\s/.test(after) ? " " : "";
     const next = `${before}${lead}${text}${trail}${after}`;
-    if (current.autoSend && current.canSend) {
+    if (current.autoSend && current.canSend && !review) {
       submit(next.trim(), current.attachments);
       return;
     }
@@ -694,13 +695,22 @@ export function ChatComposer({
         ) : voiceInput.error ? (
           <ComposerError message={voiceInput.error.message}>
             {voiceInput.error.retryable ? (
-              <button
-                type="button"
-                className="font-medium text-foreground underline underline-offset-2"
-                onClick={voiceInput.retry}
-              >
-                Try again
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline underline-offset-2"
+                  onClick={voiceInput.retry}
+                >
+                  {voiceInput.error.retryLabel ?? "Try again"}
+                </button>
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline underline-offset-2"
+                  onClick={voiceInput.discard}
+                >
+                  Discard
+                </button>
+              </>
             ) : null}
             {voiceInput.error.needsSetup && onConfigureVoice ? (
               <ComposerTooltip message="Set up voice input">

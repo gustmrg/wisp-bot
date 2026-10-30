@@ -91,8 +91,21 @@ same way, and no provider gets the same recording twice.
 
 When transcription fails, the composer keeps the recording: **Try again**
 sends it again to the providers as they are set then, so a key saved or a
-fallback chosen in the meantime is used without recording anew. Starting a new
-recording or leaving the conversation drops the kept one.
+fallback chosen in the meantime is used without recording anew.
+
+### Recordings that stop early
+
+The screen stays on while recording, where the browser allows it. A recording
+that ends before you stop it is kept instead of lost: when the phone is locked
+or the system takes the microphone, when the app reloads after losing its
+server, or when you open another conversation. The conversation's composer
+says so and offers **Transcribe** or **Discard**. Its text waits in the
+composer for review, even with **Send automatically** on. A transcription that
+had not finished is kept the same way, and offers **Try again**.
+
+A kept recording stays with its conversation until it is transcribed or
+discarded, or a new recording starts there. It lives in the app's memory, so
+closing the app drops it, and **Esc** discards a recording in progress.
 
 ## Storage
 

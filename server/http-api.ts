@@ -343,6 +343,8 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
     streams.set(response, deviceId);
     const subscription = hub.subscribe(cursor, writeEvent);
     write("retry: 2000\n\n");
+    // Without this, a client has no cursor until the first event, and a drop before then would make it reload.
+    if (cursor === undefined) write(`id: ${hub.cursor}\n\n`);
     if (subscription.resync) writeResync();
     for (const event of subscription.replay) writeEvent(event);
     const heartbeat = setInterval(() => write(": keep-alive\n\n"), HEARTBEAT_MS);
