@@ -27,13 +27,16 @@ interface RuntimeEventsState {
 /**
  * A debugging view of the raw events a conversation's runtime emits (Pi's
  * agent events or Claude Code's SDK messages), recorded only while its switch
- * is on. The conversation itself works the same either way.
+ * is on. What was recorded stays, in a file where the Wisp runs, until it is
+ * cleared, so it can be copied or saved to the workspace after recording
+ * stops. The conversation itself works the same either way.
  */
 export function RuntimeEventsSection({ conversationId, active = true }: { conversationId: string; active?: boolean }) {
   const [state, setState] = useState<RuntimeEventsState | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState("");
   const lastSequence = useRef<number | undefined>(undefined);
   const shown = useRef(conversationId);
   shown.current = conversationId;
@@ -66,6 +69,7 @@ export function RuntimeEventsSection({ conversationId, active = true }: { conver
   useEffect(() => {
     if (!active) return;
     lastSequence.current = undefined;
+    setSaved("");
     void read.current(conversationId, undefined);
   }, [conversationId, active]);
 
@@ -85,10 +89,11 @@ export function RuntimeEventsSection({ conversationId, active = true }: { conver
     };
   }, [conversationId, active, recording]);
 
-  async function setRecording(next: boolean) {
+  /** Runs a change and shows the log it returns in place of the one shown. */
+  async function change(run: () => ReturnType<typeof window.wisp.clearRuntimeEvents>, failure: string) {
     setBusy(true);
     try {
-      const result = await window.wisp.setRuntimeEventRecording({ conversationId, recording: next });
+      const result = await run();
       if (!result.ok) {
         setError(result.error.message);
         return;
@@ -97,15 +102,38 @@ export function RuntimeEventsSection({ conversationId, active = true }: { conver
       setError("");
       setState(mergeEvents(null, result.value));
     } catch {
-      setError("Could not change the runtime events recording.");
+      setError(failure);
     } finally {
       setBusy(false);
     }
   }
 
+  const setRecording = (next: boolean) =>
+    change(
+      () => window.wisp.setRuntimeEventRecording({ conversationId, recording: next }),
+      "Could not change the runtime events recording.",
+    );
+
   async function clear() {
-    await setRecording(false);
-    await setRecording(true);
+    setSaved("");
+    await change(() => window.wisp.clearRuntimeEvents({ conversationId }), "Could not clear the runtime events.");
+  }
+
+  async function saveToWorkspace() {
+    setBusy(true);
+    try {
+      const result = await window.wisp.saveRuntimeEventsToWorkspace({ conversationId });
+      if (!result.ok) {
+        setError(result.error.message);
+        return;
+      }
+      setError("");
+      setSaved(result.value.path);
+    } catch {
+      setError("Could not save the runtime events to the workspace.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function copy() {
@@ -123,8 +151,8 @@ export function RuntimeEventsSection({ conversationId, active = true }: { conver
           <SettingsRowCopy>
             <SettingsRowTitle>Record runtime events</SettingsRowTitle>
             <SettingsRowDescription>
-              For debugging: keeps the raw events of this conversation's runtime until you turn it off or the app
-              restarts
+              For debugging: saves the raw events of this conversation's runtime to a file where its Wisps run, until
+              you clear them
             </SettingsRowDescription>
           </SettingsRowCopy>
           <ToggleSwitch
@@ -140,7 +168,7 @@ export function RuntimeEventsSection({ conversationId, active = true }: { conver
           {error}
         </p>
       ) : null}
-      {recording ? (
+      {recording || events.length ? (
         <div className="mt-2 flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <p role="status" className="m-0 mr-auto text-xs text-dim">
@@ -155,11 +183,25 @@ export function RuntimeEventsSection({ conversationId, active = true }: { conver
               size="sm"
               variant="outline"
               disabled={busy || !events.length}
+              onClick={() => void saveToWorkspace()}
+            >
+              Save to workspace
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy || !events.length}
               onClick={() => void clear()}
             >
               Clear
             </Button>
           </div>
+          {saved ? (
+            <p role="status" className="m-0 text-xs text-dim">
+              Saved to <span className="font-mono">{saved}</span>. Ask a Wisp here to read it.
+            </p>
+          ) : null}
           {events.length ? (
             <ol
               aria-label="Runtime events"

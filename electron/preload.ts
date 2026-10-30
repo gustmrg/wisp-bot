@@ -87,6 +87,8 @@ const WISP_IPC_CHANNELS = {
   getUsageReport: "wisp:usage:get",
   getRuntimeEvents: "wisp:runtime-events:get",
   setRuntimeEventRecording: "wisp:runtime-events:set-recording",
+  clearRuntimeEvents: "wisp:runtime-events:clear",
+  saveRuntimeEventsToWorkspace: "wisp:runtime-events:save-to-workspace",
   getToolPolicy: "wisp:tool-policy:get",
   getUserProfile: "wisp:profile:get",
   saveUserProfile: "wisp:profile:save",
@@ -272,6 +274,9 @@ const wispApi: WispApi = {
   getUsageReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUsageReport, request),
   getRuntimeEvents: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getRuntimeEvents, request),
   setRuntimeEventRecording: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setRuntimeEventRecording, request),
+  clearRuntimeEvents: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.clearRuntimeEvents, request),
+  saveRuntimeEventsToWorkspace: (request) =>
+    ipcRenderer.invoke(WISP_IPC_CHANNELS.saveRuntimeEventsToWorkspace, request),
   getUserProfile: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUserProfile),
   saveUserProfile: (profile) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveUserProfile, profile),
   setUserTimeZone: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setUserTimeZone, request),

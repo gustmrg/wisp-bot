@@ -79,6 +79,8 @@ const REQUIRED_WISP_METHODS = [
   "getUsageReport",
   "getRuntimeEvents",
   "setRuntimeEventRecording",
+  "clearRuntimeEvents",
+  "saveRuntimeEventsToWorkspace",
   "getUserProfile",
   "saveUserProfile",
   "setUserTimeZone",

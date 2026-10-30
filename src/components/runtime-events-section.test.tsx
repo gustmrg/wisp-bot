@@ -21,7 +21,10 @@ const view = (recording: boolean, events: RuntimeEventEntry[] = []): RuntimeEven
   dropped: false,
 });
 
-function exposeApi(api: Pick<WispApi, "getRuntimeEvents" | "setRuntimeEventRecording">) {
+function exposeApi(
+  api: Pick<WispApi, "getRuntimeEvents" | "setRuntimeEventRecording"> &
+    Partial<Pick<WispApi, "clearRuntimeEvents" | "saveRuntimeEventsToWorkspace">>,
+) {
   Object.defineProperty(window, "wisp", { configurable: true, value: api });
 }
 
@@ -56,7 +59,10 @@ describe("RuntimeEventsSection", () => {
       view(true, [event(2, "message_update")]),
     ];
     const getRuntimeEvents = vi.fn(async () => ({ ok: true as const, value: reads.shift() ?? view(true) }));
-    const setRuntimeEventRecording = vi.fn(async () => ({ ok: true as const, value: view(false) }));
+    const setRuntimeEventRecording = vi.fn(async () => ({
+      ok: true as const,
+      value: view(false, [event(1, "agent_start"), event(2, "message_update")]),
+    }));
     exposeApi({ getRuntimeEvents, setRuntimeEventRecording });
     const user = userEvent.setup();
     render(<RuntimeEventsSection conversationId="wisp-1" />);
@@ -78,9 +84,39 @@ describe("RuntimeEventsSection", () => {
     ]);
     expect(await screen.findByRole("button", { name: "Copied" })).toBeVisible();
 
+    // Turning recording off keeps what was recorded.
     await user.click(screen.getByRole("switch", { name: "Record runtime events" }));
     expect(setRuntimeEventRecording).toHaveBeenCalledWith({ conversationId: "wisp-1", recording: false });
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "Record runtime events" })).toHaveAttribute("aria-checked", "false"),
+    );
+    expect(screen.getByRole("list", { name: "Runtime events" })).toBeVisible();
+  });
+
+  it("saves the events to the workspace and clears them", async () => {
+    const getRuntimeEvents = vi.fn(async () => ({ ok: true as const, value: view(false, [event(1, "agent_start")]) }));
+    const saveRuntimeEventsToWorkspace = vi.fn(async () => ({
+      ok: true as const,
+      value: { path: "inbox/runtime-events.jsonl", size: 120 },
+    }));
+    const clearRuntimeEvents = vi.fn(async () => ({ ok: true as const, value: view(false) }));
+    exposeApi({
+      getRuntimeEvents,
+      setRuntimeEventRecording: vi.fn(),
+      saveRuntimeEventsToWorkspace,
+      clearRuntimeEvents,
+    });
+    const user = userEvent.setup();
+    render(<RuntimeEventsSection conversationId="wisp-1" />);
+
+    await user.click(await screen.findByRole("button", { name: "Save to workspace" }));
+    expect(saveRuntimeEventsToWorkspace).toHaveBeenCalledWith({ conversationId: "wisp-1" });
+    expect(await screen.findByText("inbox/runtime-events.jsonl")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(clearRuntimeEvents).toHaveBeenCalledWith({ conversationId: "wisp-1" });
     await waitFor(() => expect(screen.queryByRole("list", { name: "Runtime events" })).not.toBeInTheDocument());
+    expect(screen.queryByText("inbox/runtime-events.jsonl")).not.toBeInTheDocument();
   });
 
   it("does not ask for events while its tab is hidden", () => {

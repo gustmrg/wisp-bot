@@ -89,6 +89,8 @@ export interface StorageServiceOptions {
   freeDiskBytes?: (directory: string) => Promise<number>;
   /** Where measurements are kept between runs, so Storage opens without measuring every file again. */
   measurementsFile?: string;
+  /** Bytes the recorded runtime events take; unset, none are counted. */
+  measureRuntimeEvents?: () => Promise<number>;
   now?: () => Date;
 }
 
@@ -182,7 +184,11 @@ export class StorageService {
       this.archiveMeasurements.clear();
     }
     const before = this.measurementsKey();
-    const [workspaces, archives] = await Promise.all([this.measureWorkspaces(), this.measureArchives()]);
+    const [workspaces, archives, runtimeEventBytes] = await Promise.all([
+      this.measureWorkspaces(),
+      this.measureArchives(),
+      this.options.measureRuntimeEvents?.().catch(() => 0) ?? 0,
+    ]);
     if (this.measurementsKey() !== before) this.save();
     const times = [...workspaces, ...archives].map(({ measuredAt }) => measuredAt);
     return {
@@ -191,6 +197,7 @@ export class StorageService {
       workspaceBytes: workspaces.reduce((sum, { usedBytes }) => sum + usedBytes, 0),
       archives: archives.map(({ measuredAt: _measuredAt, ...archive }) => archive),
       archiveBytes: archives.reduce((sum, { usedBytes }) => sum + usedBytes, 0),
+      runtimeEventBytes,
       partial: [...workspaces, ...archives].some(({ partial }) => partial),
     };
   }

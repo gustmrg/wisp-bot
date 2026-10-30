@@ -185,6 +185,8 @@ export const WISP_IPC_CHANNELS = {
   getUsageReport: "wisp:usage:get",
   getRuntimeEvents: "wisp:runtime-events:get",
   setRuntimeEventRecording: "wisp:runtime-events:set-recording",
+  clearRuntimeEvents: "wisp:runtime-events:clear",
+  saveRuntimeEventsToWorkspace: "wisp:runtime-events:save-to-workspace",
   getToolPolicy: "wisp:tool-policy:get",
   getUserProfile: "wisp:profile:get",
   saveUserProfile: "wisp:profile:save",
@@ -923,10 +925,18 @@ export interface WispApi {
   getRuntimeEvents(
     request: import("./runtime-events.js").RuntimeEventLogRequest,
   ): Promise<BackendResult<import("./runtime-events.js").RuntimeEventLogView>>;
-  /** Starts recording a conversation's runtime events, or stops and forgets them. */
+  /** Starts or stops recording a conversation's runtime events; stopping keeps what was recorded. */
   setRuntimeEventRecording(
     request: import("./runtime-events.js").RuntimeEventRecordingRequest,
   ): Promise<BackendResult<import("./runtime-events.js").RuntimeEventLogView>>;
+  /** Deletes a conversation's recorded runtime events, file included. */
+  clearRuntimeEvents(
+    request: ConversationRequest,
+  ): Promise<BackendResult<import("./runtime-events.js").RuntimeEventLogView>>;
+  /** Copies a conversation's runtime events file into its workspace inbox, where its Wisps can read it. */
+  saveRuntimeEventsToWorkspace(
+    request: ConversationRequest,
+  ): Promise<BackendResult<import("./runtime-events.js").SavedRuntimeEvents>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
   getUserProfile(): Promise<BackendResult<import("./user-profile.js").UserProfile>>;
   saveUserProfile(

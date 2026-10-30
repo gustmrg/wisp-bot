@@ -75,6 +75,8 @@ export const RUNTIME_OPERATIONS = [
   "getUsageReport",
   "getRuntimeEvents",
   "setRuntimeEventRecording",
+  "clearRuntimeEvents",
+  "saveRuntimeEventsToWorkspace",
   "getUserProfile",
   "saveUserProfile",
   "setUserTimeZone",

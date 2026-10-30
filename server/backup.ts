@@ -28,7 +28,8 @@ const MAX_HEADER_BYTES = 64 * 1024;
 const ROOTS = ["backend", "server.sqlite", "local-server-key.json"];
 /** SQLite databases, copied through SQLite's backup API so a running server's copy is consistent. */
 const DATABASES = new Set(["server.sqlite", "backend/conversations.sqlite"]);
-const SKIPPED_DIRECTORIES = new Set(["backend/logs"]);
+/** Logs, the runtime events recorded for debugging among them. */
+const SKIPPED_DIRECTORIES = new Set(["backend/logs", "backend/runtime-events"]);
 /** Each Wisp's cache of image transcriptions: text from the user's documents that can be rebuilt. */
 const SKIPPED_DIRECTORY_PATTERNS = [/^backend\/wisp-config\/[^/]+\/transcription-cache$/u];
 /** Copies the app keeps before upgrading a database, for going back on this computer only. */

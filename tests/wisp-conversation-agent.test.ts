@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelSelection, ThinkingLevel } from "../shared/contracts.js";
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
@@ -631,9 +635,19 @@ it("tells the model the user's local time before each message they send", async 
 });
 
 describe("WispConversationAgent runtime events", () => {
+  const directories: string[] = [];
+  const runtimeEventLog = async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-agent-runtime-events-"));
+    directories.push(directory);
+    return new RuntimeEventLog({ directory });
+  };
+  afterEach(async () => {
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  });
+
   it("records a Pi session's own events while its conversation records", async () => {
     const sessions = new Map<string, MockPiSession>();
-    const runtimeEvents = new RuntimeEventLog();
+    const runtimeEvents = await runtimeEventLog();
     const agent = new WispConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0, runtimeEvents });
     await agent.start();
     await agent.applyModel(selection());
@@ -642,15 +656,15 @@ describe("WispConversationAgent runtime events", () => {
     await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
     sessions.get("one")?.finishPrompt();
     await first;
-    expect(runtimeEvents.read("one").events).toEqual([]);
+    expect((await runtimeEvents.read("one")).events).toEqual([]);
 
-    runtimeEvents.setRecording("one", true);
+    await runtimeEvents.setRecording("one", true);
     const second = agent.send({ conversationId: "one", requestId: "r2", text: "Recorded" });
     await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
     sessions.get("one")?.finishPrompt();
     await second;
 
-    const events = runtimeEvents.read("one").events;
+    const events = (await runtimeEvents.read("one")).events;
     expect(events.map(({ type }) => type)).toEqual(["agent_start", "message_start", "message_update", "agent_settled"]);
     expect(events.every(({ runtime, wispId }) => runtime === "pi" && wispId === "one")).toBe(true);
     expect(events[2]?.payload).toEqual({
@@ -673,8 +687,8 @@ describe("WispConversationAgent runtime events", () => {
       }
     }
     const sessions: RawSession[] = [];
-    const runtimeEvents = new RuntimeEventLog();
-    runtimeEvents.setRecording("one", true);
+    const runtimeEvents = await runtimeEventLog();
+    await runtimeEvents.setRecording("one", true);
     const factory: RuntimeSessionFactory = {
       ...factoryFor(new Map()),
       create: async (agentContext) => {
@@ -691,7 +705,7 @@ describe("WispConversationAgent runtime events", () => {
     sessions[0]?.finishPrompt();
     await sent;
 
-    expect(runtimeEvents.read("one").events).toMatchObject([
+    expect((await runtimeEvents.read("one")).events).toMatchObject([
       { runtime: "claude-code", type: "stream_event", payload: { type: "stream_event", text: "Hello" } },
     ]);
     await agent.dispose();

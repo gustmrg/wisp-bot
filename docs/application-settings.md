@@ -105,8 +105,10 @@ the Wisp's or circle's **Workspace** settings) and lists the archives of
 deleted Wisps and circles, which can be deleted permanently. A workspace set
 to **Unlimited** shows what it holds and the free space on its disk instead of
 a share of its size, and the summary counts it apart from the allotted space;
-see [security](security.md#tool-authorization) for how its disk limits it. Sizes are the
-files' logical lengths, not the space allocated on disk.
+see [security](security.md#tool-authorization) for how its disk limits it. The summary
+also shows what [recorded runtime events](token-usage.md#runtime-events) take,
+when there are any. Sizes are the files' logical lengths, not the space
+allocated on disk.
 
 Storage keeps each workspace's last measurement, also across restarts in
 `backend/storage-measurements.json`, so opening it measures only what changed:

@@ -63,6 +63,16 @@ export class McpSecretStore {
     return secret?.type === "oauth" && secret.accessToken !== "";
   }
 
+  /** Every saved header value and token, so the runtime events log can mask them; empty when none can be read. */
+  async secretValues(): Promise<string[]> {
+    const secrets = await this.readAll().catch(() => ({}) as SecretMap);
+    return Object.values(secrets).flatMap((secret) =>
+      secret.type === "header"
+        ? [secret.headerValue]
+        : [secret.accessToken, secret.refreshToken ?? "", secret.clientRegistration?.clientSecret ?? ""],
+    );
+  }
+
   async setHeader(serverId: string, headerName: string, headerValue: string): Promise<void> {
     await this.modify(serverId, () => ({ type: "header", headerName, headerValue }));
   }

@@ -1,21 +1,49 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-import { debugPayload, RuntimeEventLog } from "../backend/runtime-event-log.js";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { debugPayload, RuntimeEventLog, type RuntimeEventLogOptions } from "../backend/runtime-event-log.js";
 
 const AT = new Date("2026-10-30T12:00:00.000Z");
+const directories: string[] = [];
+
+async function createLog(options: Partial<RuntimeEventLogOptions> = {}) {
+  const directory = options.directory ?? (await mkdtemp(path.join(os.tmpdir(), "wisp-runtime-events-")));
+  directories.push(directory);
+  const log = new RuntimeEventLog({ now: () => AT, ...options, directory });
+  await log.load();
+  return { log, directory };
+}
+
+const lines = async (file: string) =>
+  (await readFile(file, "utf8"))
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { sequence: number; type: string; payload: unknown });
+
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
 
 describe("RuntimeEventLog", () => {
-  it("keeps events only for a conversation that records, and forgets them when recording stops", () => {
-    const log = new RuntimeEventLog({ now: () => AT });
+  it("keeps events only for a conversation that records, in a file of its own", async () => {
+    const { log, directory } = await createLog();
     log.record("one", "pi", { type: "agent_start" });
-    expect(log.read("one")).toEqual({ conversationId: "one", recording: false, events: [], dropped: false });
+    await expect(log.read("one")).resolves.toEqual({
+      conversationId: "one",
+      recording: false,
+      events: [],
+      dropped: false,
+    });
 
-    expect(log.setRecording("one", true)).toMatchObject({ recording: true, events: [] });
+    await expect(log.setRecording("one", true)).resolves.toMatchObject({ recording: true, events: [] });
     log.record("one", "pi", { type: "agent_start" }, "wisp-1");
     log.record("two", "pi", { type: "agent_start" });
     log.record("one", "claude-code", { kind: "no type" });
 
-    expect(log.read("one").events).toEqual([
+    const expected = [
       {
         sequence: 1,
         wispId: "wisp-1",
@@ -31,28 +59,110 @@ describe("RuntimeEventLog", () => {
         receivedAt: AT.toISOString(),
         payload: { kind: "no type" },
       },
-    ]);
-    expect(log.read("two").recording).toBe(false);
+    ];
+    expect((await log.read("one")).events).toEqual(expected);
+    expect((await log.read("two")).recording).toBe(false);
+    expect(await lines(path.join(directory, "one.jsonl"))).toEqual(expected);
+    expect((await readdir(directory)).sort()).toEqual(["one.jsonl", "recording.json"]);
 
-    expect(log.setRecording("one", false)).toMatchObject({ recording: false, events: [] });
+    // Turning it off stops recording and keeps what was recorded.
+    await expect(log.setRecording("one", false)).resolves.toMatchObject({ recording: false, events: expected });
+    log.record("one", "pi", { type: "agent_end" });
+    expect((await log.read("one")).events).toHaveLength(2);
     expect(log.isRecording("one")).toBe(false);
   });
 
-  it("returns only the events after a sequence, and keeps the newest within its limit", () => {
-    const log = new RuntimeEventLog({ maxEvents: 3 });
-    log.setRecording("one", true);
+  it("goes on recording after a restart, with the events and sequences it had", async () => {
+    const first = await createLog();
+    await first.log.setRecording("one", true);
+    log3(first.log);
+    await first.log.flush();
+
+    const { log } = await createLog({ directory: first.directory });
+    expect(log.isRecording("one")).toBe(true);
+    log.record("one", "pi", { type: "event-4" });
+    const view = await log.read("one");
+    expect(view.recording).toBe(true);
+    expect(view.events.map(({ sequence, type }) => [sequence, type])).toEqual([
+      [1, "event-1"],
+      [2, "event-2"],
+      [3, "event-3"],
+      [4, "event-4"],
+    ]);
+    expect((await log.read("one", 3)).events.map(({ type }) => type)).toEqual(["event-4"]);
+  });
+
+  it("keeps the newest events for the view and rotates the file at its size", async () => {
+    const { log, directory } = await createLog({ maxEvents: 3, maxFileBytes: 400 });
+    await log.setRecording("one", true);
     for (let index = 1; index <= 5; index++) log.record("one", "fake", { type: `event-${index}` });
 
-    const view = log.read("one");
+    const view = await log.read("one");
     expect(view.events.map(({ type }) => type)).toEqual(["event-3", "event-4", "event-5"]);
     expect(view.dropped).toBe(true);
-    expect(log.read("one", 4).events.map(({ sequence }) => sequence)).toEqual([5]);
-    expect(log.read("one", 5).events).toEqual([]);
+    expect((await log.read("one", 4)).events.map(({ sequence }) => sequence)).toEqual([5]);
+    expect((await log.read("one", 5)).events).toEqual([]);
 
-    log.forget("one");
-    expect(log.isRecording("one")).toBe(false);
+    // Each line is about 110 bytes: the fourth would pass 400, so the first three moved to `.1`.
+    const sequences = async (name: string) => (await lines(path.join(directory, name))).map(({ sequence }) => sequence);
+    expect(await sequences("one.jsonl.1")).toEqual([1, 2, 3]);
+    expect(await sequences("one.jsonl")).toEqual([4, 5]);
+    const contents = (await log.contents("one")).toString("utf8").split("\n").filter(Boolean);
+    expect(contents.map((line) => (JSON.parse(line) as { sequence: number }).sequence)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("masks the values of saved credentials wherever they appear", async () => {
+    let secrets = ["sk-saved-model-key", "short"];
+    const { log } = await createLog({ secretValues: async () => secrets });
+    await log.setRecording("one", true);
+    log.record("one", "pi", {
+      type: "message_update",
+      text: `Using sk-saved-model-key and short words, then ${"x".repeat(1_990)}sk-saved-model-key`,
+      nested: [{ header: "Bearer sk-saved-model-key" }],
+    });
+    const [event] = (await log.read("one")).events;
+    expect(JSON.stringify(event)).not.toContain("sk-saved-model-key");
+    expect(event?.payload).toMatchObject({
+      text: expect.stringMatching(/^Using \[redacted\] and short words/),
+      nested: [{ header: "Bearer [redacted]" }],
+    });
+
+    // A credential saved later is masked once recording starts again.
+    secrets = ["oauth-token-saved-later"];
+    await log.setRecording("one", false);
+    await log.setRecording("one", true);
+    log.record("one", "claude-code", { type: "system", value: "oauth-token-saved-later" });
+    expect((await log.read("one")).events.at(-1)?.payload).toEqual({ type: "system", value: "[redacted]" });
+  });
+
+  it("clears a conversation's file, and deletes those of conversations that are gone", async () => {
+    const { log, directory } = await createLog();
+    await log.setRecording("one", true);
+    await log.setRecording("two", true);
+    log.record("one", "pi", { type: "agent_start" });
+    log.record("two", "pi", { type: "agent_start" });
+    await writeFile(path.join(directory, "gone.jsonl.1"), "{}\n");
+    await log.flush();
+    expect(await log.measure()).toBeGreaterThan(0);
+
+    await expect(log.clear("one")).resolves.toMatchObject({ recording: true, events: [] });
+    expect((await readdir(directory)).sort()).toEqual(["gone.jsonl.1", "recording.json", "two.jsonl"]);
+    log.record("one", "pi", { type: "agent_end" });
+    expect((await log.read("one")).events.map(({ sequence }) => sequence)).toEqual([2]);
+
+    await log.reconcile(new Set(["one"]));
+    expect((await readdir(directory)).sort()).toEqual(["one.jsonl", "recording.json"]);
+    expect(log.isRecording("two")).toBe(false);
+    expect(JSON.parse(await readFile(path.join(directory, "recording.json"), "utf8"))).toEqual({
+      schemaVersion: 1,
+      conversations: ["one"],
+    });
   });
 });
+
+function log3(log: RuntimeEventLog) {
+  for (let index = 1; index <= 3; index++) log.record("one", "pi", { type: `event-${index}` });
+}
 
 describe("debugPayload", () => {
   it("removes credentials wherever they appear", () => {

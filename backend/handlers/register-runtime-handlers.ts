@@ -35,7 +35,15 @@ export function registerRuntimeHandlers(
       conversations.applyModel(selection),
     ),
     registerSessionReportHandlers(router, runtime.sessionReports, authorizeSender),
-    registerRuntimeEventHandlers(router, runtime.runtimeEvents, (id) => runtime.registry.has(id), authorizeSender),
+    registerRuntimeEventHandlers(
+      router,
+      runtime.runtimeEvents,
+      {
+        isRunning: (id) => runtime.registry.has(id),
+        receive: (id, file, content) => runtime.workspace.receive(id, file, content),
+      },
+      authorizeSender,
+    ),
     registerWorkspaceHandlers(router, runtime.workspace, authorizeSender),
     registerExecutionHandlers(router, runtime.execution, runtime.workspace, authorizeSender),
     registerStorageHandlers(router, runtime.storage, authorizeSender),
