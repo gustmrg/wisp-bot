@@ -35,6 +35,7 @@ import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { formatShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
+import { ConnectionSwitcher } from "@/features/connections/connection-switcher";
 import { cn } from "@/lib/utils";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 
@@ -70,6 +71,8 @@ interface SidebarProps {
   onCreateCircle?: (circle: NewCircle) => Promise<boolean>;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
+  /** Opens the connections in Settings; without it, Settings opens where it does for the profile. */
+  onManageConnections?: () => void;
   /** Opens the mobile Approvals tab. */
   onOpenApprovals?: () => void;
   /** Answers an approval from the mobile list; without it the list does not offer to. */
@@ -118,6 +121,7 @@ function Sidebar({
   onCreateCircle,
   onOpenSearch,
   onOpenSettings,
+  onManageConnections,
   onOpenApprovals,
   onResolveApproval,
   onResizeStart,
@@ -438,22 +442,25 @@ function Sidebar({
             approvalCount={allChatIds.reduce((count, id) => count + (approvals[id]?.length ?? 0), 0)}
           />
         ) : (
-          <button
-            className={cn(
-              "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-muted",
-              "mt-[5px] mx-3 mb-[9px]",
-              rail && "mx-auto",
-            )}
-            type="button"
-            aria-label="Open user settings"
-            title="User settings"
-            onClick={onOpenSettings}
-          >
-            <span className={profileAvatar}>
-              {currentUser.initials || <UserIcon aria-hidden="true" className="size-3.5" />}
-            </span>
-            {rail ? null : <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>}
-          </button>
+          <>
+            <ConnectionSwitcher rail={rail} onManage={onManageConnections ?? onOpenSettings} />
+            <button
+              className={cn(
+                "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-muted",
+                "mt-[5px] mx-3 mb-[9px]",
+                rail && "mx-auto",
+              )}
+              type="button"
+              aria-label="Open user settings"
+              title="User settings"
+              onClick={onOpenSettings}
+            >
+              <span className={profileAvatar}>
+                {currentUser.initials || <UserIcon aria-hidden="true" className="size-3.5" />}
+              </span>
+              {rail ? null : <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>}
+            </button>
+          </>
         )}
 
         {mobile || rail ? null : (

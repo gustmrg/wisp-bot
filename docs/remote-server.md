@@ -291,6 +291,14 @@ the browser app answers 404 until you set `WISP_WEB: "1"`.
 
 ## Connect the desktop app
 
+With more than one connection saved, the bottom of the sidebar shows the one in
+use and how it is doing. Selecting it lists the others, and selecting one
+switches to it right away, with **Manage connections** going to **Settings →
+Connections**. Switching away from **This computer** stops its Wisps once they
+finish what they are doing, unless [remote
+access](#remote-access-to-this-computer) is on, and the list says so. With a
+single connection nothing shows.
+
 A new installation first asks **Where should your Wisps run?**: **On this
 computer** (recommended) or **On a Wisp server**. Nothing runs until one is
 chosen. Installations that already have Wisps on this computer keep using it.
