@@ -81,6 +81,8 @@ export interface StorageSummary {
   workspaceBytes: number;
   archives: ReadonlyArray<StorageArchive>;
   archiveBytes: number;
+  /** What the recorded runtime events take; absent from servers older than the runtime events view. */
+  runtimeEventBytes?: number;
   partial: boolean;
 }
 

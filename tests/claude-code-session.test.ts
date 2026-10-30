@@ -184,6 +184,19 @@ describe("ClaudeCodeSession", () => {
     expect(session.getActiveToolNames()).toEqual(["read", "run_command"]);
   });
 
+  it("hands each SDK message, as it arrives, to the runtime events listeners", async () => {
+    const { session } = createSession();
+    const raw: unknown[] = [];
+    const unsubscribe = session.subscribeRuntimeEvents((message) => raw.push(message));
+
+    await session.prompt("hello");
+    expect(raw).toEqual([delta("echo:hello"), result()]);
+
+    unsubscribe();
+    await session.prompt("again");
+    expect(raw).toHaveLength(2);
+  });
+
   it("reports a Wisp tool's progress and ends its call with the tool's own result", async () => {
     const toolUse = {
       type: "assistant",

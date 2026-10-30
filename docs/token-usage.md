@@ -8,6 +8,43 @@ retry notices are recorded for sessions used by this version of Wisp; older
 sessions may not contain them. Tool argument values, file contents, prompts,
 and raw provider error details are excluded from reports.
 
+## Runtime events
+
+For debugging, the **Usage** tab of a Wisp or a circle can record the raw
+events of the conversation's runtime: Pi's agent events, or the messages the
+Claude Code SDK yields. Turn on **Record runtime events**, send a message, and
+each event of the reply appears with its time, type and payload.
+
+- Recording is off by default and is set per conversation. The conversation
+  works the same either way. The switch is saved: after a restart, a
+  conversation that was recording goes on recording.
+- Events are written to `backend/runtime-events/<conversation ID>.jsonl` in the
+  data directory of the computer or server that runs the Wisp, one JSON object
+  per line. At 5 MB the file moves to `<conversation ID>.jsonl.1`, replacing the
+  previous one, and a new file starts. The view shows the latest 1,000 events.
+- Turning recording off keeps what was recorded. **Clear** deletes the
+  conversation's files, and deleting the Wisp or circle deletes them too. What
+  they take shows in **Settings → Storage**.
+- Each environment keeps its own events: nothing is copied between this
+  computer and a Wisp server. Like other logs, they are left out of a
+  server's backups.
+
+To read the events elsewhere:
+
+- **Copy events** copies the events in the view as JSON, to paste into a bug
+  report or a chat.
+- **Save to workspace** copies the conversation's files into the workspace's
+  `inbox/` as `runtime-events.jsonl`. A Wisp only sees its own workspace, so
+  this is how you can ask it to read the file and explain an error.
+- An agent on the same machine, such as Claude Code pointed at the data
+  directory, can read the `.jsonl` files directly.
+
+Long texts are shortened, and values under keys such as `apiKey`,
+`authorization` or `token` are replaced with `[redacted]`, as are the values of
+the API keys, tokens and header values Wisp keeps for models, plugins and MCP
+servers, wherever they appear. Payloads still hold prompts, replies and tool
+results, so read a copy before sharing it.
+
 ## Token usage dashboard
 
 Open **Settings → Token usage** for totals and a breakdown by Wisp over the

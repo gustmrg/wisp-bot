@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FormStatus } from "@/components/ui/form-status";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { RuntimeEventsSection } from "@/components/runtime-events-section";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UsageReportPanel } from "@/components/usage-settings-section";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
@@ -219,7 +220,10 @@ export function CircleDetails({
         className={cn("min-h-0 overflow-y-auto p-3.5", tab === "usage" && slideClass)}
       >
         {visited.has("usage") ? (
-          <UsageReportPanel conversationId={chat.id} wisps={chat.members} active={tab === "usage"} />
+          <>
+            <UsageReportPanel conversationId={chat.id} wisps={chat.members} active={tab === "usage"} />
+            <RuntimeEventsSection conversationId={chat.id} active={tab === "usage"} />
+          </>
         ) : null}
       </TabsContent>
       {changed ? (

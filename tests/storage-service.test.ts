@@ -23,6 +23,7 @@ async function setup(
     freeDiskBytes?: (directory: string) => Promise<number>;
     root?: string;
     measurementsFile?: boolean;
+    measureRuntimeEvents?: () => Promise<number>;
     now?: () => Date;
   } = {},
 ) {
@@ -54,6 +55,7 @@ async function setup(
     ...(options.resolveQuota ? { resolveQuota: options.resolveQuota } : {}),
     freeDiskBytes: options.freeDiskBytes ?? (async () => 0),
     ...(options.measurementsFile ? { measurementsFile: path.join(root, "storage-measurements.json") } : {}),
+    ...(options.measureRuntimeEvents ? { measureRuntimeEvents: options.measureRuntimeEvents } : {}),
     ...(options.now ? { now: options.now } : {}),
   });
   return { root, atlas, circle, archive, service };
@@ -79,7 +81,15 @@ describe("StorageService summary", () => {
     expect(summary.workspaceBytes).toBe(550);
     expect(summary.archives).toMatchObject([{ id: "old-1", usedBytes: 7, fileCount: 1, partial: false }]);
     expect(summary.archiveBytes).toBe(7);
+    expect(summary.runtimeEventBytes).toBe(0);
     expect(summary.partial).toBe(false);
+  });
+
+  it("counts the recorded runtime events apart from the workspaces", async () => {
+    const { service } = await setup({ measureRuntimeEvents: async () => 2_048 });
+    const summary = await service.getSummary();
+    expect(summary.runtimeEventBytes).toBe(2_048);
+    expect(summary.workspaceBytes).toBe(0);
   });
 
   it("names archives from their manifest, and falls back to the folder for older ones", async () => {

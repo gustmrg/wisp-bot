@@ -1,4 +1,5 @@
 import type { JobRequest, SetJobMemoryRequest } from "../shared/jobs.js";
+import type { RuntimeEventLogRequest, RuntimeEventRecordingRequest } from "../shared/runtime-events.js";
 import { isContextPolicy, type ContextRequest } from "../shared/context-policy.js";
 import {
   isThinkingLevel,
@@ -150,6 +151,21 @@ export function parseImportSkillRequest(value: unknown): ImportSkillRequest {
 export function parseConversationRequest(value: unknown): ConversationRequest {
   const request = asRecord(value);
   return { conversationId: parseId(request.conversationId) };
+}
+
+export function parseRuntimeEventLogRequest(value: unknown): RuntimeEventLogRequest {
+  const request = asRecord(value);
+  const { after } = request;
+  if (after !== undefined && (typeof after !== "number" || !Number.isSafeInteger(after) || after < 0)) {
+    throw invalidRequest();
+  }
+  return { conversationId: parseId(request.conversationId), ...(after !== undefined ? { after } : {}) };
+}
+
+export function parseRuntimeEventRecordingRequest(value: unknown): RuntimeEventRecordingRequest {
+  const request = asRecord(value);
+  if (typeof request.recording !== "boolean") throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), recording: request.recording };
 }
 
 export function parseSearchWorkspaceFilesRequest(value: unknown): SearchWorkspaceFilesRequest {

@@ -231,6 +231,11 @@ export class ModelService {
     }
   }
 
+  /** The saved model and voice keys and tokens, which the runtime events log masks. */
+  async secretValues(): Promise<string[]> {
+    return (await Promise.all([this.credentials.secretValues(), this.voiceCredentials.secretValues()])).flat();
+  }
+
   /** Stops an in-flight network refresh and sign-in; used on shutdown. */
   dispose(): void {
     this.networkRefresh?.abort();

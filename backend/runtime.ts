@@ -45,6 +45,7 @@ import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
 import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
 import { PluginService } from "./plugin-service.js";
+import { RuntimeEventLog } from "./runtime-event-log.js";
 import { SessionReportService } from "./session-report-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
 import { WispToolPolicyStore } from "./wisp-tool-policy-store.js";
@@ -116,6 +117,8 @@ export interface BackendRuntime {
   messageQueue: MessageQueue;
   jobs: JobScheduler;
   sessionReports: SessionReportService;
+  /** Raw runtime events of the conversations someone is debugging, kept in the data directory. */
+  runtimeEvents: RuntimeEventLog;
   workspace: WorkspaceService;
   storage: StorageService;
   transcription: TranscriptionService;
@@ -332,10 +335,19 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     processes: new ClaudeCodeProcesses(),
   });
   const sessionFactory = new RoutingSessionFactory(piSessionFactory, claudeCodeSessionFactory);
+  const runtimeEvents = new RuntimeEventLog({
+    directory: path.join(dataDirectory, "runtime-events"),
+    // Only this environment's credentials: each environment keeps its own (see docs/security.md).
+    secretValues: async () =>
+      (
+        await Promise.all([modelService.secretValues(), pluginService.secretValues(), mcpService.secretValues()])
+      ).flat(),
+  });
+  await runtimeEvents.load();
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
-      ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true })
-      : new WispConversationAgentFactory(sessionFactory);
+      ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true, runtimeEvents })
+      : new WispConversationAgentFactory(sessionFactory, { runtimeEvents });
   const circleRouter = new CircleRouter({
     getSelection: () => modelService.getAuxiliaryModel("decision"),
     runtime: modelService.getModelRuntime(),
@@ -381,6 +393,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         messageQueue?.refresh();
         // A deleted Wisp's container goes with it.
         void executionService.reconcile().catch(() => undefined);
+        // And so do the runtime events it recorded.
+        void runtimeEvents.reconcile(new Set(Object.keys(conversationRepository.readChats()))).catch(() => undefined);
       },
       onFollowUpTaken: (_conversationId, queuedMessageId) => messageQueue?.followUpTaken(queuedMessageId),
       // Claude Code keeps the transcripts of a Wisp that ran on it outside Wisp's data: a
@@ -501,6 +515,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     resolveQuota: (id, fallback) =>
       readWorkspaceQuota(conversationRepository.getWorkspaceDirectories(id).settingsDirectory, fallback),
     measurementsFile: path.join(dataDirectory, "storage-measurements.json"),
+    measureRuntimeEvents: () => runtimeEvents.measure(),
   });
   storageService = storage;
   const workspaceService = new WorkspaceService({
@@ -532,6 +547,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     messageQueue: queue,
     jobs,
     sessionReports: sessionReportService,
+    runtimeEvents,
     workspace: workspaceService,
     storage,
     transcription: transcriptionService,

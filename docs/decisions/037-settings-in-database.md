@@ -80,8 +80,9 @@ What stays a file:
 - **Caches** (`model-catalog.json`, `model-pricing.json`, the transcription
   cache) and **derived files** (`models.json` for Pi, `storage-measurements.json`):
   they can be deleted without losing anything.
-- **Logs and sessions** (`tool-audit.jsonl`, Pi's session files, the Claude
-  Code session and usage files): append-only, and Pi owns its format.
+- **Logs and sessions** (`tool-audit.jsonl`, `runtime-events/`, Pi's session
+  files, the Claude Code session and usage files): append-only, and Pi owns
+  its format.
 - **Archive manifests** (`archive.json`): they travel with the archived folder.
 - **The desktop app's own files** (`connections.json`,
   `connection-credentials.json`, `remote-access.json`, `local-server-key.json`):

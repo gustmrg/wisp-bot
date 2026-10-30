@@ -9,6 +9,7 @@ import { registerJobHandlers } from "./register-job-handlers.js";
 import { registerMessageQueueHandlers } from "./register-message-queue-handlers.js";
 import { registerModelSettingsHandlers } from "./register-model-settings-handlers.js";
 import { registerPluginHandlers } from "./register-plugin-handlers.js";
+import { registerRuntimeEventHandlers } from "./register-runtime-event-handlers.js";
 import { registerScheduledMessageHandlers } from "./register-scheduled-message-handlers.js";
 import { registerSessionReportHandlers } from "./register-session-report-handlers.js";
 import { registerStorageHandlers } from "./register-storage-handlers.js";
@@ -34,6 +35,15 @@ export function registerRuntimeHandlers(
       conversations.applyModel(selection),
     ),
     registerSessionReportHandlers(router, runtime.sessionReports, authorizeSender),
+    registerRuntimeEventHandlers(
+      router,
+      runtime.runtimeEvents,
+      {
+        isRunning: (id) => runtime.registry.has(id),
+        receive: (id, file, content) => runtime.workspace.receive(id, file, content),
+      },
+      authorizeSender,
+    ),
     registerWorkspaceHandlers(router, runtime.workspace, authorizeSender),
     registerExecutionHandlers(router, runtime.execution, runtime.workspace, authorizeSender),
     registerStorageHandlers(router, runtime.storage, authorizeSender),

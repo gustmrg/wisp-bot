@@ -123,6 +123,12 @@ export function StorageOverview({ summary }: { summary: StorageSummary }) {
               <dt className="text-xs text-dim">Archived</dt>
               <dd className="m-0 text-sm font-medium tabular-nums">{formatBytes(summary.archiveBytes)}</dd>
             </div>
+            {summary.runtimeEventBytes ? (
+              <div>
+                <dt className="text-xs text-dim">Runtime events</dt>
+                <dd className="m-0 text-sm font-medium tabular-nums">{formatBytes(summary.runtimeEventBytes)}</dd>
+              </div>
+            ) : null}
             <div>
               <dt className="text-xs text-dim">Full</dt>
               <dd className={cn("m-0 text-sm font-medium", full ? "text-destructive" : undefined)}>

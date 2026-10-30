@@ -147,6 +147,7 @@ export class ClaudeCodeSession implements RuntimeSession {
   readonly toolRevision: string;
   private readonly options: ClaudeCodeSessionOptions;
   private readonly listeners = new Set<(event: PiAgentEvent) => void>();
+  private readonly runtimeListeners = new Set<(event: unknown) => void>();
   private readonly toolNames: ReadonlyArray<string>;
   private sessionIdValue: string;
   private resume: boolean;
@@ -188,6 +189,12 @@ export class ClaudeCodeSession implements RuntimeSession {
   subscribe(listener: (event: PiAgentEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Every message the Claude Code SDK yields, as it arrives. */
+  subscribeRuntimeEvents(listener: (event: unknown) => void): () => void {
+    this.runtimeListeners.add(listener);
+    return () => this.runtimeListeners.delete(listener);
   }
 
   async prompt(text: string, options: { signal?: AbortSignal } = {}): Promise<void> {
@@ -341,6 +348,7 @@ export class ClaudeCodeSession implements RuntimeSession {
     clearTimeout(this.idleTimer);
     this.closeProcess(new WispBackendError("disposed", "The conversation has been disposed."));
     this.listeners.clear();
+    this.runtimeListeners.clear();
   }
 
   /**
@@ -430,6 +438,7 @@ export class ClaudeCodeSession implements RuntimeSession {
     try {
       for await (const message of process.handle) {
         if (this.process !== process) return;
+        for (const listener of this.runtimeListeners) listener(message);
         this.takeSteers(process, message);
         const { events, result } = process.converter.convert(message);
         const turn = this.turn;

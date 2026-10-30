@@ -657,6 +657,11 @@ export class McpService {
     return forges;
   }
 
+  /** The saved keys and tokens of every connection, which the runtime events log masks. */
+  secretValues(): Promise<string[]> {
+    return this.secrets.secretValues();
+  }
+
   dispose(): void {
     this.disposed = true;
     for (const controller of this.running.keys()) controller.abort();

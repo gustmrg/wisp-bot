@@ -106,6 +106,14 @@ export class EncryptedCredentialStore implements CredentialStore {
     });
   }
 
+  /** Every saved key and token, so the runtime events log can mask them; empty when none can be read. */
+  async secretValues(): Promise<string[]> {
+    const credentials = await this.readAll().catch(() => ({}) as CredentialMap);
+    return Object.values(credentials).flatMap((credential) =>
+      credential.type === "api_key" ? [credential.key ?? ""] : [credential.access, credential.refresh],
+    );
+  }
+
   async setApiKey(providerId: string, apiKey: string): Promise<void> {
     await this.modify(providerId, async () => ({ type: "api_key", key: apiKey }));
   }

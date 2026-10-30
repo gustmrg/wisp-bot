@@ -180,6 +180,18 @@ function completeBridge(): WispApi {
     getSessionReport: async () => {
       throw new Error("not called");
     },
+    getRuntimeEvents: async () => {
+      throw new Error("not called");
+    },
+    setRuntimeEventRecording: async () => {
+      throw new Error("not called");
+    },
+    clearRuntimeEvents: async () => {
+      throw new Error("not called");
+    },
+    saveRuntimeEventsToWorkspace: async () => {
+      throw new Error("not called");
+    },
     getToolPolicy: async () => {
       throw new Error("not called");
     },

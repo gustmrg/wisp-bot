@@ -171,7 +171,7 @@ locally.
 | [Circles](docs/circles.md) | Conversations with several Wisps, mentions, and handoffs |
 | [Scheduled jobs](docs/jobs.md) | Tasks Wisps run on a schedule and how runs report back |
 | [Queued and scheduled messages](docs/scheduled-messages.md) | Messages sent while a Wisp works, and messages sent later |
-| [Token usage](docs/token-usage.md) | Session reports and the usage dashboard |
+| [Token usage](docs/token-usage.md) | Session reports, runtime events and the usage dashboard |
 | [Mobile layout](docs/mobile-layout.md) | Responsive single-screen layout below 760px |
 | [Application settings](docs/application-settings.md) | App settings, voice input, storage, notifications, updates, known limitations |
 | [Headless server](docs/remote-server.md) | Running a Wisp server, connecting to it, backups, the browser app, and the HTTP API |

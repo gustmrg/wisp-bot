@@ -244,6 +244,10 @@ function createApi(initialState: ConversationStateView): WispApi {
     setJobMemory: vi.fn(async () => ({ ok: true as const, value: { jobs: [] } })),
     subscribeToJobs: vi.fn(() => () => undefined),
     getUsageReport: vi.fn(),
+    getRuntimeEvents: vi.fn(),
+    setRuntimeEventRecording: vi.fn(),
+    clearRuntimeEvents: vi.fn(),
+    saveRuntimeEventsToWorkspace: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
     getUserProfile: async () => ({
