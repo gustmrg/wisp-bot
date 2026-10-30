@@ -58,7 +58,7 @@ const labProviders: Record<string, ModelLab> = {
   "claude-code": "anthropic",
   openai: "openai",
   "openai-codex": "openai",
-  "azure-openai-responses": "openai",
+  azure: "openai",
   google: "google",
   "google-vertex": "google",
   meta: "meta",
