@@ -194,8 +194,8 @@ const NAV_ITEMS: ReadonlyArray<
   },
 ];
 
-/** How the mobile overview groups the sections, under the profile card. */
-const MOBILE_NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
+/** How the navigation groups the sections, on the desktop and under the profile card on mobile. */
+const NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
   { label: "Account and server", sections: ["general", "connections", "remote-access"] },
   { label: "Wisps", sections: ["model", "voice", "plugins", "mcp", "jobs"] },
   { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
@@ -424,7 +424,7 @@ function AppSettingsDialog({
         <nav
           hidden={mobile && !showOverview}
           className={cn(
-            "settings-navigation flex flex-col gap-[3px] border-r border-border bg-sidebar px-2.5 py-[18px]",
+            "settings-navigation flex flex-col gap-[3px] overflow-y-auto border-r border-border bg-sidebar px-2.5 py-[18px]",
             mobile && !showOverview && "hidden",
           )}
           aria-label="Settings sections"
@@ -463,26 +463,26 @@ function AppSettingsDialog({
                   <ChevronRightIcon aria-hidden="true" className="mobile-settings-chevron" />
                 </button>
               ) : null}
-              {MOBILE_NAV_GROUPS.map((group) => (
-                <div
-                  key={group.label}
-                  className="mobile-settings-group"
-                  role="group"
-                  aria-labelledby={`settings-group-${group.sections[0]}`}
-                >
-                  <h3 id={`settings-group-${group.sections[0]}`}>{group.label}</h3>
-                  {navItems
-                    .filter((item) => "section" in item && group.sections.includes(item.section))
-                    .map(renderNavItem)}
-                </div>
-              ))}
             </>
           ) : (
-            <>
-              <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
-              {navItems.map(renderNavItem)}
-            </>
+            <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
           )}
+          {NAV_GROUPS.map((group) => (
+            <div
+              key={group.label}
+              className={mobile ? "mobile-settings-group" : "flex flex-none flex-col gap-[3px] not-first-of-type:mt-4"}
+              role="group"
+              aria-labelledby={`settings-group-${group.sections[0]}`}
+            >
+              <h3
+                id={`settings-group-${group.sections[0]}`}
+                className={mobile ? undefined : "mx-[9px] mt-0 mb-1 text-2xs font-normal text-faint"}
+              >
+                {group.label}
+              </h3>
+              {navItems.filter((item) => "section" in item && group.sections.includes(item.section)).map(renderNavItem)}
+            </div>
+          ))}
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
         {section === "jobs" && open && !showOverview ? <JobsSettingsSection wisps={wisps} /> : null}

@@ -1,10 +1,15 @@
 # Application settings and status
 
-**Settings** (application-level) has panels for **General**,
-**Connections**, **Remote access**, **AI Model**, **Voice input**,
-**Plugins**, **MCP servers**, **Jobs**, **Token usage**, **Storage**,
-**Notifications**, **Shortcuts**, and **About**. Where they are covered
-elsewhere:
+**Settings** (application-level) groups its panels the same way on the desktop
+and on a phone:
+
+- **Account and server**: **General**, **Connections**, **Remote access**
+- **Wisps**: **AI Model**, **Voice input**, **Plugins**, **MCP servers**, **Jobs**
+- **Notifications and input**: **Notifications**, **Shortcuts**
+- **Storage and data**: **Token usage**, **Storage**
+- **App**: **About**
+
+Where they are covered elsewhere:
 
 - **Connections** and **Remote access**: [headless server](remote-server.md#connect-the-desktop-app)
   and [remote access to this computer](remote-server.md#remote-access-to-this-computer).
@@ -13,6 +18,47 @@ elsewhere:
   [remote MCP servers](mcp-servers.md).
 - **Jobs**: [scheduled jobs](jobs.md).
 - **Token usage**: [token usage](token-usage.md).
+
+## Where each setting lives
+
+A setting is saved in one of two places. On the **device**, it applies only to
+this app or browser. In the **environment**, it applies to **This computer** or
+to the server in use, and every device connected to that server shares it. Each
+environment keeps its own, and nothing is copied between them.
+
+| Panel | Settings | Saved |
+| --- | --- | --- |
+| **General** | **Name**, **About you** | Environment |
+| **General** | **Theme**, **Wisp colors**, **Wisps row**, **Conversation order**, **Reply speed**, **Time format** | Device |
+| **General** | **Timezone** | Device, and reported to the environment |
+| **General** | **Launch at login** | This computer's system |
+| **General** | **Auto-review file changes**, **Create files**, **Modify files**, **Integration blocks** | Environment |
+| **Connections** | Saved servers and their pairing | Device |
+| **Remote access** | **Remote access**, **Address**, **Paired devices** | This computer |
+| **AI Model** | **Provider**, **Model**, **Maximum output tokens**, API keys, subscription sign-in, **Fallback**, **Auxiliary models** | Environment |
+| **Voice input** | **Microphone**, **Send automatically**, **Provider**, **Model**, **Language**, **Fallback model** | Device |
+| **Voice input** | API key | Environment |
+| **Plugins** | Connections and their keys, **Default web providers**, which Wisps can use each one | Environment |
+| **MCP servers** | Servers, their credentials, which Wisps can use each one | Environment |
+| **Jobs** | Every Wisp's jobs | Environment |
+| **Token usage** | Nothing to set; shows the environment's usage | Environment |
+| **Storage** | Workspace size limits, and removing files and archives | Environment |
+| **Notifications** | Sounds, **Volume**, **System notifications**, **Mute the open conversation**, **Server connection notice** | Device |
+| **Shortcuts** | **Voice input** shortcut | Device |
+| **About** | Nothing to set; checks for updates | Device |
+
+A few things can be reached from two places on purpose, and both change the
+same value:
+
+- A workspace's size limit, in **Storage** and in **Wisp settings → Workspace**.
+- Which Wisps can use a plugin or an MCP server, in **Plugins** or **MCP
+  servers** and in **Wisp settings → Access**.
+- A Wisp's jobs, in **Jobs** and in **Wisp settings → Jobs**.
+- A provider's API key, in **AI Model** and in **Voice input**.
+
+**Wisp settings** holds what applies to one Wisp, and some of it overrides a
+default here: **Wisp settings → Model** overrides **AI Model**, and **Wisp
+settings → Access → Without asking** overrides auto-review.
 
 ## First-run setup
 

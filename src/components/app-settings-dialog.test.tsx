@@ -324,6 +324,43 @@ describe("AppSettingsDialog metadata", () => {
   });
 });
 
+describe("AppSettingsDialog navigation", () => {
+  it("groups the sections on the desktop too, in the same groups", () => {
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        ...memoryApi,
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
+      },
+    });
+    render(
+      <AppSettingsDialog
+        appMetadata={appMetadata}
+        currentUser={currentUser}
+        userProfile={{ profile: { preferredName: "Ada" }, loading: false, error: null, save: vi.fn() }}
+        open
+        preferences={DEFAULT_PREFERENCES}
+        persistenceStatus="saved"
+        persistenceError={null}
+        onOpenChange={vi.fn()}
+        onPreferencesChange={vi.fn()}
+      />,
+    );
+
+    const names = (group: string) =>
+      within(screen.getByRole("group", { name: group }))
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label"));
+    expect(names("Account and server")).toEqual(["General", "Connections", "Remote access"]);
+    expect(names("Wisps")).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers", "Jobs"]);
+    expect(names("Notifications and input")).toEqual(["Notifications", "Shortcuts"]);
+    expect(names("Storage and data")).toEqual(["Token usage", "Storage"]);
+    expect(names("App")).toEqual(["About"]);
+  });
+});
+
 describe("AppSettingsDialog on mobile", () => {
   it("shows the profile card and each section as a described card in its group", async () => {
     const user = userEvent.setup();
