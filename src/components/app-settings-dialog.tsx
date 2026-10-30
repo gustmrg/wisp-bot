@@ -56,6 +56,7 @@ import {
   SettingsRowTitle,
   SoonBadge,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
 import type { AppPreferences, ChatListOrder, ReplyPace } from "@/lib/app-preferences";
@@ -533,7 +534,7 @@ function AppSettingsDialog({
                 <UserMemorySettings />
               </UserProfileSettings>
             )}
-            <SettingsGroup label="Application">
+            <SettingsGroup label="Application" note={<SettingsScopeNote scope="device" />}>
               <SettingsCard variant="stacked">
                 <SettingsRow>
                   <SettingsRowCopy>

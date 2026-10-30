@@ -9,6 +9,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -105,7 +106,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
 
   return (
     <>
-      <SettingsGroup label="Date and time">
+      <SettingsGroup label="Date and time" note={<SettingsScopeNote scope="device" />}>
         <SettingsCard variant="stacked">
           <SettingsRow>
             <SettingsRowCopy>

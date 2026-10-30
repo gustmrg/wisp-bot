@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { ConfirmAction } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { ConnectionsPanel } from "@/features/connections/connections-panel";
 import { useConnections } from "@/features/connections/connection-gate";
 import type { ConnectionsView } from "../../shared/connections";
@@ -18,7 +19,8 @@ export function ConnectionSettingsSection() {
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim" hidden={view?.canManage === false}>
         Choose where your Wisps run. On a Wisp server they keep working while this app is closed, and every paired
-        device sees the same conversations. Settings, credentials, and approvals belong to the server you use.
+        device sees the same conversations. Settings, credentials, and approvals belong to the server you use.{" "}
+        <SettingsScopeNote scope="device" />
       </p>
       {view?.canManage === false ? (
         <ServerSession view={view} />

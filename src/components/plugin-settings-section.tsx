@@ -34,6 +34,7 @@ import {
   StatusDot,
   type StatusTone,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -210,8 +211,8 @@ export function PluginSettingsSection({
         Plugins
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Connect services on this device, then choose which Wisps can use them. Connecting a plugin does not give any
-        Wisp access automatically.
+        Connect services, then choose which Wisps can use them. Connecting a plugin does not give any Wisp access
+        automatically. <SettingsScopeNote scope="environment" />
       </p>
       {view ? (
         <div className="animate-tab-forward">

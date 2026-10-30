@@ -10,6 +10,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AppPreferences, AutoReviewRule, RuleBehavior } from "@/lib/app-preferences";
@@ -63,7 +64,7 @@ export function PermissionSettingsSection({
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
         What Wisps can do without asking. These are the defaults for every Wisp, and a Wisp's Access tab can change them
-        for that Wisp.
+        for that Wisp. <SettingsScopeNote scope="environment" />
       </p>
       <div className="animate-tab-forward">
         <SettingsGroup label="File changes">

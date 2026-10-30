@@ -24,7 +24,9 @@ Where they are covered elsewhere:
 A setting is saved in one of two places. On the **device**, it applies only to
 this app or browser. In the **environment**, it applies to **This computer** or
 to the server in use, and every device connected to that server shares it. Each
-environment keeps its own, and nothing is copied between them.
+environment keeps its own, and nothing is copied between them. Each panel says
+which it is, and **General** and **Voice input**, which hold both, say it for
+each group.
 
 | Panel | Settings | Saved |
 | --- | --- | --- |

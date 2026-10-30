@@ -4,6 +4,7 @@ import { ChartColumnIcon, CircleAlertIcon, RefreshCwIcon, TriangleAlertIcon } fr
 
 import { Wisp } from "@/components/wisp";
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import {
   CacheStats,
   formatUsd,
@@ -47,7 +48,8 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
         Token usage
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Tokens and estimated cost per Wisp and per model, from saved session history on this device.
+        Tokens and estimated cost per Wisp and per model, from saved session history.{" "}
+        <SettingsScopeNote scope="environment" />
       </p>
       <UsageReportPanel wisps={wisps} />
     </section>

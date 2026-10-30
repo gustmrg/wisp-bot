@@ -11,6 +11,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { SecretInput } from "@/components/ui/secret-input";
 import type { AppPreferences } from "@/lib/app-preferences";
@@ -162,7 +163,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
         are sent to the provider below for transcription and are not stored.
       </p>
       <div className="animate-tab-forward">
-        <SettingsGroup label="Recording">
+        <SettingsGroup label="Recording" note={<SettingsScopeNote scope="device" />}>
           <SettingsCard variant="stacked">
             <SettingsRow>
               <SettingsRowCopy>
@@ -196,7 +197,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           </SettingsCard>
         </SettingsGroup>
 
-        <SettingsGroup label="Transcription">
+        <SettingsGroup label="Transcription" note={<SettingsScopeNote scope="device" />}>
           <SettingsCard variant="stacked">
             <SettingsRow>
               <SettingsRowCopy>
@@ -246,7 +247,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           </SettingsCard>
         </SettingsGroup>
 
-        <SettingsGroup label="Credential">
+        <SettingsGroup label="Credential" note={<SettingsScopeNote scope="environment" />}>
           <SettingsCard>
             <div className="flex flex-col gap-3 px-3.5 py-3.5">
               <div className="flex flex-wrap items-start gap-3">
@@ -374,7 +375,7 @@ function FallbackVoiceModel({
           ? `This model is from ${primaryName}, the provider above, so it fails along with it. Choose a model from another provider.`
           : null;
   return (
-    <SettingsGroup label="Fallback">
+    <SettingsGroup label="Fallback" note={<SettingsScopeNote scope="device" />}>
       <SettingsCard>
         <SettingsRow>
           <SettingsRowCopy>
