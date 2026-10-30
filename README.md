@@ -79,7 +79,7 @@ preset.
   dashboard. See [token usage](docs/token-usage.md).
 - **Approval-gated tools** — encrypted credential storage and per-Wisp tool
   authorization. See [security](docs/security.md).
-- **Responsive layout** — a mobile-style single-screen layout below 760px.
+- **Responsive layout** — a mobile-style single-screen layout on phones, held either way, and below 760px.
   See [mobile layout](docs/mobile-layout.md).
 - **Wisp server** — run the same backend on a Linux machine and connect the
   app over SSH or Tailscale, so Wisps keep working with the app closed. One
@@ -172,7 +172,7 @@ locally.
 | [Scheduled jobs](docs/jobs.md) | Tasks Wisps run on a schedule and how runs report back |
 | [Queued and scheduled messages](docs/scheduled-messages.md) | Messages sent while a Wisp works, and messages sent later |
 | [Token usage](docs/token-usage.md) | Session reports, runtime events and the usage dashboard |
-| [Mobile layout](docs/mobile-layout.md) | Responsive single-screen layout below 760px |
+| [Mobile layout](docs/mobile-layout.md) | Responsive single-screen layout on phones and below 760px |
 | [Application settings](docs/application-settings.md) | App settings, voice input, storage, notifications, updates, known limitations |
 | [Headless server](docs/remote-server.md) | Running a Wisp server, connecting to it, backups, the browser app, and the HTTP API |
 | [Installing on macOS](docs/installing-on-macos.md) | Running unsigned builds under Gatekeeper |

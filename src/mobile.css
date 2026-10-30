@@ -3,7 +3,7 @@
   display: none;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-device-width: 599px), (max-device-height: 599px) {
   .workspace-shell {
     height: var(--mobile-viewport-height, 100dvh);
     padding-top: env(safe-area-inset-top, 0px);

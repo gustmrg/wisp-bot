@@ -1,7 +1,13 @@
 import { useEffect, useSyncExternalStore } from "react";
 
-// Keep this query aligned with the responsive rules in mobile.css.
-export const MOBILE_LAYOUT_QUERY = "(max-width: 760px)";
+/**
+ * A narrow window, or a device whose screen is a phone's whichever way it is held: width alone
+ * would give a phone lying on its side the desktop layout. The screen's sides, unlike the window's
+ * height, stay put when the software keyboard opens, so a tablet keeps its layout while typing.
+ * iOS always reports the screen in portrait, and Android swaps its sides, so both are checked.
+ * Keep this query aligned with the responsive rules in mobile.css and aura.css.
+ */
+export const MOBILE_LAYOUT_QUERY = "(max-width: 760px), (max-device-width: 599px), (max-device-height: 599px)";
 
 function subscribe(onChange: () => void) {
   const query = window.matchMedia(MOBILE_LAYOUT_QUERY);
