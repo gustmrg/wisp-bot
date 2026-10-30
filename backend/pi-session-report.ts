@@ -3,6 +3,7 @@ import type { SessionEntry, SessionMessageEntry } from "@earendil-works/pi-codin
 };
 
 import type {
+  AuxiliaryTask,
   SessionReportEvent,
   SessionReportModelUsage,
   SessionReportToolCall,
@@ -60,7 +61,7 @@ interface ModelUsageBucket {
   modelId: string;
   turns: number;
   /** Auxiliary rows count calls, and are priced only with the cost Pi recorded. */
-  auxiliary?: { task: "imageUnderstanding"; calls: number };
+  auxiliary?: { task: AuxiliaryTask; calls: number };
   /** Turns a Claude plan paid for, recorded by Claude Code sessions (ADR 026). */
   plan?: true;
   usage: SessionReportUsage;
@@ -368,7 +369,7 @@ function imageModelOf(details: unknown): SessionReportToolCall["imageModel"] | u
 }
 
 interface AuxiliaryEntryUsage {
-  task: "imageUnderstanding";
+  task: AuxiliaryTask;
   providerId: string;
   modelId: string;
   usage: SessionUsage;
@@ -378,7 +379,7 @@ interface AuxiliaryEntryUsage {
 function auxiliaryEntryUsage(data: unknown): AuxiliaryEntryUsage | null {
   if (!data || typeof data !== "object") return null;
   const record = data as { task?: unknown; providerId?: unknown; modelId?: unknown; usage?: unknown };
-  if (record.task !== "imageUnderstanding") return null;
+  if (record.task !== "imageUnderstanding" && record.task !== "decision") return null;
   if (typeof record.providerId !== "string" || !record.providerId || record.providerId.length > 256) return null;
   if (typeof record.modelId !== "string" || !record.modelId || record.modelId.length > 256) return null;
   if (!record.usage || typeof record.usage !== "object") return null;

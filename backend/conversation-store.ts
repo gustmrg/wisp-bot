@@ -16,7 +16,7 @@ import type { ConversationRecord, WispRecord } from "./workspace-actions.js";
 // to an older release means restoring the backup made before the upgrade.
 // Beta releases share this database with stable ones, so once a beta ships an
 // upgrade it is never edited: a fix is a new upgrade with a new version.
-const STORE_VERSION = 15;
+const STORE_VERSION = 16;
 const MIN_READER_VERSION = 12;
 /**
  * The oldest layout this build opens: the one v0.25.3 wrote. Older data is opened
@@ -153,6 +153,10 @@ const RECORD_SCHEMA = `
     UNIQUE (conversation_id, position)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS circle_members_by_wisp ON circle_members (wisp_id);
+  CREATE TABLE IF NOT EXISTS circle_responders (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations (id) ON DELETE CASCADE,
+    responder TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS participant_sessions (
     conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
     wisp_id TEXT NOT NULL REFERENCES wisps (id) ON DELETE CASCADE,
@@ -668,6 +672,13 @@ export class ConversationStore {
     this.statement("DELETE FROM circle_members WHERE conversation_id = ?").run(chat.id);
     const member = this.statement("INSERT INTO circle_members (conversation_id, wisp_id, position) VALUES (?, ?, ?)");
     circle?.memberIds.forEach((wispId, position) => member.run(chat.id, wispId, position));
+    this.statement("DELETE FROM circle_responders WHERE conversation_id = ?").run(chat.id);
+    if (circle?.responder) {
+      this.statement("INSERT INTO circle_responders (conversation_id, responder) VALUES (?, ?)").run(
+        chat.id,
+        circle.responder,
+      );
+    }
     this.statement("DELETE FROM participant_sessions WHERE conversation_id = ?").run(chat.id);
     const session = this.statement(
       "INSERT INTO participant_sessions (conversation_id, wisp_id, session_id, pi_session_id, pi_session_file) VALUES (?, ?, ?, ?, ?)",
@@ -873,6 +884,10 @@ export class ConversationStore {
     const members = "SELECT conversation_id, wisp_id FROM circle_members ORDER BY conversation_id, position";
     for (const row of this.db.prepare(members).iterate()) {
       (conversations[String(row.conversation_id)]?.chat.memberIds as unknown[] | undefined)?.push(row.wisp_id);
+    }
+    for (const row of this.db.prepare("SELECT conversation_id, responder FROM circle_responders").iterate()) {
+      const record = conversations[String(row.conversation_id)];
+      if (record) (record.chat as { responder?: unknown }).responder = row.responder;
     }
     for (const row of this.db.prepare("SELECT * FROM participant_sessions ORDER BY rowid").iterate()) {
       const record = conversations[String(row.conversation_id)];

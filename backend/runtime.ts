@@ -16,6 +16,7 @@ import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
 import { AgentRegistry } from "./agent-registry.js";
 import { CircleAgentFactory } from "./circle-conversation-agent.js";
+import { appendDecisionUsage, CircleRouter } from "./circle-router.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationAgentFactory } from "./conversation-agent.js";
 import { normalizeWisp, normalizeWispChanges } from "./conversation-normalizer.js";
@@ -347,6 +348,13 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     options.agentMode === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true, runtimeEvents })
       : new WispConversationAgentFactory(sessionFactory, { runtimeEvents });
+  const circleRouter = new CircleRouter({
+    getSelection: () => modelService.getAuxiliaryModel("decision"),
+    runtime: modelService.getModelRuntime(),
+    recordUsage: (conversationId, entry) =>
+      appendDecisionUsage(conversationRepository.circleDecisionUsageDirectory(conversationId), entry),
+    onFailed: (conversationId) => logger.warn("circle_routing_failed", { conversationId }),
+  });
   const registry = new AgentRegistry(
     new CircleAgentFactory(agentFactory, {
       // Through the service, so a member reads the replies before its own even before they are stored.
@@ -354,6 +362,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         if (!conversationService) throw new Error("The conversation service has not started.");
         return conversationService.getMessagePage({ conversationId, page: "latest" });
       },
+      chooseResponder: (input, signal) => circleRouter.choose(input, signal),
     }),
     publishAgentEvent,
     (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),

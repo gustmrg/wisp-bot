@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { WispBackendError } from "../backend/backend-error.js";
-import { CircleConversationAgent, circleTurnId } from "../backend/circle-conversation-agent.js";
+import {
+  CircleConversationAgent,
+  circleTurnId,
+  type CircleAgentOptions,
+} from "../backend/circle-conversation-agent.js";
 import type {
   CircleAgentContext,
   ConversationAgentContext,
@@ -43,6 +47,8 @@ async function setup(
     latencyMs?: number;
     /** What each member replies; its name by default. */
     reply?: (wispId: string, turn: number) => string;
+    responder?: "auto";
+    chooseResponder?: NonNullable<CircleAgentOptions["chooseResponder"]>;
   } = {},
 ) {
   const received: Array<{ wispId: string; request: SendMessageRequest }> = [];
@@ -70,9 +76,14 @@ async function setup(
   const messages: Message[] = [];
   const replies = new Map<string, string>();
   const events: ConversationAgentEvent[] = [];
-  const agent = new CircleConversationAgent(circle(members), factory, {
-    readTranscript: async () => ({ messages: [...messages], olderCursor: null, newerCursor: null }),
-  });
+  const agent = new CircleConversationAgent(
+    { ...circle(members), ...(options.responder ? { responder: options.responder } : {}) },
+    factory,
+    {
+      readTranscript: async () => ({ messages: [...messages], olderCursor: null, newerCursor: null }),
+      ...(options.chooseResponder ? { chooseResponder: options.chooseResponder } : {}),
+    },
+  );
   agent.subscribe((event) => {
     events.push(event);
     if (event.type === "assistant_text_delta")
@@ -127,6 +138,129 @@ describe("circle mentions", () => {
   it("sends a message that mentions no one to the lead", () => {
     expect(circleRecipients("Who can help?", members)).toEqual(["ada"]);
     expect(circleRecipients("Who can help?", [])).toEqual([]);
+  });
+});
+
+describe("CircleConversationAgent with a decision model", () => {
+  const turns = (events: ReadonlyArray<ConversationAgentEvent>) =>
+    events.flatMap((event) => (event.type === "circle_turn_started" ? [event] : []));
+
+  it("gives a message that mentions no one to the member the model chooses, and says so", async () => {
+    const chooseResponder = vi.fn(async () => "nova");
+    const { received, events, say } = await setup(undefined, { responder: "auto", chooseResponder });
+
+    await say("m1", "Who can help?");
+
+    expect(received.map(({ wispId }) => wispId)).toEqual(["nova"]);
+    expect(turns(events)).toMatchObject([{ wispId: "nova", chosenAutomatically: true }]);
+    expect(chooseResponder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "crew",
+        text: "Who can help?",
+        transcript: [],
+        members: [
+          { id: "atlas", name: "Atlas", role: "Test", soul: "Test" },
+          { id: "nova", name: "Nova", role: "Test", soul: "Test" },
+        ],
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("tells the model what was said before, labeled, without the new message", async () => {
+    const chooseResponder = vi.fn(async () => null);
+    const { say } = await setup(undefined, { responder: "auto", chooseResponder });
+
+    await say("m1", "@Nova hello");
+    await say("m2", "And now?");
+
+    expect(chooseResponder.mock.calls.at(-1)?.[0]).toMatchObject({
+      transcript: [
+        { speaker: "Ada (the user)", text: "@Nova hello" },
+        { speaker: "Nova", text: "Nova here" },
+      ],
+    });
+  });
+
+  it.each([
+    ["chooses no one", async () => null],
+    ["fails", async () => Promise.reject(new Error("offline"))],
+    ["names someone not in the circle", async () => "stranger"],
+  ])("leaves the message to the lead when the model %s", async (_name, chooseResponder) => {
+    const { received, events, say } = await setup(undefined, { responder: "auto", chooseResponder });
+
+    await say("m1", "Who can help?");
+
+    expect(received.map(({ wispId }) => wispId)).toEqual(["atlas"]);
+    expect(turns(events)[0]).not.toHaveProperty("chosenAutomatically");
+  });
+
+  it("never asks about a mention, in a circle left to its lead, or with one member", async () => {
+    const chooseResponder = vi.fn(async () => "nova");
+
+    const mention = await setup(undefined, { responder: "auto", chooseResponder });
+    await mention.say("m1", "@Atlas please");
+    expect(mention.received.map(({ wispId }) => wispId)).toEqual(["atlas"]);
+
+    const lead = await setup(undefined, { chooseResponder });
+    await lead.say("m1", "Who can help?");
+    expect(lead.received.map(({ wispId }) => wispId)).toEqual(["atlas"]);
+
+    const alone = await setup([member("atlas", "Atlas")], { responder: "auto", chooseResponder });
+    await alone.say("m1", "Who can help?");
+    expect(alone.received.map(({ wispId }) => wispId)).toEqual(["atlas"]);
+
+    expect(chooseResponder).not.toHaveBeenCalled();
+  });
+
+  it("marks only the chosen member's turn, not one it hands the task to", async () => {
+    const { received, events, say } = await setup(undefined, {
+      responder: "auto",
+      chooseResponder: async () => "nova",
+      reply: (wispId) => (wispId === "nova" ? "@Atlas this is yours" : "Done"),
+    });
+
+    await say("m1", "Who can help?");
+
+    expect(received.map(({ wispId }) => wispId)).toEqual(["nova", "atlas"]);
+    expect(turns(events)[0]).toMatchObject({ wispId: "nova", chosenAutomatically: true });
+    expect(turns(events)[1]).not.toHaveProperty("chosenAutomatically");
+  });
+
+  it("stops while the model decides: no member answers, and the message shows as stopped", async () => {
+    let seen: AbortSignal | undefined;
+    const { agent, received, events, say } = await setup(undefined, {
+      responder: "auto",
+      chooseResponder: (_input, signal) =>
+        new Promise((resolve) => {
+          seen = signal;
+          signal.addEventListener("abort", () => resolve(null));
+        }),
+    });
+
+    const sending = say("m1", "Who can help?");
+    await vi.waitFor(() => expect(seen).toBeDefined());
+    await agent.abort();
+    await sending;
+
+    expect(seen?.aborted).toBe(true);
+    expect(received).toEqual([]);
+    expect(events.map(({ type }) => type)).toContain("assistant_message_cancelled");
+    expect(events.at(-1)).toMatchObject({ type: "conversation_status", status: "idle" });
+  });
+
+  it("refuses a second message while the model decides", async () => {
+    let decide: (wispId: string | null) => void = () => undefined;
+    const chooseResponder = vi.fn(() => new Promise<string | null>((resolve) => (decide = resolve)));
+    const { agent, say } = await setup(undefined, { responder: "auto", chooseResponder });
+
+    const sending = say("m1", "Who can help?");
+    await vi.waitFor(() => expect(chooseResponder).toHaveBeenCalled());
+    await expect(agent.send({ conversationId: "crew", requestId: "m2", text: "Hello?" })).rejects.toThrow(
+      "already processing",
+    );
+    decide(null);
+    await sending;
   });
 });
 

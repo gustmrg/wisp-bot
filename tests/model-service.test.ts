@@ -73,6 +73,10 @@ function createRuntime() {
       maxTokens: 10_000,
     },
   ];
+  const classifiers = [
+    { id: "jev-latest", name: "Jev", provider: "typesafe" },
+    { id: "decider", name: "Decider", provider: "openrouter" },
+  ];
   const providers = [
     {
       id: "openrouter",
@@ -80,6 +84,7 @@ function createRuntime() {
       auth: { apiKey: {} },
       getModels: () => models.filter(({ provider }) => provider === "openrouter"),
     },
+    { id: "typesafe", name: "TypeSafe", auth: { apiKey: {} }, getModels: () => [] },
     {
       id: "provider-b",
       name: "Provider B",
@@ -93,6 +98,10 @@ function createRuntime() {
     getModels: (providerId?: string) => (providerId ? models.filter((model) => model.provider === providerId) : models),
     getModel: (providerId: string, modelId: string) =>
       models.find((model) => model.provider === providerId && model.id === modelId),
+    getModelsOfType: (_type: "classifier", providerId?: string) =>
+      classifiers.filter(({ provider }) => !providerId || provider === providerId),
+    getModelOfType: (_type: "classifier", providerId: string, modelId: string) =>
+      classifiers.find(({ provider, id }) => provider === providerId && id === modelId),
     getError: vi.fn(() => undefined),
     setRuntimeApiKey: vi.fn(async () => undefined),
     removeRuntimeApiKey: vi.fn(async () => undefined),
@@ -399,6 +408,80 @@ it("validates per-Wisp selections against both the catalog and the shared encryp
   });
 });
 
+describe("ModelService decision models", () => {
+  const jev = { providerId: "typesafe", modelId: "jev-latest" };
+
+  it("lists providers with decision models apart from those with text models", async () => {
+    const { service } = await createService();
+
+    const view = await service.getView();
+
+    expect(view.providers.map(({ id }) => id)).toEqual(["openrouter", "provider-b"]);
+    expect(view.decisionProviders).toEqual([
+      {
+        id: "openrouter",
+        name: "OpenRouter",
+        credentialConfigured: false,
+        models: [{ id: "decider", name: "Decider" }],
+      },
+      { id: "typesafe", name: "TypeSafe", credentialConfigured: false, models: [{ id: "jev-latest", name: "Jev" }] },
+    ]);
+  });
+
+  it("saves a key for a provider with no text models and leaves the global model alone", async () => {
+    const { service, runtime, settings } = await createService();
+    await service.save({ selection: { providerId: "openrouter", modelId: "model-a" }, apiKey: "router-key" });
+
+    const view = await service.saveProviderKey("typesafe", " typesafe-key ");
+
+    expect(runtime.setRuntimeApiKey).toHaveBeenCalledWith("typesafe", "typesafe-key");
+    expect(view.decisionProviders?.find(({ id }) => id === "typesafe")?.credentialConfigured).toBe(true);
+    await expect(settings.getSelection()).resolves.toMatchObject({ providerId: "openrouter", modelId: "model-a" });
+  });
+
+  it("refuses an empty key and a provider that takes none", async () => {
+    const { service } = await createService();
+
+    await expect(service.saveProviderKey("typesafe", "  ")).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(service.saveProviderKey("missing", "key")).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("chooses a decision model without asking for image input, and only one with a saved key", async () => {
+    const { service } = await createService();
+
+    await expect(service.saveAuxiliary("decision", jev)).rejects.toMatchObject({ code: "invalid_configuration" });
+
+    await service.saveProviderKey("typesafe", "typesafe-key");
+    const view = await service.saveAuxiliary("decision", jev);
+
+    expect(view.auxiliary.decision).toEqual({ selection: jev, unavailable: null });
+    await expect(service.getAuxiliaryModel("decision")).resolves.toEqual(jev);
+  });
+
+  it("refuses a text model as the decision model and a decision model as the image model", async () => {
+    const { service } = await createService();
+    await service.save({ selection: { providerId: "openrouter", modelId: "model-a" }, apiKey: "router-key" });
+
+    await expect(
+      service.saveAuxiliary("decision", { providerId: "openrouter", modelId: "model-a" }),
+    ).rejects.toMatchObject({ code: "invalid_configuration" });
+    await expect(
+      service.saveAuxiliary("imageUnderstanding", { providerId: "openrouter", modelId: "decider" }),
+    ).rejects.toMatchObject({ code: "invalid_configuration" });
+  });
+
+  it("keeps a decision model whose key was removed, unused and saying why", async () => {
+    const { service } = await createService();
+    await service.saveProviderKey("typesafe", "typesafe-key");
+    await service.saveAuxiliary("decision", jev);
+
+    const view = await service.removeCredential("typesafe");
+
+    expect(view.auxiliary.decision).toEqual({ selection: jev, unavailable: "missing_key" });
+    await expect(service.getAuxiliaryModel("decision")).resolves.toBeNull();
+  });
+});
+
 describe("ModelService auxiliary models", () => {
   const vision = { providerId: "provider-b", modelId: "vision-b" };
 
@@ -577,6 +660,8 @@ describe("ModelService subscription sign-in", () => {
       getProviders: () => providers,
       getProvider: (providerId: string) => providers.find(({ id }) => id === providerId),
       getModels: (providerId?: string) => models.filter((model) => !providerId || model.provider === providerId),
+      getModelsOfType: () => [],
+      getModelOfType: () => undefined,
       getModel: (providerId: string, modelId: string) =>
         models.find((model) => model.provider === providerId && model.id === modelId),
       getError: vi.fn(() => undefined),

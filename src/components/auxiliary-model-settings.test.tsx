@@ -64,6 +64,90 @@ describe("AuxiliaryModelSettings", () => {
     expect(onViewChange).toHaveBeenCalledWith(saved);
   });
 
+  describe("decision model", () => {
+    const decisionView = (
+      slot: AuxiliaryModelView = { selection: null, unavailable: null },
+      typesafeKey = false,
+    ): AiSettingsView => ({
+      ...view(),
+      auxiliary: { imageUnderstanding: { selection: null, unavailable: null }, decision: slot },
+      decisionProviders: [
+        {
+          id: "openai",
+          name: "OpenAI",
+          credentialConfigured: true,
+          models: [{ id: "decider", name: "DECIDER" }],
+        },
+        {
+          id: "google",
+          name: "Google",
+          credentialConfigured: false,
+          models: [{ id: "unkeyed", name: "UNKEYED" }],
+        },
+        {
+          id: "typesafe",
+          name: "TypeSafe",
+          credentialConfigured: typesafeKey,
+          models: [{ id: "jev-latest", name: "JEV" }],
+        },
+      ],
+    });
+
+    it("is not offered by a server without decision models", () => {
+      renderSettings(view());
+
+      expect(screen.queryByRole("combobox", { name: "Decision model" })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("TypeSafe API key")).not.toBeInTheDocument();
+    });
+
+    it("lists only decision models from providers with a saved key and saves the choice", async () => {
+      const user = userEvent.setup();
+      const { saveAuxiliaryModel } = renderSettings(decisionView());
+
+      await user.click(screen.getByRole("combobox", { name: "Decision model" }));
+
+      expect(await screen.findByRole("option", { name: /Off/ })).toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: /VISION/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: /UNKEYED/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: /JEV/ })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("option", { name: /DECIDER/ }));
+
+      expect(saveAuxiliaryModel).toHaveBeenCalledWith({
+        task: "decision",
+        selection: { providerId: "openai", modelId: "decider" },
+      });
+    });
+
+    it("asks here only for the key of a provider with no text models, and saves it alone", async () => {
+      const user = userEvent.setup();
+      const saved = decisionView(undefined, true);
+      const saveProviderKey = vi.fn(async () => ({ ok: true as const, value: saved }));
+      const onViewChange = vi.fn();
+      Object.defineProperty(window, "wisp", { configurable: true, value: { saveProviderKey } });
+      render(<AuxiliaryModelSettings view={decisionView()} onViewChange={onViewChange} />);
+
+      expect(screen.queryByLabelText("OpenAI API key")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Google API key")).not.toBeInTheDocument();
+      await user.type(screen.getByLabelText("TypeSafe API key"), "secret");
+      await user.click(screen.getByRole("button", { name: "Save key" }));
+
+      expect(saveProviderKey).toHaveBeenCalledWith({ providerId: "typesafe", apiKey: "secret" });
+      expect(onViewChange).toHaveBeenCalledWith(saved);
+      expect(await screen.findByText("TypeSafe API key saved.")).toBeInTheDocument();
+    });
+
+    it("says circles answer with their lead while the saved model cannot be used", () => {
+      renderSettings(
+        decisionView({ selection: { providerId: "typesafe", modelId: "jev-latest" }, unavailable: "missing_key" }),
+      );
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Add an API key for TypeSafe to use this model. Until then, circles answer with their lead.",
+      );
+      expect(screen.getByRole("combobox", { name: "Decision model" })).toHaveTextContent("jev-latest (unavailable)");
+    });
+  });
+
   it("says why a saved model is not used and keeps it selected", () => {
     renderSettings(view({ selection: { providerId: "google", modelId: "gemini" }, unavailable: "missing_key" }));
 

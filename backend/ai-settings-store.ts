@@ -70,7 +70,10 @@ export function normalizeWispFallback(value: unknown): WispFallback | undefined 
  */
 function normalizeAuxiliary(value: unknown): AuxiliaryModelSelections {
   const record = value && typeof value === "object" ? (value as Partial<Record<AuxiliaryTask, unknown>>) : {};
-  return { imageUnderstanding: normalizeModelChoice(record.imageUnderstanding) };
+  return {
+    imageUnderstanding: normalizeModelChoice(record.imageUnderstanding),
+    decision: normalizeModelChoice(record.decision),
+  };
 }
 
 export class AiSettingsStore {

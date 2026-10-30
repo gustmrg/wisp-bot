@@ -271,10 +271,12 @@ function MessageView({
       message.status === "failed" ||
       message.scheduled ||
       message.job ||
+      message.chosenAutomatically ||
       message.fallbackModel ? (
         <div className={cn("mt-1 flex items-center gap-2 text-2xs text-faint", outgoing && "mr-1")}>
           {message.scheduled ? <ScheduledBadge scheduledAt={message.scheduled.scheduledAt} /> : null}
           {message.job ? <JobBadge title={message.job.title} /> : null}
+          {message.chosenAutomatically ? <span>Chosen automatically</span> : null}
           {message.fallbackModel ? <FallbackBadge model={message.fallbackModel} /> : null}
           {message.status === "queued" || message.status === "cancelled" ? (
             <span>{message.status === "queued" ? "Queued" : "Stopped"}</span>

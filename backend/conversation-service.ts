@@ -113,6 +113,9 @@ export class ConversationService {
     this.onSessionsEnding = options.onSessionsEnding;
   }
 
+  /** The member the decision model chose for each circle's current turn. */
+  private readonly chosenMembers = new Map<string, string>();
+
   async start(model: ModelSelection | null): Promise<void> {
     this.model = model;
     await this.repository.load();
@@ -210,6 +213,10 @@ export class ConversationService {
       });
       return;
     }
+    if (event.type === "circle_turn_started") {
+      if (event.chosenAutomatically) this.chosenMembers.set(event.conversationId, event.wispId);
+      else this.chosenMembers.delete(event.conversationId);
+    }
     if (event.type === "assistant_message_started") {
       this.persistOutgoingStatus(event.conversationId, event.requestId, "complete");
       this.setLiveMessage(event.conversationId, {
@@ -219,6 +226,7 @@ export class ConversationService {
         status: "streaming",
         createdAt: event.createdAt,
         ...this.authorOf(event.conversationId, event.wispId),
+        ...this.chosenMark(event.conversationId, event.wispId),
       });
       return;
     }
@@ -231,6 +239,7 @@ export class ConversationService {
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...this.authorOf(event.conversationId, event.wispId),
+        ...this.chosenMark(event.conversationId, event.wispId),
       });
       return;
     }
@@ -243,6 +252,7 @@ export class ConversationService {
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...this.authorOf(event.conversationId, event.wispId),
+        ...this.chosenMark(event.conversationId, event.wispId),
         ...(event.type === "assistant_message_completed" && event.fallbackModel
           ? { fallbackModel: event.fallbackModel }
           : {}),
@@ -391,6 +401,11 @@ export class ConversationService {
   }
 
   /** Replies in a Wisp's own conversation are the Wisp's; in a circle, the member's the event names. */
+  /** Marks the reply of the member the decision model chose; a member it hands the task to was not chosen. */
+  private chosenMark(conversationId: string, wispId?: string): { chosenAutomatically?: true } {
+    return wispId && this.chosenMembers.get(conversationId) === wispId ? { chosenAutomatically: true } : {};
+  }
+
   private authorOf(conversationId: string, wispId?: string): { authorId?: string; authorName?: string } {
     const chat = this.repository.readChat(conversationId);
     if (chat?.kind === "wisp") return this.author(chat.wispId);
@@ -535,7 +550,10 @@ export class ConversationService {
     if (before) {
       const changesAgents =
         changes.kind === "circle" &&
-        (changes.name !== undefined || changes.description !== undefined || changes.memberIds !== undefined);
+        (changes.name !== undefined ||
+          changes.description !== undefined ||
+          changes.memberIds !== undefined ||
+          changes.responder !== undefined);
       if (changesAgents) {
         await this.registry.updateContext(this.repository.getCircleAgentContext(conversationId)).catch(() => undefined);
       }

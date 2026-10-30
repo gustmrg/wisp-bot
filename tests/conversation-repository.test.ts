@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { seedConversations } from "./helpers/seed-conversations.js";
 import { IntactDatabaseError } from "../backend/sqlite-backup.js";
-import { CONVERSATION_STORAGE_POLICY } from "../backend/storage-policy.js";
 import { DEFAULT_CONTEXT_POLICY } from "../shared/context-policy.js";
 import type { Chat, CircleChat, Message, Wisp } from "../shared/conversations.js";
 import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
@@ -507,6 +506,28 @@ describe("ConversationRepository", () => {
     expect(restored.getChats().crew).toMatchObject({ memberIds: ["second"] });
   });
 
+  it("persists who answers a circle's unaddressed messages and tells its agent", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-responder-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await seedConversations(repository, {
+      first: chat("first"),
+      crew: { ...chat("crew", true), memberIds: ["first"] },
+    });
+    expect(repository.getChats().crew).not.toHaveProperty("responder");
+    expect(repository.getCircleAgentContext("crew")).not.toHaveProperty("responder");
+
+    await repository.update("crew", { kind: "circle", responder: "auto" });
+
+    expect(repository.getCircleAgentContext("crew").responder).toBe("auto");
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getChats().crew).toMatchObject({ responder: "auto", memberIds: ["first"] });
+
+    await restored.update("crew", { kind: "circle", responder: "lead" });
+    expect(restored.getChats().crew).not.toHaveProperty("responder");
+    expect(restored.getCircleAgentContext("crew")).not.toHaveProperty("responder");
+  });
+
   it("normalizes and persists an ordered circle membership replacement", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-update-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
@@ -651,27 +672,6 @@ describe("ConversationRepository", () => {
     });
     expect(restarted.getChats().circle).toMatchObject({ memberIds: ["first"] });
     expect(restarted.getChats().first?.messages.map(({ id }) => id)).toEqual(["first:message:0", "reply", "question"]);
-  });
-
-  it("keeps the newest messages when a conversation reaches its limit", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-message-limit-"));
-    const limit = CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation;
-    const full: Message[] = Array.from({ length: limit }, (_, index) => ({
-      id: `m${index}`,
-      type: "incoming",
-      text: `Message ${index}`,
-    }));
-    const repository = new ConversationRepository({ dataDirectory: directory });
-    await seedConversations(repository, { first: { ...chat("first"), messages: full } });
-
-    await repository.appendMessage("first", { id: "newest", type: "outgoing", text: "Still sends" });
-
-    for (const current of [repository, await reload(directory)]) {
-      const ids = current.getChats().first!.messages.map(({ id }) => id);
-      expect(ids).toHaveLength(limit);
-      expect(ids[0]).toBe("m1");
-      expect(ids.at(-1)).toBe("newest");
-    }
   });
 
   it("preserves a database that is not a database and starts fresh", async () => {

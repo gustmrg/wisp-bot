@@ -159,6 +159,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     getAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     saveAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     saveAuxiliaryModel: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
+    saveProviderKey: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     saveFallbackModel: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     removeProviderCredential: vi.fn(async () => ({
       ok: true as const,

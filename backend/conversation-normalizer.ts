@@ -263,6 +263,7 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
       ...(raw.fallbackModel === undefined || raw.type !== "incoming"
         ? {}
         : { fallbackModel: string(raw.fallbackModel, 256, false) }),
+      ...(raw.chosenAutomatically === true && raw.type === "incoming" ? { chosenAutomatically: true as const } : {}),
       ...(raw.error === undefined || raw.type !== "incoming" ? {} : { error: normalizeMessageFailure(raw.error) }),
       ...(raw.steps === undefined || raw.type !== "incoming" ? {} : normalizeSteps(raw.steps)),
     };
@@ -390,6 +391,7 @@ export function normalizeChat(value: unknown): Chat {
     label: string(raw.label, 500),
     description: string(raw.description, 10_000),
     memberIds: raw.memberIds.map(normalizeConversationId),
+    ...(raw.responder === "auto" ? { responder: "auto" as const } : {}),
   };
 }
 
@@ -435,7 +437,7 @@ export function normalizeChatChanges(value: unknown): ChatChanges {
   const allowed = new Set([
     "kind",
     ...shared,
-    ...(raw.kind === "circle" ? ["name", "label", "description", "memberIds"] : []),
+    ...(raw.kind === "circle" ? ["name", "label", "description", "memberIds", "responder"] : []),
   ]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: Record<string, unknown> = { kind: raw.kind };
@@ -445,6 +447,10 @@ export function normalizeChatChanges(value: unknown): ChatChanges {
   if (raw.memberIds !== undefined) {
     if (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000) throw invalidRequest();
     result.memberIds = raw.memberIds.map(normalizeConversationId);
+  }
+  if (raw.responder !== undefined) {
+    if (raw.responder !== "lead" && raw.responder !== "auto") throw invalidRequest();
+    result.responder = raw.responder;
   }
   for (const key of ["notifyOnUpdatesEnabled", "unread", "pinned"] as const) {
     if (raw[key] !== undefined) {

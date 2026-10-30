@@ -141,6 +141,7 @@ export const WISP_IPC_CHANNELS = {
   saveWispMcpAccess: "wisp:mcp:access:save",
   saveAiSettings: "wisp:settings:ai:save",
   saveAuxiliaryModel: "wisp:settings:ai:save-auxiliary",
+  saveProviderKey: "wisp:settings:ai:save-key",
   saveFallbackModel: "wisp:settings:ai:save-fallback",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   startProviderSignIn: "wisp:settings:ai:sign-in",
@@ -323,8 +324,12 @@ export interface ProviderSignInView {
   error?: string;
 }
 
-/** Tasks a separately chosen model does for Wisps whose own model cannot. */
-export type AuxiliaryTask = "imageUnderstanding";
+/**
+ * Tasks a separately chosen model does apart from a Wisp's own turns: reading
+ * images for Wisps whose model cannot, and deciding, with a classifier rather
+ * than a model that writes text.
+ */
+export type AuxiliaryTask = "imageUnderstanding" | "decision";
 
 export type AuxiliaryModelSelections = Record<AuxiliaryTask, ModelSelection | null>;
 
@@ -366,13 +371,32 @@ export function wispFallbackChoice(modelOverride: ModelSelection | null, saved: 
   return saved ?? (modelOverride ? "off" : "global");
 }
 
+/** A model that can only decide, not write text, so it never appears in a provider's `models`. */
+export interface DecisionModelSummary {
+  id: string;
+  name: string;
+}
+
+export interface DecisionProviderSummary {
+  id: string;
+  name: string;
+  credentialConfigured: boolean;
+  models: ReadonlyArray<DecisionModelSummary>;
+}
+
 export interface AiSettingsView {
   selection: ModelSelection | null;
-  auxiliary: Record<AuxiliaryTask, AuxiliaryModelView>;
+  /** `decision` is missing from servers before decision models. */
+  auxiliary: Record<Exclude<AuxiliaryTask, "decision">, AuxiliaryModelView> & { decision?: AuxiliaryModelView };
   /** The model Wisps on the global model answer with when it fails for good. */
   fallback: FallbackModelView;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
+  /**
+   * Providers with decision models, some of which have no text models and so
+   * are not in `providers`. Missing from servers before decision models.
+   */
+  decisionProviders?: ReadonlyArray<DecisionProviderSummary>;
   /** A subscription sign-in in progress or the last one that failed; missing from servers before sign-ins. */
   providerSignIn?: ProviderSignInView | null;
   /** Whether this server's Claude Code can run Wisps (ADR 026); missing from servers before Claude Code. */
@@ -390,6 +414,12 @@ export interface SaveAuxiliaryModelRequest {
   task: AuxiliaryTask;
   /** Null turns the task off. */
   selection: ModelSelection | null;
+}
+
+/** Saves a provider's key without choosing one of its models, for a provider with no text models to choose. */
+export interface SaveProviderKeyRequest {
+  providerId: string;
+  apiKey: string;
 }
 
 export interface SaveFallbackModelRequest {
@@ -636,6 +666,8 @@ type ConversationAgentEventBody =
       conversationId: string;
       requestId: string;
       wispId: string;
+      /** The decision model chose this member to answer. */
+      chosenAutomatically?: true;
     };
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
@@ -724,6 +756,8 @@ export interface WispUsageRow {
   totals: SessionReportTotals;
   /** The same usage split by model; together the rows add up to `totals`. Absent from older servers. */
   models?: ReadonlyArray<ModelUsageRow>;
+  /** Set on the row of what decision models used, which belongs to no Wisp. */
+  decisionModel?: true;
 }
 
 /** One model's usage in a usage report, or context summaries, whose model is not recorded. */
@@ -738,6 +772,8 @@ export interface ModelUsageRow {
   turns: number;
   /** Calls the model made as an auxiliary model, such as reading an image for a Wisp. */
   auxiliaryCalls: number;
+  /** Calls the model made to decide who answers in a circle. */
+  decisionCalls?: number;
   totals: SessionReportTotals;
 }
 
@@ -856,6 +892,7 @@ export interface WispApi {
   getAiSettings(): Promise<BackendResult<AiSettingsView>>;
   saveAiSettings(request: SaveAiSettingsRequest): Promise<BackendResult<AiSettingsView>>;
   saveAuxiliaryModel(request: SaveAuxiliaryModelRequest): Promise<BackendResult<AiSettingsView>>;
+  saveProviderKey(request: SaveProviderKeyRequest): Promise<BackendResult<AiSettingsView>>;
   saveFallbackModel(request: SaveFallbackModelRequest): Promise<BackendResult<AiSettingsView>>;
   removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
   startProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;

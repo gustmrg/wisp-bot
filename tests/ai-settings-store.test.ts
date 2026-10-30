@@ -55,6 +55,7 @@ describe("AiSettingsStore", () => {
       await expect(reloaded.getSelection()).resolves.toEqual(expected);
       await expect(reloaded.getAuxiliary()).resolves.toEqual({
         imageUnderstanding: { providerId: "openai", modelId: "vision" },
+        decision: null,
       });
     }
   });
@@ -85,11 +86,11 @@ describe("AiSettingsStore", () => {
 
     const reloaded = new AiSettingsStore(filePath);
     await expect(reloaded.getSelection()).resolves.toEqual(selection);
-    await expect(reloaded.getAuxiliary()).resolves.toEqual({ imageUnderstanding: image });
+    await expect(reloaded.getAuxiliary()).resolves.toEqual({ imageUnderstanding: image, decision: null });
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
       schemaVersion: 1,
       selection,
-      auxiliary: { imageUnderstanding: image },
+      auxiliary: { imageUnderstanding: image, decision: null },
     });
 
     await store.setAuxiliary("imageUnderstanding", null);
@@ -119,14 +120,17 @@ describe("AiSettingsStore", () => {
     const { filePath } = await createStore();
     const selection = { providerId: "anthropic", modelId: "claude-example" };
     await writeFile(filePath, JSON.stringify({ schemaVersion: 1, selection }));
-    await expect(new AiSettingsStore(filePath).getAuxiliary()).resolves.toEqual({ imageUnderstanding: null });
+    await expect(new AiSettingsStore(filePath).getAuxiliary()).resolves.toEqual({
+      imageUnderstanding: null,
+      decision: null,
+    });
 
     await writeFile(
       filePath,
       JSON.stringify({ schemaVersion: 1, selection, auxiliary: { imageUnderstanding: { providerId: "" } } }),
     );
     const store = new AiSettingsStore(filePath);
-    await expect(store.getAuxiliary()).resolves.toEqual({ imageUnderstanding: null });
+    await expect(store.getAuxiliary()).resolves.toEqual({ imageUnderstanding: null, decision: null });
     await expect(store.getSelection()).resolves.toEqual(selection);
   });
 });

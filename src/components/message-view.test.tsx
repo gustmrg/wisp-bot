@@ -36,6 +36,15 @@ describe("MessageView", () => {
     expect(screen.getByText("Job · Blog watch")).toBeTruthy();
   });
 
+  it("marks a circle's reply from the member the decision model chose", () => {
+    render(
+      <MessageView
+        message={{ id: "reply", type: "incoming", text: "Hi", status: "complete", chosenAutomatically: true }}
+      />,
+    );
+    expect(screen.getByText("Chosen automatically")).toBeTruthy();
+  });
+
   it("marks a Wisp's reply its fallback model wrote", () => {
     render(
       <MessageView

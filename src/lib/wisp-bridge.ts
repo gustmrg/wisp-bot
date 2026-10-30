@@ -35,6 +35,7 @@ const REQUIRED_WISP_METHODS = [
   "getAiSettings",
   "saveAiSettings",
   "saveAuxiliaryModel",
+  "saveProviderKey",
   "saveFallbackModel",
   "removeProviderCredential",
   "startProviderSignIn",

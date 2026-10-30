@@ -97,6 +97,9 @@ function completeBridge(): WispApi {
     saveAuxiliaryModel: async () => {
       throw new Error("not called");
     },
+    saveProviderKey: async () => {
+      throw new Error("not called");
+    },
     saveFallbackModel: async () => {
       throw new Error("not called");
     },
