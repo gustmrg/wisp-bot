@@ -314,14 +314,46 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
   );
 }
 
+/** Resolves to false when the answer did not reach the backend, as on a dropped connection. */
+type ApprovalAnswer = void | Promise<boolean>;
+
 interface AllowAllApprovalsProps {
   requests: ReadonlyArray<ToolApprovalRequest>;
-  onAllow: (request: ToolApprovalRequest) => void;
+  onAllow: (request: ToolApprovalRequest) => ApprovalAnswer;
+}
+
+function approvalKind(request: ToolApprovalRequest): readonly [one: string, many: string] {
+  switch (request.category) {
+    case "create_file":
+    case "modify_file":
+      return ["file change", "file changes"];
+    case "container_command":
+    case "shell":
+      return ["command", "commands"];
+    case "browser":
+    case "browser_submit":
+      return ["browser action", "browser actions"];
+    case "external_write":
+    case "integration_call":
+      return ["integration call", "integration calls"];
+    default:
+      return ["request", "requests"];
+  }
+}
+
+/** What a group of approvals would let through, in a few words: "2 commands, 1 file change". */
+function approvalKinds(requests: ReadonlyArray<ToolApprovalRequest>): string {
+  const counts = new Map<string, { count: number; many: string }>();
+  for (const request of requests) {
+    const [one, many] = approvalKind(request);
+    counts.set(one, { count: (counts.get(one)?.count ?? 0) + 1, many });
+  }
+  return [...counts].map(([one, { count, many }]) => `${count} ${count === 1 ? one : many}`).join(", ");
 }
 
 /**
- * Allows once, in one tap, every waiting approval a tap may answer. Skills and jobs still
- * need their own review, so they are left to their cards.
+ * Allows once, in one tap, every waiting approval a tap may answer, and says what kinds they are.
+ * Skills and jobs still need their own review, so they are left to their cards.
  */
 function AllowAllApprovals({ requests, onAllow }: AllowAllApprovalsProps) {
   // The ones already answered from here, until they leave the list.
@@ -329,22 +361,26 @@ function AllowAllApprovals({ requests, onAllow }: AllowAllApprovalsProps) {
   const allowable = requests.filter((request) => !needsReview(request) && !sent.has(request.approvalId));
   if (allowable.length < 2) return null;
   const reviews = requests.filter(needsReview).length;
+  const allowAll = () => {
+    setSent((current) => new Set([...current, ...allowable.map(({ approvalId }) => approvalId)]));
+    for (const request of allowable) {
+      // An answer that did not arrive is offered again rather than lost with the bar.
+      void Promise.resolve(onAllow(request)).then((answered) => {
+        if (answered !== false) return;
+        setSent((current) => new Set([...current].filter((approvalId) => approvalId !== request.approvalId)));
+      });
+    }
+  };
   return (
-    <div className="allow-all-approvals mt-2 flex w-[min(680px,90%)] items-center gap-3 rounded-xl border border-warning-solid/25 bg-warning-solid/[0.06] py-2 pr-2 pl-3">
+    <div className="allow-all-approvals flex items-center gap-3 rounded-xl border border-warning-solid/25 bg-warning-solid/[0.06] py-2 pr-2 pl-3">
       <span className="min-w-0 flex-1 text-sm">
         {`${allowable.length} approvals waiting`}
-        {reviews ? (
-          <span className="text-dim">{` · ${reviews} ${reviews === 1 ? "needs" : "need"} a review`}</span>
-        ) : null}
+        <span className="block text-xs text-dim">
+          {approvalKinds(allowable)}
+          {reviews ? ` · ${reviews} ${reviews === 1 ? "needs" : "need"} a review` : ""}
+        </span>
       </span>
-      <Button
-        type="button"
-        size="sm"
-        onClick={() => {
-          setSent(new Set([...sent, ...allowable.map(({ approvalId }) => approvalId)]));
-          for (const request of allowable) onAllow(request);
-        }}
-      >
+      <Button type="button" size="sm" onClick={allowAll}>
         {`Allow all ${allowable.length} once`}
       </Button>
     </div>
@@ -352,4 +388,4 @@ function AllowAllApprovals({ requests, onAllow }: AllowAllApprovalsProps) {
 }
 
 export { AllowAllApprovals, ToolApprovalCard, approvalAsk, needsReview, remainingLabel };
-export type { ToolApprovalCardProps };
+export type { ApprovalAnswer, ToolApprovalCardProps };

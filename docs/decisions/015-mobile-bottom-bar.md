@@ -4,7 +4,9 @@
 - Date: 2026-10-09
 - Decision owners: Wisp renderer
 - Scope: Which destinations the mobile layout's bottom bar holds
-- Related: [mobile layout](../mobile-layout.md), [ADR 014](014-mobile-identity.md)
+- Related: [mobile layout](../mobile-layout.md), [ADR 014](014-mobile-identity.md),
+  [ADR 039](039-small-approval-cards-on-a-phone.md), which replaces the card
+  this screen uses
 
 ## Context
 

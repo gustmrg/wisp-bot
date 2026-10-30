@@ -23,7 +23,8 @@ import { PendingMessagesBar } from "@/components/pending-messages-bar";
 import type { MessageQueueController } from "@/hooks/use-message-queue";
 import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
 import { useTimeZone } from "@/hooks/use-time-zone";
-import { AllowAllApprovals, ToolApprovalCard } from "@/components/tool-approval-card";
+import { ApprovalSummaries } from "@/components/approval-summary";
+import { AllowAllApprovals, ToolApprovalCard, type ApprovalAnswer } from "@/components/tool-approval-card";
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
 const NO_MEMBERS: ReadonlyArray<Wisp> = [];
@@ -111,7 +112,7 @@ interface ChatPanelProps {
   voice?: VoiceInputSettings;
   onConfigureVoice?: () => void;
   onRetry: (messageId: string | undefined) => void;
-  onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
+  onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => ApprovalAnswer;
   onSend: (text: string) => void;
   /** Scheduled messages for every Wisp; absent when the backend cannot schedule them. */
   scheduledMessages?: ScheduledMessagesController;
@@ -535,22 +536,18 @@ function ChatPanel({
               );
             })}
             {/* These belong to the newest messages, so a window opened elsewhere in the transcript omits them. */}
-            {attached ? (
-              <>
-                <AllowAllApprovals
-                  requests={approvals}
-                  onAllow={(request) => onResolveApproval(request, "allow_once")}
+            {!attached ? null : mobile ? (
+              <ApprovalSummaries requests={approvals} chatOf={() => chat} onResolve={onResolveApproval} />
+            ) : (
+              approvals.map((request) => (
+                <ToolApprovalCard
+                  key={request.approvalId}
+                  request={request}
+                  wispName={approvalWispName(chat, request)}
+                  onResolve={(decision) => onResolveApproval(request, decision)}
                 />
-                {approvals.map((request) => (
-                  <ToolApprovalCard
-                    key={request.approvalId}
-                    request={request}
-                    wispName={approvalWispName(chat, request)}
-                    onResolve={(decision) => onResolveApproval(request, decision)}
-                  />
-                ))}
-              </>
-            ) : null}
+              ))
+            )}
             {showActivity ? (
               <div role="status" className="chat-activity mt-3 flex items-center gap-2 text-dim text-sm">
                 <span
@@ -586,6 +583,12 @@ function ChatPanel({
         )}
       </div>
 
+      {/* Outside the transcript, which rests on its end, so a long stack of approvals cannot hide this. */}
+      {attached ? (
+        <div className="chat-pending flex-none px-3">
+          <AllowAllApprovals requests={approvals} onAllow={(request) => onResolveApproval(request, "allow_once")} />
+        </div>
+      ) : null}
       {scheduledMessages?.available || messageQueue?.available ? (
         <div className="chat-pending flex-none px-3">
           <PendingMessagesBar

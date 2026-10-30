@@ -332,6 +332,32 @@ describe("ChatPanel transcript", () => {
 });
 
 describe("ChatPanel approvals", () => {
+  it("shows small cards on a phone, with the whole request in a sheet", async () => {
+    const user = userEvent.setup();
+    const asked: ToolApprovalRequest = {
+      approvalId: "one",
+      conversationId: "atlas",
+      toolCallId: "one-call",
+      toolName: "write",
+      category: "create_file",
+      scope: { kind: "workspace_path", display: "one.txt" },
+      summary: "Create one.txt",
+      expiresAt: "2026-10-11T12:01:00.000Z",
+    };
+    const { props } = renderPanel(transcript(messages(0, 2)), { approvals: [asked], onBack: vi.fn() });
+
+    expect(screen.queryByRole("region", { name: "Tool approval required" })).not.toBeInTheDocument();
+    const card = screen.getByRole("article", { name: "Atlas: Create one.txt" });
+    await user.click(within(card).getByRole("button", { name: "Allow once" }));
+    expect(props.onResolveApproval).toHaveBeenCalledWith(asked, "allow_once");
+
+    await user.click(within(card).getByRole("button", { name: /Show details/ }));
+    const sheet = screen.getByRole("dialog", { name: "Atlas wants to create a file" });
+    expect(within(sheet).getByRole("button", { name: "Always allow creating files" })).toBeVisible();
+    // Already in the conversation, so the sheet has no way into it.
+    expect(within(sheet).queryByRole("button", { name: "Open conversation" })).not.toBeInTheDocument();
+  });
+
   it("allows every waiting approval at once from the conversation", async () => {
     const user = userEvent.setup();
     const approval = (approvalId: string): ToolApprovalRequest => ({
@@ -347,6 +373,8 @@ describe("ChatPanel approvals", () => {
     const { props } = renderPanel(transcript(messages(0, 2)), { approvals: [approval("one"), approval("two")] });
 
     expect(screen.getAllByRole("region", { name: "Tool approval required" })).toHaveLength(2);
+    // The view rests on the end of the transcript, so the bar must not scroll away with it.
+    expect(screen.getByRole("button", { name: "Allow all 2 once" }).closest(".chat-transcript")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Allow all 2 once" }));
     expect(props.onResolveApproval).toHaveBeenCalledTimes(2);
     expect(props.onResolveApproval).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "two" }), "allow_once");

@@ -763,7 +763,8 @@ describe("Mobile workspace", () => {
       decision: "allow_once",
     });
 
-    await user.click(screen.getByRole("button", { name: "Open the conversation with Atlas" }));
+    await user.click(screen.getByRole("button", { name: /Show details/ }));
+    await user.click(screen.getByRole("button", { name: "Open conversation" }));
     expect(screen.getByRole("combobox", { name: "Message Atlas" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Approvals" })).not.toBeInTheDocument();
   });
