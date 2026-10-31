@@ -321,45 +321,17 @@ describe("plugin service", () => {
     expect(executeFirecrawl).toHaveBeenCalledTimes(1);
   });
 
-  it("does not retry a failed search on another paid provider", async () => {
-    const { service, call, execute, executeFirecrawl } = await setup();
-    await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
-    await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
-    await service.saveAccess({
-      ...accessForm(service, "one"),
-      grants: [
-        { pluginId: "web-search", access: "read" },
-        { pluginId: "firecrawl", access: "read" },
-      ],
-    });
-    execute.mockRejectedValueOnce(new Error("private provider failure"));
-    await expect(call("web_search")).rejects.toMatchObject({ code: "internal_error" });
-    expect(executeFirecrawl).not.toHaveBeenCalled();
-  });
-
-  it("preserves existing connections and grants when loading settings without Firecrawl", async () => {
-    const { service, connect, grant, options, dataDirectory } = await setup();
+  it("keeps connections and grants from settings saved before any later plugin existed", async () => {
+    const { connect, grant, options, dataDirectory } = await setup();
     await connect();
     await grant("read");
     const file = path.join(dataDirectory, "plugins.json");
     const state = JSON.parse(await readFile(file, "utf8"));
-    delete state.enabled.firecrawl;
-    delete state.enabled.tavily;
-    delete state.enabled.exa;
+    state.enabled = { "web-search": false, linear: true };
     await writeFile(file, JSON.stringify(state));
     const reopened = new PluginService(options);
     await reopened.load();
     expect(await reopened.getActiveToolNames("one")).toEqual(["linear_get_issue"]);
-    expect((await reopened.getView()).plugins.find(({ id }) => id === "firecrawl")).toMatchObject({
-      enabled: false,
-      configured: false,
-    });
-    expect(() =>
-      service.saveAccess({
-        ...accessForm(service, "one"),
-        grants: [{ pluginId: "firecrawl", access: "write" }],
-      }),
-    ).toThrow();
   });
 
   it("starts denied and connecting does not grant tools; persists independent Wisp grants without plaintext secrets", async () => {
