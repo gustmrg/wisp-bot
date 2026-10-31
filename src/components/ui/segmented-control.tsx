@@ -44,11 +44,6 @@ function SegmentedControl<T extends string>({
     observer.observe(group.current);
     return () => observer.disconnect();
   }, [selectedIndex]);
-  // Skip the slide on the first placement so the indicator does not sweep in from the left edge.
-  const placed = useRef(false);
-  useLayoutEffect(() => {
-    if (indicator) placed.current = true;
-  }, [indicator]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const step =
@@ -84,7 +79,6 @@ function SegmentedControl<T extends string>({
           style={{ width: indicator.width, translate: `${indicator.left}px 0` }}
           className={cn(
             "pointer-events-none absolute inset-y-0.5 left-0 rounded-md bg-background shadow-sm dark:bg-input/30",
-            placed.current && "transition-[translate,width] duration-200 ease-out",
             disabled && "opacity-50",
           )}
         />

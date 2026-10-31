@@ -18,7 +18,6 @@ import { WispBehaviorFields, WispIdentityFields, type WispSettingsDraft } from "
 import { WispSkillSettings } from "@/components/wisp-skill-settings";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
-import { cn } from "@/lib/utils";
 import { sameWispAppearance } from "../../shared/wisp-appearance";
 
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
@@ -77,7 +76,6 @@ export function WispDetails({
   initialTab = "general",
 }: WispDetailsProps) {
   const [tab, setTab] = useState<string>(initialTab);
-  const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
   const [visited, setVisited] = useState(() => new Set(["general", initialTab]));
   const [draft, setDraft] = useState(() => draftOf(chat));
   const [saving, setSaving] = useState(false);
@@ -91,7 +89,6 @@ export function WispDetails({
     !sameWispAppearance(draft.appearance, wisp.appearance);
   const notificationsChanged = draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
   const profileChanged = wispChanged || notificationsChanged;
-  const slideClass = slideDirection === "forward" ? "animate-tab-forward" : "animate-tab-back";
 
   async function save() {
     const name = draft.name.trim() || "Untitled";
@@ -128,11 +125,6 @@ export function WispDetails({
       value={tab}
       onValueChange={(value) => {
         if (typeof value !== "string") return;
-        const nextIndex = TAB_ORDER.indexOf(value as WispSettingsTab);
-        const currentIndex = TAB_ORDER.indexOf(tab as WispSettingsTab);
-        if (nextIndex >= 0 && currentIndex >= 0 && nextIndex !== currentIndex) {
-          setSlideDirection(nextIndex > currentIndex ? "forward" : "back");
-        }
         setTab(value);
         setVisited((current) => (current.has(value) ? current : new Set([...current, value])));
       }}
@@ -146,11 +138,7 @@ export function WispDetails({
           <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
       </div>
-      <TabsContent
-        value="general"
-        keepMounted
-        className={cn("flex min-h-0 flex-col overflow-hidden", tab === "general" && slideClass)}
-      >
+      <TabsContent value="general" keepMounted className="flex min-h-0 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
           <SettingsGroup label="Profile" className="[&>h3]:mt-0">
             <WispIdentityFields
@@ -216,18 +204,10 @@ export function WispDetails({
           </footer>
         ) : null}
       </TabsContent>
-      <TabsContent
-        value="model"
-        keepMounted
-        className={cn("flex min-h-0 flex-col overflow-hidden", tab === "model" && slideClass)}
-      >
+      <TabsContent value="model" keepMounted className="flex min-h-0 flex-col overflow-hidden">
         {visited.has("model") ? <WispModelSettings conversationId={chat.id} /> : null}
       </TabsContent>
-      <TabsContent
-        value="usage"
-        keepMounted
-        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "usage" && slideClass)}
-      >
+      <TabsContent value="usage" keepMounted className="min-h-0 overflow-y-auto p-3.5">
         {visited.has("usage") ? (
           <>
             <WispSessionReportSection chatId={chat.id} active={tab === "usage"} onOpenSettings={onOpenSettings} />
@@ -235,10 +215,7 @@ export function WispDetails({
           </>
         ) : null}
       </TabsContent>
-      <TabsContent
-        value="access"
-        className={cn("flex min-h-0 flex-col overflow-hidden", tab === "access" && slideClass)}
-      >
+      <TabsContent value="access" className="flex min-h-0 flex-col overflow-hidden">
         {tab === "access" ? <WispPluginSettings conversationId={chat.id} onOpenSettings={onOpenSettings} /> : null}
       </TabsContent>
     </Tabs>

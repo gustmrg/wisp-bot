@@ -160,7 +160,7 @@ function ProgressBar({ progress }: { progress: ConnectionProgress }) {
       className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-[color-mix(in_srgb,var(--tone)_14%,transparent)]"
     >
       <div
-        className="h-full bg-[var(--tone)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+        className="h-full bg-[var(--tone)] transition-[width] duration-[250ms] ease-out motion-reduce:transition-none"
         style={{ width: `${done * share}%` }}
       />
       {running ? (

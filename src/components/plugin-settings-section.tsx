@@ -214,7 +214,7 @@ export function PluginSettingsSection({
         Connect services, then choose which Wisps can use them. Connecting gives no Wisp access.
       </p>
       {view ? (
-        <div className="animate-tab-forward">
+        <div>
           {!view.secureStorageAvailable ? (
             <p role="alert" className="mb-3 text-xs text-destructive">
               Secure credential storage is unavailable. New API keys cannot be saved on this device.

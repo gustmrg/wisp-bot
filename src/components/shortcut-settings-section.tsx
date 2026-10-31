@@ -99,7 +99,7 @@ function ShortcutSettingsSection({ active, preferences, onPreferencesChange }: S
       <SettingsPanelTitle id="shortcut-settings-title" scope="device" className="mb-[22px]">
         Shortcuts
       </SettingsPanelTitle>
-      <div className="animate-tab-forward">
+      <div>
         <SettingsGroup label="Customizable">
           <SettingsCard variant="stacked">
             {(Object.keys(SHORTCUT_LABELS) as ShortcutId[]).map((id) => {

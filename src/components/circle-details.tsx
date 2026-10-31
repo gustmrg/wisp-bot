@@ -3,7 +3,6 @@ import { type ReactNode, useState } from "react";
 import { circleLeadId, withCircleLead, type CircleResponder } from "../../shared/conversations";
 import type { CircleChatChanges, CircleChatView, WispCollection, WispId } from "@/chat-data";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
-import { cn } from "@/lib/utils";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CircleLeadPicker } from "@/components/circle-lead-picker";
 import { CircleResponderPicker } from "@/components/circle-responder-picker";
@@ -70,7 +69,6 @@ export function CircleDetails({
   initialTab = "general",
 }: CircleDetailsProps) {
   const [tab, setTab] = useState<CircleSettingsTab>(initialTab);
-  const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
   const [visited, setVisited] = useState(() => new Set<string>(["general", initialTab]));
   const [draft, setDraft] = useState(() => draftOf(chat));
   const [saving, setSaving] = useState(false);
@@ -93,7 +91,6 @@ export function CircleDetails({
     }),
   };
   const changed = Object.keys(changes).length > 1;
-  const slideClass = slideDirection === "forward" ? "animate-tab-forward" : "animate-tab-back";
 
   function edit(next: Partial<CircleSettingsDraft>) {
     setDraft((current) => ({ ...current, ...next }));
@@ -121,10 +118,7 @@ export function CircleDetails({
       value={tab}
       onValueChange={(value) => {
         if (typeof value !== "string") return;
-        const nextIndex = TAB_ORDER.indexOf(value as CircleSettingsTab);
-        const currentIndex = TAB_ORDER.indexOf(tab);
-        if (nextIndex < 0) return;
-        if (nextIndex !== currentIndex) setSlideDirection(nextIndex > currentIndex ? "forward" : "back");
+        if (!TAB_ORDER.includes(value as CircleSettingsTab)) return;
         setTab(value as CircleSettingsTab);
         setVisited((current) => (current.has(value) ? current : new Set([...current, value])));
       }}
@@ -138,11 +132,7 @@ export function CircleDetails({
           <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
       </div>
-      <TabsContent
-        value="general"
-        keepMounted
-        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "general" && slideClass)}
-      >
+      <TabsContent value="general" keepMounted className="min-h-0 overflow-y-auto p-3.5">
         <div className="flex justify-center pt-5 pb-[30px]">
           <ChatAvatar chat={{ ...chat, members }} size="xl" />
         </div>
@@ -180,11 +170,7 @@ export function CircleDetails({
         </SettingsCard>
         {actions ? <SettingsActions className="mt-[18px]">{actions}</SettingsActions> : null}
       </TabsContent>
-      <TabsContent
-        value="members"
-        keepMounted
-        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "members" && slideClass)}
-      >
+      <TabsContent value="members" keepMounted className="min-h-0 overflow-y-auto p-3.5">
         <CircleMemberPicker
           label={`Participants (${members.length})`}
           availableWisps={availableWisps}
@@ -205,20 +191,12 @@ export function CircleDetails({
         ) : null}
       </TabsContent>
       {/* The workspace saves its own changes. */}
-      <TabsContent
-        value="workspace"
-        keepMounted
-        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "workspace" && slideClass)}
-      >
+      <TabsContent value="workspace" keepMounted className="min-h-0 overflow-y-auto p-3.5">
         {visited.has("workspace") ? (
           <WispWorkspaceSettings conversationId={chat.id} kind="circle" onOpenSettings={onOpenSettings} />
         ) : null}
       </TabsContent>
-      <TabsContent
-        value="usage"
-        keepMounted
-        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "usage" && slideClass)}
-      >
+      <TabsContent value="usage" keepMounted className="min-h-0 overflow-y-auto p-3.5">
         {visited.has("usage") ? (
           <>
             <UsageReportPanel conversationId={chat.id} wisps={chat.members} active={tab === "usage"} />

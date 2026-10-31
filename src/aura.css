@@ -862,7 +862,6 @@
 .message-steps {
   margin-top: 8px;
   max-width: min(820px, 78vw);
-  animation: var(--animate-message-in);
 }
 .message-steps-summary {
   display: inline-flex;

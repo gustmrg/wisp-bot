@@ -56,7 +56,7 @@ function ServerSession({ view }: { view: ConnectionsView }) {
     }
   }
   return (
-    <div className="animate-tab-forward">
+    <div>
       <p className="mb-4 text-xs leading-relaxed text-dim">
         This browser uses the Wisps on {server?.name ?? "this server"}. Settings, credentials, and approvals belong to
         the server.

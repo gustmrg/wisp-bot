@@ -591,7 +591,10 @@ export function ChatComposer({
           anchor={boxRef}
           align="start"
           sideOffset={8}
-          className={menuView === "actions" ? "w-56 p-1" : menuView === "new_topic" ? "w-72" : undefined}
+          className={cn(
+            "data-open:animate-none data-closed:animate-none",
+            menuView === "actions" ? "w-56 p-1" : menuView === "new_topic" && "w-72",
+          )}
         >
           {menuView === "actions" ? (
             <div className="flex flex-col gap-0.5">

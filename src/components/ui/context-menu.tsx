@@ -20,7 +20,7 @@ function ContextMenuContent({ className, children, ...props }: ContextMenuPrimit
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
           className={cn(
-            "z-50 min-w-52 origin-(--transform-origin) rounded-xl border border-border bg-card p-1 text-foreground shadow-lg outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            "z-50 min-w-52 rounded-xl border border-border bg-card p-1 text-foreground shadow-lg outline-none data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
             className,
           )}
           {...props}

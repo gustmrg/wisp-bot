@@ -103,7 +103,7 @@ export function ConnectionsPanel({
   }
 
   return (
-    <div className="animate-tab-forward">
+    <div>
       {!view.secureStorageAvailable ? (
         <p role="alert" className="mb-3 text-xs text-destructive">
           Secure storage is unavailable, so this computer pairs with servers again after every restart.
@@ -312,7 +312,6 @@ function ConnectionForm({
 
   return (
     <form
-      className="animate-tab-forward"
       {...(bare
         ? { "aria-label": profile ? `Edit ${profile.name}` : "Add a server" }
         : { "aria-labelledby": `${formId}-title` })}
