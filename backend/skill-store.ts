@@ -3,24 +3,23 @@ import path from "node:path";
 
 import {
   MAX_SKILL_DESCRIPTION_LENGTH,
+  MAX_SKILL_FILE_BYTES,
   MAX_SKILL_INSTRUCTIONS_LENGTH,
   MAX_SKILLS_PER_WISP,
+  checkSkillDocument,
+  checkSkillDraft,
   isValidSkillName,
+  parseSkillFile,
+  type SkillDraft,
   type SkillSummary,
   type SkillView,
 } from "../shared/skills.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 
-const SKILL_FILE = "SKILL.md";
-/** Frontmatter and instructions together; larger files are skipped rather than truncated. */
-export const MAX_SKILL_FILE_BYTES = 64 * 1024;
+export { MAX_SKILL_FILE_BYTES, parseSkillFile, type SkillDraft };
 
-export interface SkillDraft {
-  name: string;
-  description: string;
-  instructions: string;
-}
+const SKILL_FILE = "SKILL.md";
 
 /**
  * One Wisp's skills, stored as Agent Skills folders (`<name>/SKILL.md`) in the
@@ -123,28 +122,9 @@ export class SkillStore {
 }
 
 export function validateSkillDraft(value: unknown): SkillDraft {
-  const draft = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
-  if (!isValidSkillName(draft.name)) {
-    throw new WispBackendError(
-      "invalid_request",
-      "Skill names use lowercase letters, numbers, and single hyphens, up to 64 characters.",
-    );
-  }
-  const description = typeof draft.description === "string" ? singleLine(draft.description) : "";
-  if (!description || description.length > MAX_SKILL_DESCRIPTION_LENGTH) {
-    throw new WispBackendError(
-      "invalid_request",
-      `A skill needs a description of at most ${MAX_SKILL_DESCRIPTION_LENGTH} characters.`,
-    );
-  }
-  const instructions = typeof draft.instructions === "string" ? draft.instructions.trim() : "";
-  if (!instructions || instructions.length > MAX_SKILL_INSTRUCTIONS_LENGTH) {
-    throw new WispBackendError(
-      "invalid_request",
-      `Skill instructions must be between 1 and ${MAX_SKILL_INSTRUCTIONS_LENGTH} characters.`,
-    );
-  }
-  return { name: draft.name, description, instructions };
+  const checked = checkSkillDraft(value);
+  if (!checked.ok) throw new WispBackendError("invalid_request", checked.error);
+  return checked.draft;
 }
 
 export function formatSkillFile(skill: SkillDraft): string {
@@ -153,58 +133,11 @@ export function formatSkillFile(skill: SkillDraft): string {
 }
 
 /**
- * Reads the frontmatter fields Wisp uses (`name`, `description`) and the body.
- * Accepts plain or double-quoted single-line values; other YAML forms are ignored.
- */
-export function parseSkillFile(contents: string): { name: string; description: string; instructions: string } | null {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(contents.replace(/^﻿/, ""));
-  if (!match) return null;
-  const fields: Record<string, string> = { name: "", description: "" };
-  for (const line of match[1]!.split(/\r?\n/)) {
-    const field = /^(name|description):\s*(.*)$/.exec(line);
-    if (field) fields[field[1]!] = scalarValue(field[2]!.trim());
-  }
-  return { name: fields.name!.trim(), description: singleLine(fields.description!), instructions: match[2]!.trim() };
-}
-
-/**
  * Checks a complete SKILL.md sent by the user, from a picked file or the
  * Wisp's workspace, and returns it ready to store as is.
  */
 export function parseSkillDocument(value: unknown): { draft: SkillDraft; contents: string } {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new WispBackendError("invalid_request", "The skill file is empty.");
-  }
-  if (Buffer.byteLength(value, "utf8") > MAX_SKILL_FILE_BYTES) {
-    throw new WispBackendError("invalid_request", `A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KiB.`);
-  }
-  const parsed = parseSkillFile(value);
-  if (!parsed) {
-    throw new WispBackendError(
-      "invalid_request",
-      "A skill file starts with frontmatter between --- lines holding its name and description.",
-    );
-  }
-  if (!parsed.name) {
-    throw new WispBackendError("invalid_request", "The skill file needs a name field in its frontmatter.");
-  }
-  const draft = validateSkillDraft(parsed);
-  const contents = value.replace(/^﻿/, "");
-  return { draft, contents: contents.endsWith("\n") ? contents : `${contents}\n` };
-}
-
-function scalarValue(raw: string): string {
-  // Multi-line YAML values (`>` or `|` blocks) are not read.
-  if (/^[|>][-+0-9]*$/.test(raw)) return "";
-  if (!raw.startsWith('"')) return raw.replace(/^'(.*)'$/, "$1");
-  try {
-    const value: unknown = JSON.parse(raw);
-    return typeof value === "string" ? value : "";
-  } catch {
-    return "";
-  }
-}
-
-function singleLine(value: string): string {
-  return value.replaceAll(/\s+/g, " ").trim();
+  const checked = checkSkillDocument(value);
+  if (!checked.ok) throw new WispBackendError("invalid_request", checked.error);
+  return { draft: checked.draft, contents: checked.contents };
 }

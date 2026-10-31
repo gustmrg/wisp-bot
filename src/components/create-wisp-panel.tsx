@@ -27,7 +27,7 @@ import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { AVATAR_COLORS } from "@/lib/wisp-appearance";
-import { parseWispTemplate } from "@/lib/wisp-template";
+import { parseWispTemplate } from "../../shared/wisp-template";
 
 /** What the creation dialog shows around a panel. */
 interface CreatePanelStatus {
