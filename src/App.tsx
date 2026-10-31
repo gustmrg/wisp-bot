@@ -34,7 +34,9 @@ import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import type { SettingsPluginId } from "@/lib/plugin-access";
-import { createWispFromTemplate } from "@/lib/wisp-template-actions";
+import { createWispFromTemplate } from "@/lib/create-wisp-from-template";
+import { uniqueWispName } from "@/lib/wisp-template-actions";
+import type { WispTemplateEntry } from "../shared/wisp-template";
 
 export default function App() {
   const userProfile = useUserProfile();
@@ -91,6 +93,8 @@ function Workspace({
   const [searchOpen, setSearchOpen] = useState(false);
   const settingsDialog = useRef<AppSettingsDialogHandle>(null);
   const navigationVersion = useRef(0);
+  // A template to customize, chosen in Settings; the create dialog shows it until it closes.
+  const [templateToCustomize, setTemplateToCustomize] = useState<WispTemplateEntry | null>(null);
   const wisps = useMemo(
     () =>
       Object.values(workspace.chats).flatMap((chat) =>
@@ -301,6 +305,8 @@ function Workspace({
               failedChats={workspace.failedChats}
               loading={workspace.loading}
               error={workspace.error}
+              createFromTemplate={templateToCustomize}
+              onCreateFromTemplateClosed={() => setTemplateToCustomize(null)}
               onCreate={createWisp}
               onCreateCircle={async (circle) => {
                 const created = await workspace.createCircle(circle);
@@ -450,6 +456,18 @@ function Workspace({
                 wisps.map(({ name }) => name),
                 createWisp,
               )
+            }
+            onCustomizeTemplate={(entry) =>
+              setTemplateToCustomize({
+                ...entry,
+                template: {
+                  ...entry.template,
+                  name: uniqueWispName(
+                    entry.template.name,
+                    wisps.map(({ name }) => name),
+                  ),
+                },
+              })
             }
           />
           <UpdateToast

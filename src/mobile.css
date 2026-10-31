@@ -611,6 +611,10 @@
   [data-slot="dialog-content"] [data-slot="button"] {
     min-height: 44px;
   }
+  /* A card holds two of these beside its summary, so they stay small. */
+  [data-slot="dialog-content"] [data-slot="button"].template-card-action {
+    min-height: 36px;
+  }
   [data-slot="dialog-header"] {
     min-height: 44px;
     padding-right: 44px;

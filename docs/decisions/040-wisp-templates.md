@@ -50,10 +50,13 @@ and it never grants access by itself.**
   with a notice: a model without a key, a workspace too large for the disk or
   unlimited, and commands without a container program. Without a default model
   nothing is created, and the notice leads to **AI Model**. A second Wisp from
-  one template gets a number, as in **Atlas 2**. Skills are added through the
+  one template gets a number, as in **Atlas 2**. **Customize** opens the
+  creation dialog filled in instead, for someone who wants another model or
+  look. It adds a **Skills and access** step when the template has either:
+  skills start on, and every kind of access starts off. Skills are added through the
   operation the Wisp's settings use. Built-in skills come with the app; a saved
-  template with skills opens its preview first, and using it there is the
-  person's approval ADR 008 requires.
+  template with skills opens its preview first, and choosing **Use template** or
+  **Customize** there is the person's approval ADR 008 requires.
 - **Saving a Wisp as a template.** **Save as template** reads the Wisp's
   setup through those operations: its look, soul, its own model (one
   following the global model keeps following it), skills, workspace,
@@ -64,9 +67,6 @@ and it never grants access by itself.**
 - A template carries no credentials and cannot widen what a Wisp may do.
   Plugins and MCP servers are named by ID: a template from elsewhere can ask
   for them, and only the person can turn them on, in the Wisp's **Access** tab.
-- Nothing can be changed before the Wisp exists. Its name, soul, and model are
-  changed afterward in its settings, and a template to reuse is made by saving
-  that Wisp as one.
 - Built-in templates improve with the app; a person who duplicated one keeps
   their copy as it was.
 - The six starting souls stay in the soul picker as before; their text is
@@ -86,15 +86,19 @@ and it never grants access by itself.**
 - Templates are kept per environment, on the server, not on the device.
 - Access from a template always starts off and needs the person to turn it on.
 - **Use** creates the Wisp in one click, like a gallery of prepared Wisps, with
-  no creation dialog and no step to review.
+  no creation dialog and no step to review. **Customize** is the other choice,
+  added because a built-in template follows the global model and a person may
+  want a specific one.
 - Starting memory and sample files are left out of the first version.
 - The section lives in Settings, as in the plan the user approved, and its
   look follows a card gallery the user shared.
 
 ## Rejected alternatives
 
-- **Opening the creation dialog filled in:** it asked people who chose a
+- **Only opening the creation dialog filled in:** it asked people who chose a
   prepared Wisp to review and configure it, which is what they wanted to skip.
+- **Only creating in one click:** there was then no way to choose a specific
+  model or look before the Wisp existed.
 - **Templates on the device**, in the app's preferences: they would not
   follow the person to the browser app or a phone, and would sit beside an
   environment they were not made for.
