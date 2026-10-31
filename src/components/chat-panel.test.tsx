@@ -524,6 +524,116 @@ describe("ChatPanel identity", () => {
 });
 
 describe("ChatPanel circles", () => {
+  const quill = testWisp("quill", { name: "Quill" });
+  const forge = testWisp("forge", { name: "Forge" });
+  const suggested = () =>
+    within(screen.getByRole("list", { name: "Suggested messages" }))
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+
+  it("introduces an empty circle with its members and sends a suggestion that mentions one", async () => {
+    const onSend = vi.fn();
+    renderPanelIn(
+      circleChatView("crew", [quill, forge], { name: "Launch crew", description: "Ships the release" }),
+      [],
+      {
+        onSend,
+      },
+    );
+    expect(screen.getByRole("heading", { name: "Launch crew", level: 2 })).toBeInTheDocument();
+    expect(screen.getByText("Ships the release")).toBeInTheDocument();
+    const members = within(screen.getByRole("list", { name: "Members" })).getAllByRole("listitem");
+    expect(members.map((member) => member.textContent)).toEqual(["Quill", "Forge"]);
+    expect(within(members[0]!).getByRole("img", { name: "Lead" })).toBeInTheDocument();
+    expect(within(members[1]!).queryByRole("img", { name: "Lead" })).not.toBeInTheDocument();
+    expect(suggested()).toEqual([
+      "What can this team help me with?",
+      "@Forge, what can you do?",
+      "Where should we start?",
+      "Help me split a task between you",
+    ]);
+    await userEvent.click(screen.getByRole("button", { name: "@Forge, what can you do?" }));
+    expect(onSend).toHaveBeenCalledWith("@Forge, what can you do?");
+  });
+
+  it("introduces an older circle in place of the line that marks its beginning, until something is said", () => {
+    const beginning: Message = {
+      id: "start",
+      status: "complete",
+      type: "time",
+      text: "This is the beginning of the circle",
+    };
+    const { unmount } = renderPanelIn(circleChatView("crew", [quill, forge]), [beginning]);
+    expect(screen.getByRole("list", { name: "Suggested messages" })).toBeInTheDocument();
+    expect(screen.queryByText("This is the beginning of the circle")).not.toBeInTheDocument();
+    unmount();
+
+    renderPanelIn(circleChatView("crew", [quill, forge]), [
+      beginning,
+      { id: "1", type: "incoming", text: "Hello.", authorId: "quill" },
+    ]);
+    expect(screen.queryByRole("list", { name: "Suggested messages" })).not.toBeInTheDocument();
+    expect(screen.getByText("This is the beginning of the circle")).toBeInTheDocument();
+  });
+
+  it("does not introduce a circle while its window holds only a part of the transcript", () => {
+    render(
+      <ChatPanel
+        chat={circleChatView("crew", [quill, forge])}
+        transcript={transcript([{ id: "start", status: "complete", type: "time", text: "Earlier" }], {
+          olderCursor: "older",
+        })}
+        status="idle"
+        acknowledging={false}
+        approvals={[]}
+        onAnswerPrompt={vi.fn()}
+        onAbort={vi.fn()}
+        onLoadOlder={vi.fn()}
+        onLoadNewer={vi.fn()}
+        onShowLatest={vi.fn()}
+        onOpenDetails={vi.fn()}
+        onRetry={vi.fn()}
+        onResolveApproval={vi.fn()}
+        onSend={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("list", { name: "Suggested messages" })).not.toBeInTheDocument();
+  });
+
+  it("suggests no purpose question for a circle without a description", () => {
+    renderPanelIn(circleChatView("crew", [quill, forge], { description: "  " }), []);
+    expect(suggested()).not.toContain("Where should we start?");
+    expect(suggested()).toHaveLength(3);
+  });
+
+  it("offers a circle of one no mention or handoff, and no crown", () => {
+    renderPanelIn(circleChatView("crew", [quill]), []);
+    expect(suggested()).toEqual(["What can you help me with?"]);
+    expect(screen.queryByRole("img", { name: "Lead" })).not.toBeInTheDocument();
+  });
+
+  it("offers nothing to send in a circle with no members", () => {
+    renderPanelIn(circleChatView("crew", []), []);
+    expect(screen.getByRole("heading", { name: "crew", level: 2 })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Suggested messages" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Members" })).not.toBeInTheDocument();
+  });
+
+  it("does not introduce a circle once there are messages", () => {
+    renderPanelIn(circleChatView("crew", [quill, forge]), [
+      { id: "1", type: "incoming", text: "Hello.", authorId: "quill" },
+    ]);
+    expect(screen.queryByRole("list", { name: "Members" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Suggested messages" })).not.toBeInTheDocument();
+  });
+
+  it("disables a circle's suggestions until it can take a message", () => {
+    renderPanelIn(circleChatView("crew", [quill, forge]), [], { status: "configuration_required" });
+    for (const button of within(screen.getByRole("list", { name: "Suggested messages" })).getAllByRole("button")) {
+      expect(button).toBeDisabled();
+    }
+  });
+
   it("names the Wisp above each run of its replies", () => {
     const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })], {
       name: "Launch crew",
@@ -596,7 +706,7 @@ describe("ChatPanel circles", () => {
     expect(named).toEqual(["Quill", "Lumideleted", "Deleted Wispdeleted"]);
   });
 
-  it("crowns the lead on its replies and in the header, and moves the crown when the lead changes", () => {
+  it("crowns the lead in the header, not above its replies, and moves the crown when the lead changes", () => {
     const quill = testWisp("quill", { name: "Quill" });
     const forge = testWisp("forge", { name: "Forge" });
     const held: Message[] = [
@@ -604,16 +714,14 @@ describe("ChatPanel circles", () => {
       { id: "2", type: "incoming", text: "Tests are green.", authorId: "forge" },
     ];
     const crowned = () =>
-      [...document.querySelectorAll(".message-author")]
-        .filter((author) => within(author as HTMLElement).queryByRole("img", { name: "Lead" }))
-        .map((author) => author.textContent);
+      within(document.querySelector(".chat-subline") as HTMLElement).getByRole("img", { name: "Lead" }).previousSibling
+        ?.textContent;
     const { rerender } = renderPanelIn(circleChatView("crew", [quill, forge]), held);
 
-    expect(crowned()).toEqual(["Quill"]);
+    expect(crowned()).toBe("Quill");
     expect(document.querySelector(".chat-subline")?.textContent).toBe("Quill, Forge");
-    expect(
-      within(document.querySelector(".chat-subline") as HTMLElement).getByRole("img", { name: "Lead" }),
-    ).toBeVisible();
+    expect(document.querySelectorAll(".message-author")).toHaveLength(2);
+    expect(document.querySelector(".message-author .lead-mark")).toBeNull();
 
     rerender(
       <ChatPanel
@@ -633,7 +741,7 @@ describe("ChatPanel circles", () => {
         onSend={vi.fn()}
       />,
     );
-    expect(crowned()).toEqual(["Forge"]);
+    expect(crowned()).toBe("Forge");
   });
 
   it("crowns no one in a circle of one or in a Wisp's own conversation", () => {

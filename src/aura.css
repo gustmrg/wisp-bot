@@ -254,6 +254,25 @@
   font-size: var(--text-sm);
   font-weight: 600;
 }
+/* A circle has no color of its own, so its introduction stays neutral; each avatar keeps its Wisp's. */
+.chat-intro-circle {
+  --wisp: var(--muted-foreground);
+}
+.chat-intro-members {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.chat-intro-description {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
 .chat-starters {
   display: flex;
   flex-wrap: wrap;
@@ -320,8 +339,7 @@
   font-weight: 600;
 }
 .message-author > svg,
-.message-author > img,
-.message-author > .lead-crown > :first-child {
+.message-author > img {
   width: 18px;
   height: 18px;
 }

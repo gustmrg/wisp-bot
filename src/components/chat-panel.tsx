@@ -6,11 +6,11 @@ import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { approvalWispName, chatName } from "@/lib/chat-schema";
-import { conversationStarters } from "@/lib/conversation-starters";
+import { circleStarters, conversationStarters } from "@/lib/conversation-starters";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
-import { crownedLeadId, LeadMark } from "@/components/lead-crown";
+import { crownedLeadId, LeadCrown, LeadMark } from "@/components/lead-crown";
 import { cn } from "@/lib/utils";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import { isNeutralColor, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
@@ -84,6 +84,30 @@ function chatAccentStyle(chat: ChatView): CSSProperties | undefined {
   if (chat.kind !== "wisp") return undefined;
   const color = wispColor(chat.wisp.name, chat.wisp.color);
   return wispAccentStyle(color);
+}
+
+/** First messages an empty conversation offers to send when tapped. */
+function ChatStarters({
+  starters,
+  disabled,
+  onSend,
+}: {
+  starters: ReadonlyArray<string>;
+  disabled: boolean;
+  onSend: (text: string) => void;
+}) {
+  if (!starters.length) return null;
+  return (
+    <ul className="chat-starters" aria-label="Suggested messages">
+      {starters.map((starter) => (
+        <li key={starter}>
+          <button type="button" disabled={disabled} onClick={() => onSend(starter)}>
+            {starter}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 interface ChatPanelProps {
@@ -225,9 +249,15 @@ function ChatPanel({
             text: chat.kind === "wisp" ? chat.wisp.role : members.map((member) => member.name).join(", "),
           };
   const avatarState = approvals.length ? "approval" : working ? "working" : failed ? "error" : "idle";
-  // A Wisp with nothing said yet introduces itself and offers first messages to send.
+  // A conversation with nothing said yet introduces its Wisp or circle and offers first messages to send.
+  // Circles created by earlier versions hold a line that marks their beginning, which the introduction replaces.
   const introducing =
-    chat.kind === "wisp" && Boolean(transcript) && !transcript?.loading && !messages.length && !working;
+    Boolean(transcript) &&
+    !transcript?.loading &&
+    !transcript?.olderCursor &&
+    !transcript?.newerCursor &&
+    messages.every((message) => message.type === "time") &&
+    !working;
   const startersReady = status === "idle" && !acknowledging;
   // A complete reply part followed by more work is text the Wisp wrote before
   // using a tool, so the activity indicator stays visible below it.
@@ -491,18 +521,38 @@ function ChatPanel({
                 </span>
                 <h2>{`Hi, I'm ${name}`}</h2>
                 {chat.wisp.role ? <p className="chat-intro-role">{chat.wisp.role}</p> : null}
-                <ul className="chat-starters" aria-label="Suggested messages">
-                  {conversationStarters({ soleWisp }).map((starter) => (
-                    <li key={starter}>
-                      <button type="button" disabled={!startersReady} onClick={() => onSend(starter)}>
-                        {starter}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <ChatStarters starters={conversationStarters({ soleWisp })} disabled={!startersReady} onSend={onSend} />
               </section>
             ) : null}
-            {transcriptMessages.map((message, index) => {
+            {introducing && chat.kind === "circle" ? (
+              <section className="chat-intro chat-intro-circle" aria-label={`About ${name}`}>
+                {members.length ? (
+                  <ul className="chat-intro-members" aria-label="Members">
+                    {members.map((member) => (
+                      <li key={member.id} title={member.name}>
+                        <LeadCrown lead={member.id === leadId}>
+                          <WispAvatar wisp={member} size="lg" />
+                        </LeadCrown>
+                        <span className="sr-only">{member.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <h2>{name}</h2>
+                {chat.description.trim() ? (
+                  <p className="chat-intro-description line-clamp-4">{chat.description.trim()}</p>
+                ) : null}
+                <ChatStarters
+                  starters={circleStarters({
+                    memberNames: members.map((member) => member.name),
+                    hasDescription: Boolean(chat.description.trim()),
+                  })}
+                  disabled={!startersReady}
+                  onSend={onSend}
+                />
+              </section>
+            ) : null}
+            {(introducing ? [] : transcriptMessages).map((message, index) => {
               const previous = transcriptMessages[index - 1];
               // In a circle each reply carries its Wisp's name and color; consecutive ones share the name.
               const reply = message.type === "incoming" && message.authorId ? message : undefined;
@@ -526,7 +576,6 @@ function ChatPanel({
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
                     authorDeleted={authorDeleted}
-                    lead={Boolean(leadId) && author?.id === leadId}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     mentions={mentions}
                     fileMentions={chat.kind === "wisp"}

@@ -557,15 +557,8 @@ export function useConversations(): ConversationsController {
             conversation: {
               ...circle,
               id,
-              preview: "This is the beginning of the circle.",
-              messages: [
-                {
-                  id: crypto.randomUUID(),
-                  status: "complete",
-                  type: "time",
-                  text: "This is the beginning of the circle",
-                },
-              ],
+              preview: "Ready for the first task.",
+              messages: [],
             },
           }),
         ),
