@@ -151,8 +151,10 @@ in the environment. Nothing it asks for is granted with it: **Use** creates
 the Wisp without that access, and the person turns on what they want in its
 **Access** tab. A built-in template's skills come with the app. A saved
 template with skills opens its preview, which shows each `SKILL.md` in full,
-before **Use template** creates the Wisp, because a saved template may have
-come from a file. Each skill is added through the same operation as the Wisp's
+before **Use template** or **Customize** continues, because a saved template may
+have come from a file. **Customize** opens the creation dialog, whose **Skills
+and access** step starts every kind of access off, and what the person turns on
+is applied through the same operations as the Wisp's own settings. Each skill is added through the same operation as the Wisp's
 own settings and must pass the same checks as a skill the Wisp saves. Saved templates are files in the server's `wisp-templates/` folder,
 checked when saved and again when read; imported files are read by the app
 and sent as text, never as a path.

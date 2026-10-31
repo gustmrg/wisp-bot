@@ -1,0 +1,162 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { createWispFromTemplate } from "@/lib/create-wisp-from-template";
+import type { WispTemplate } from "../../shared/wisp-template";
+
+afterEach(() => {
+  Reflect.deleteProperty(window, "wisp");
+});
+
+describe("createWispFromTemplate", () => {
+  const skill = "---\nname: brief\ndescription: Writes a brief.\n---\nBody";
+  const template: WispTemplate = { name: "Atlas", role: " Research ", soul: " Soul ", skills: [{ contents: skill }] };
+
+  function model(id: string) {
+    return {
+      id,
+      name: id,
+      reasoning: false,
+      thinkingLevels: ["off"],
+      input: ["text"],
+      contextWindow: 1,
+      maxOutputTokens: 1,
+    };
+  }
+
+  function install({
+    selection = { providerId: "openrouter", modelId: "alpha" } as { providerId: string; modelId: string } | null,
+    runtime = { available: true, name: "docker", version: "1" } as unknown,
+    maxQuotaBytes = 1024 ** 4,
+    importOk = true,
+  } = {}) {
+    const api = {
+      getAiSettings: vi.fn(async () => ({
+        ok: true,
+        value: {
+          selection,
+          secureStorageAvailable: true,
+          providers: [
+            { id: "openrouter", name: "OpenRouter", credentialConfigured: true, models: [model("alpha")] },
+            { id: "google", name: "Google", credentialConfigured: false, models: [model("gemini")] },
+          ],
+          auxiliary: {},
+          fallback: {},
+          catalogError: null,
+        },
+      })),
+      getWispSetup: vi.fn(async () => ({ ok: true, value: { maxQuotaBytes, runtime } })),
+      setWorkspaceQuota: vi.fn(async () => ({ ok: true, value: {} })),
+      saveWispExecution: vi.fn(async () => ({ ok: true, value: {} })),
+      importSkill: vi.fn(async () =>
+        importOk ? { ok: true, value: [] } : { ok: false, error: { message: "Bad skill." } },
+      ),
+      saveWispToolPolicy: vi.fn(),
+      saveWispPluginAccess: vi.fn(),
+      saveWispMcpAccess: vi.fn(),
+    };
+    Object.defineProperty(window, "wisp", { configurable: true, value: api });
+    return { api, create: vi.fn(async () => "c1") };
+  }
+
+  it("creates the Wisp with its skills and nothing to review", async () => {
+    const { api, create } = install();
+
+    expect(await createWispFromTemplate(template, [], create)).toEqual({
+      status: "created",
+      name: "Atlas",
+      notices: [],
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Atlas", role: "Research", soul: "Soul" }),
+      expect.objectContaining({ model: null }),
+    );
+    expect(api.importSkill).toHaveBeenCalledWith({ conversationId: "c1", contents: skill });
+  });
+
+  it("names a second Wisp from the same template apart from the first", async () => {
+    const { create } = install();
+
+    expect(await createWispFromTemplate(template, ["atlas", "Atlas 2"], create)).toMatchObject({ name: "Atlas 3" });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas 3" }), expect.anything());
+  });
+
+  it("creates nothing and asks for a model while none can answer", async () => {
+    const { create } = install({ selection: null });
+
+    expect(await createWispFromTemplate(template, [], create)).toEqual({ status: "needs_model" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("uses the default model, and says so, when the template's has no key here", async () => {
+    const { create } = install();
+    const withModel = { ...template, model: { providerId: "google", modelId: "gemini" } };
+
+    const result = await createWispFromTemplate(withModel, [], create);
+
+    expect(create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ model: null }));
+    expect(result).toMatchObject({ notices: [expect.stringContaining("uses your default model")] });
+  });
+
+  it("never gives the access a template asks for, and says it asked", async () => {
+    const { api, create } = install();
+    const asking: WispTemplate = {
+      ...template,
+      access: { allowEverything: true, plugins: [{ pluginId: "linear", access: "write" }] },
+    };
+
+    const result = await createWispFromTemplate(asking, [], create);
+
+    expect(result).toMatchObject({ notices: ["Atlas asks for more access. Turn on what you want in its Access tab."] });
+    expect(api.saveWispToolPolicy).not.toHaveBeenCalled();
+    expect(api.saveWispPluginAccess).not.toHaveBeenCalled();
+    expect(api.saveWispMcpAccess).not.toHaveBeenCalled();
+  });
+
+  it("creates a Wisp that runs commands without them where there is no container program", async () => {
+    const { api, create } = install({ runtime: { available: false, message: "No Docker." } });
+    const code: WispTemplate = { ...template, setup: { executionMode: "container" } };
+
+    const result = await createWispFromTemplate(code, [], create);
+
+    expect(api.saveWispExecution).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: "created", notices: [expect.stringContaining("Docker or Podman")] });
+  });
+
+  it("turns commands on where a container program is available", async () => {
+    const { api, create } = install();
+
+    await createWispFromTemplate({ ...template, setup: { executionMode: "container" } }, [], create);
+
+    expect(api.saveWispExecution).toHaveBeenCalledWith(expect.objectContaining({ mode: "container" }));
+  });
+
+  it.each([
+    ["unlimited", null, "instead of an unlimited one"],
+    ["too large for the disk", 2 * 1024 ** 3, "no room"],
+  ])("keeps the default workspace when the template's is %s", async (_case, quotaBytes, notice) => {
+    const { api, create } = install({ maxQuotaBytes: 1024 ** 3 });
+
+    const result = await createWispFromTemplate({ ...template, setup: { quotaBytes } }, [], create);
+
+    expect(api.setWorkspaceQuota).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ notices: [expect.stringContaining(notice)] });
+  });
+
+  it("reports a skill it could not add, with the Wisp already made", async () => {
+    const { create } = install({ importOk: false });
+
+    expect(await createWispFromTemplate(template, [], create)).toMatchObject({
+      status: "created",
+      notices: [expect.stringContaining("the brief skill (Bad skill.)")],
+    });
+  });
+
+  it("says when the Wisp could not be created", async () => {
+    const { api, create } = install();
+    create.mockResolvedValueOnce(null as never);
+
+    expect(await createWispFromTemplate(template, [], create)).toMatchObject({ status: "failed" });
+    expect(api.importSkill).not.toHaveBeenCalled();
+  });
+});

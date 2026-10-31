@@ -203,13 +203,18 @@ it asks for ([ADR 040](decisions/040-wisp-templates.md)).
 - **Use** creates the Wisp at once, with nothing to fill in, and opens its
   conversation. Using a template again creates **Atlas 2**, and so on. Without
   a default model, **Use** creates nothing and leads to **AI Model**.
-- A saved template with skills opens its preview first, and **Use template**
-  there creates the Wisp.
+- A saved template with skills opens its preview first, and **Use template** or
+  **Customize** there continues.
 - Anything the template names that cannot be used here falls back to the
   default, and a notice says so: a model without a key, a workspace too large
   for the disk or unlimited, and commands without Docker or Podman.
-- Access the template asks for is never given. The Wisp is created without it,
-  and a notice points to its **Access** tab.
+- Access the template asks for is never given by **Use**. The Wisp is created
+  without it, and a notice points to its **Access** tab.
+- **Customize** opens the creation dialog filled in, to choose a model or change
+  the look, soul, or anything else before the Wisp exists. A template with skills
+  or access adds a **Skills and access** step: skills start on, and every kind of
+  access starts off until you turn it on. Plugins and MCP servers not set up here
+  cannot be turned on.
 - Saved templates can be duplicated, renamed, and deleted. Built-in templates
   come with the app and cannot be changed.
 - **Yours → Import** reads a `.wisp-template.json` file, and **Export** in a

@@ -21,13 +21,15 @@ import {
   applyWispSetup,
   type WispSetupDraft,
 } from "@/components/create-wisp-setup-section";
+import { CreateWispTemplateSection, templateHasChoices } from "@/components/create-wisp-template-section";
 import type { WispSettingsDraft } from "@/components/wisp-settings-fields";
 import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { AVATAR_COLORS } from "@/lib/wisp-appearance";
-import { parseWispTemplate } from "../../shared/wisp-template";
+import { applyTemplateChoices, initialTemplateChoices, type TemplateChoices } from "@/lib/wisp-template-actions";
+import { parseWispTemplate, type WispTemplate } from "../../shared/wisp-template";
 
 /** What the creation dialog shows around a panel. */
 interface CreatePanelStatus {
@@ -51,13 +53,16 @@ interface CreateWispPanelProps {
   onDone: () => void;
   /** Opens the templates; without it they aren't offered. */
   onOpenTemplates?: () => void;
+  /** A template to start from: it fills in every step, and adds one for its skills and access. */
+  template?: WispTemplate;
 }
 
-const STEPS: ReadonlyArray<CreateWispStep> = ["identity", "behavior", "setup"];
+const BASE_STEPS: ReadonlyArray<CreateWispStep> = ["identity", "behavior", "setup"];
 const STEP_TITLES: Record<CreateWispStep, string> = {
   identity: "Appearance and name",
   behavior: "Soul and behavior",
   setup: "Workspace and commands",
+  template: "Skills and access",
 };
 
 export const DEFAULT_WISP: WispSettingsDraft = {
@@ -69,12 +74,40 @@ export const DEFAULT_WISP: WispSettingsDraft = {
   notifyOnUpdatesEnabled: true,
 };
 
+/** The draft a template fills in; what it leaves out keeps the defaults. */
+function draftFromTemplate(template: WispTemplate): WispSettingsDraft {
+  return {
+    ...DEFAULT_WISP,
+    name: template.name,
+    role: template.role,
+    soul: template.soul,
+    ...(template.appearance ? { appearance: template.appearance } : {}),
+    ...(template.color ? { color: template.color } : {}),
+  };
+}
+
 /** The steps that create a Wisp; the dialog around them resets it by remounting it. */
-function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpenTemplates }: CreateWispPanelProps) {
+function CreateWispPanel({
+  onCreate,
+  active: open,
+  onStatusChange,
+  onDone,
+  onOpenTemplates,
+  template,
+}: CreateWispPanelProps) {
+  const STEPS: ReadonlyArray<CreateWispStep> =
+    template && templateHasChoices(template) ? [...BASE_STEPS, "template"] : BASE_STEPS;
   const [step, setStep] = useState<CreateWispStep>("identity");
   const stepRef = useRef<HTMLDivElement>(null);
   const focusStep = useRef<CreateWispStep | null>(null);
-  const [settings, setSettings] = useState<WispSettingsDraft>(DEFAULT_WISP);
+  const [settings, setSettings] = useState<WispSettingsDraft>(() =>
+    template ? draftFromTemplate(template) : DEFAULT_WISP,
+  );
+  const [choices, setChoices] = useState<TemplateChoices | null>(() =>
+    template ? initialTemplateChoices(template) : null,
+  );
+  // The template's model is chosen once the models it can be checked against have loaded.
+  const templateModelApplied = useRef(!template?.model);
   const [modelDraft, setModelDraft] = useState<WispModelDraft>(createDefaultWispModelDraft);
   const [modelView, setModelView] = useState<AiSettingsView | null>(null);
   const [modelLoadError, setModelLoadError] = useState("");
@@ -83,7 +116,10 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpe
   const [templateText, setTemplateText] = useState("");
   const [importError, setImportError] = useState("");
   const [imported, setImported] = useState(false);
-  const [setupDraft, setSetupDraft] = useState<WispSetupDraft>(DEFAULT_WISP_SETUP);
+  const [setupDraft, setSetupDraft] = useState<WispSetupDraft>(() => ({
+    quotaBytes: template?.setup?.quotaBytes ?? DEFAULT_WISP_SETUP.quotaBytes,
+    executionMode: template?.setup?.executionMode ?? DEFAULT_WISP_SETUP.executionMode,
+  }));
   const [setupView, setSetupView] = useState<WispSetupView | null>(null);
   const [setupLoadError, setSetupLoadError] = useState("");
   // Set when the Wisp exists but part of its setup could not be applied: the dialog only reports it.
@@ -153,6 +189,14 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpe
     };
   }, [open, setupView, setupLoadError]);
 
+  useEffect(() => {
+    if (templateModelApplied.current || !template || (!modelView && !modelLoadError)) return;
+    templateModelApplied.current = true;
+    const model = wispModelDraftFromTemplate(template.model, modelView);
+    setModelDraft(model.draft);
+    setModelNotice(model.notice);
+  }, [template, modelView, modelLoadError]);
+
   function closeImport() {
     setImportOpen(false);
     setTemplateText("");
@@ -197,7 +241,11 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpe
         setError("Could not create this Wisp. Your draft is still here; try again.");
         return;
       }
-      const failed = await applyWispSetup(conversationId, setupDraft);
+      const failures = [
+        ...[await applyWispSetup(conversationId, setupDraft)].filter(Boolean),
+        ...(template && choices ? await applyTemplateChoices(conversationId, template, choices) : []),
+      ];
+      const failed = failures.join(" and ");
       if (failed) {
         setSetupFailure(
           `${trimmedName} was created, but ${failed} could not be set. Change it in the Wisp's settings.`,
@@ -256,6 +304,10 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpe
         <p className="m-0 flex-none px-1 text-xs text-dim" role="status">
           Template applied. Choose an appearance, then review the soul and model.
         </p>
+      ) : step === "identity" && template ? (
+        <p className="m-0 flex-none px-1 text-xs text-dim" role="status">
+          Starting from the {template.name} template. Change anything you like; nothing is created until you confirm.
+        </p>
       ) : null}
       <CreateWispForm
         ref={stepRef}
@@ -269,6 +321,11 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpe
             draft={setupDraft}
             onChange={setSetupDraft}
           />
+        }
+        template={
+          template && choices ? (
+            <CreateWispTemplateSection template={template} choices={choices} onChange={setChoices} />
+          ) : null
         }
       >
         <CreateWispModelSection
@@ -332,7 +389,7 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpe
             Back
           </Button>
         )}
-        {step === "setup" ? null : (
+        {step === STEPS.at(-1) ? null : (
           <Button
             variant="outline"
             type="button"

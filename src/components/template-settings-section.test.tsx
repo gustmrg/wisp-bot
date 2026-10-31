@@ -253,6 +253,30 @@ describe("Use", () => {
     expect(onUseTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: saved.id }));
   });
 
+  it("offers Customize beside Use, handing over a built-in template directly", async () => {
+    const user = userEvent.setup();
+    install();
+    const onCustomizeTemplate = vi.fn();
+    render(<TemplateSettingsSection onUseTemplate={vi.fn()} onCustomizeTemplate={onCustomizeTemplate} />);
+
+    await user.click(await screen.findByRole("button", { name: "Customize Atlas" }));
+
+    expect(onCustomizeTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: "builtin-research" }));
+  });
+
+  it("opens a saved template with skills before customizing it too", async () => {
+    const user = userEvent.setup();
+    install();
+    const onCustomizeTemplate = vi.fn();
+    render(<TemplateSettingsSection onUseTemplate={vi.fn()} onCustomizeTemplate={onCustomizeTemplate} />);
+
+    await user.click(await screen.findByRole("button", { name: "Customize Release Manager" }));
+    expect(onCustomizeTemplate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Customize" }));
+    expect(onCustomizeTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: saved.id }));
+  });
+
   it("stays open to say what still needs the person", async () => {
     const user = userEvent.setup();
     install();

@@ -74,7 +74,7 @@ import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../
 import type { SettingsPluginId } from "@/lib/plugin-access";
 import type { WispOption } from "@/lib/plugin-access";
 import type { ChatView } from "@/chat-data";
-import type { TemplateUseResult } from "@/lib/wisp-template-actions";
+import type { TemplateUseResult } from "@/lib/create-wisp-from-template";
 import type { WispTemplateEntry } from "../../shared/wisp-template";
 
 type SettingsSection =
@@ -268,6 +268,8 @@ interface AppSettingsDialogProps {
   onOpenApprovals?: () => void;
   /** Creates a Wisp from a template; without it Templates offers no Use button. */
   onUseTemplate?: (entry: WispTemplateEntry) => Promise<TemplateUseResult>;
+  /** Opens the creation dialog filled in from a template. */
+  onCustomizeTemplate?: (entry: WispTemplateEntry) => void;
   /** Counts for the mobile bar's badges. */
   navigationCounts?: { unread: number; approvals: number };
   appMetadata: AppMetadata;
@@ -304,6 +306,7 @@ function AppSettingsDialog({
   onOpenConversations,
   onOpenApprovals,
   onUseTemplate,
+  onCustomizeTemplate,
   navigationCounts,
   currentUser,
   userProfile,
@@ -532,6 +535,7 @@ function AppSettingsDialog({
         {section === "templates" && open && !showOverview ? (
           <TemplateSettingsSection
             onUseTemplate={onUseTemplate}
+            onCustomizeTemplate={onCustomizeTemplate}
             onOpenModelSettings={() => openSection("model")}
             onClose={() => onOpenChange(false)}
           />

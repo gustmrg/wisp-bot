@@ -1,16 +1,8 @@
-import type { NewWisp } from "@/chat-data";
-import {
-  createDefaultWispModelDraft,
-  isWispModelDraftInvalid,
-  resolveWispModelSelection,
-  wispModelDraftFromTemplate,
-} from "@/components/create-wisp-model-section";
-import { DEFAULT_WISP } from "@/components/create-wisp-panel";
-import { applyWispSetup, DEFAULT_WISP_SETUP } from "@/components/create-wisp-setup-section";
-import type { ModelSelection } from "../../shared/contracts";
 import { WISP_NAME_MAX_LENGTH, type Wisp } from "../../shared/conversations";
-import type { WispSetupView } from "../../shared/execution";
+import type { PluginGrant } from "../../shared/plugins";
+import type { McpGrant } from "../../shared/mcp";
 import { formatSkillFile } from "../../shared/skills";
+import type { WorkspaceFileCategory, ToolPolicyBehavior } from "../../shared/tool-policy";
 import type { WispTemplate, WispTemplateAccess } from "../../shared/wisp-template";
 import { WORKSPACE_QUOTA_PRESETS } from "../../shared/workspace";
 
@@ -68,17 +60,114 @@ export async function captureWispTemplate(conversationId: string, wisp: Wisp): P
   };
 }
 
+/** The parts of a template the person chose to apply to the Wisp being created; access starts unchosen. */
+export interface TemplateChoices {
+  /** Indexes into `template.skills`. */
+  skills: ReadonlySet<number>;
+  files: boolean;
+  allowEverything: boolean;
+  plugins: ReadonlySet<string>;
+  mcpServers: ReadonlySet<string>;
+}
+
+export function initialTemplateChoices(template: WispTemplate): TemplateChoices {
+  return {
+    // A skill is shown in full before it is kept, so it starts chosen; access never does.
+    skills: new Set(template.skills?.map((_skill, index) => index)),
+    files: false,
+    allowEverything: false,
+    plugins: new Set(),
+    mcpServers: new Set(),
+  };
+}
+
 /**
- * Gives a new Wisp its template's skills, through the operation its settings
- * use, so the server checks each one. Resolves with what could not be applied,
- * as sentence fragments.
+ * Gives a new Wisp the skills and access chosen from its template, through
+ * the same operations its settings use, so the server checks each part as it
+ * would a change made by hand. Resolves with what could not be applied, as
+ * sentence fragments.
  */
-export async function applyTemplateSkills(conversationId: string, template: WispTemplate): Promise<string[]> {
+export async function applyTemplateChoices(
+  conversationId: string,
+  template: WispTemplate,
+  choices: TemplateChoices,
+): Promise<string[]> {
   const failures: string[] = [];
+  const request = { conversationId };
+  const failed = (what: string, result: { ok: true } | { ok: false; error: { message: string } } | null) => {
+    if (!result?.ok) failures.push(`${what} (${result ? result.error.message : "no answer"})`);
+  };
+
   for (const [index, skill] of (template.skills ?? []).entries()) {
+    if (!choices.skills.has(index)) continue;
     const name = /^name:\s*(.+)$/m.exec(skill.contents)?.[1]?.trim() ?? `skill ${index + 1}`;
-    const result = await window.wisp.importSkill({ conversationId, contents: skill.contents }).catch(() => null);
-    if (!result?.ok) failures.push(`the ${name} skill (${result ? result.error.message : "no answer"})`);
+    failed(
+      `the ${name} skill`,
+      await window.wisp.importSkill({ conversationId, contents: skill.contents }).catch(() => null),
+    );
+  }
+
+  const access = template.access;
+  const files: Partial<Record<WorkspaceFileCategory, ToolPolicyBehavior>> = choices.files ? (access?.files ?? {}) : {};
+  if (Object.keys(files).length || (choices.allowEverything && access?.allowEverything)) {
+    const current = await window.wisp.getWispToolPolicy(request).catch(() => null);
+    if (!current?.ok) failed("its file permissions", current);
+    else
+      failed(
+        "its file permissions",
+        await window.wisp
+          .saveWispToolPolicy({
+            conversationId,
+            files: { ...current.value.files, ...files },
+            allowEverything:
+              current.value.allowEverything || (choices.allowEverything && Boolean(access?.allowEverything)),
+          })
+          .catch(() => null),
+      );
+  }
+
+  const plugins = (access?.plugins ?? []).filter(({ pluginId }) => choices.plugins.has(pluginId));
+  if (plugins.length) {
+    const current = await window.wisp.getWispPluginAccess(request).catch(() => null);
+    if (!current?.ok) failed("its plugin access", current);
+    else {
+      const grants: PluginGrant[] = current.value.grants.map(({ pluginId, access: level }) => {
+        const chosen = plugins.find((plugin) => plugin.pluginId === pluginId);
+        return { pluginId, access: chosen ? chosen.access : level };
+      });
+      for (const plugin of plugins) {
+        if (!grants.some(({ pluginId }) => pluginId === plugin.pluginId)) grants.push(plugin);
+      }
+      failed(
+        "its plugin access",
+        await window.wisp
+          .saveWispPluginAccess({ conversationId, revision: current.value.revision, grants })
+          .catch(() => null),
+      );
+    }
+  }
+
+  const servers = (access?.mcpServers ?? []).filter(({ serverId }) => choices.mcpServers.has(serverId));
+  if (servers.length) {
+    const current = await window.wisp.getWispMcpAccess(request).catch(() => null);
+    if (!current?.ok) failed("its MCP server access", current);
+    else {
+      const grants: McpGrant[] = current.value.grants.map(({ serverId, access: level }) => {
+        const chosen = servers.find((server) => server.serverId === serverId);
+        return { serverId, access: chosen ? chosen.access : level };
+      });
+      for (const server of servers) {
+        if (!grants.some(({ serverId }) => serverId === server.serverId)) {
+          grants.push({ serverId: server.serverId, access: server.access });
+        }
+      }
+      failed(
+        "its MCP server access",
+        await window.wisp
+          .saveWispMcpAccess({ conversationId, revision: current.value.revision, grants })
+          .catch(() => null),
+      );
+    }
   }
   return failures;
 }
@@ -101,99 +190,5 @@ export function uniqueWispName(name: string, taken: ReadonlyArray<string>): stri
     const suffix = ` ${copy}`;
     const candidate = `${name.slice(0, WISP_NAME_MAX_LENGTH - suffix.length)}${suffix}`;
     if (!names.has(candidate.toLocaleLowerCase())) return candidate;
-  }
-}
-
-export type TemplateUseResult =
-  | {
-      status: "created";
-      name: string;
-      /** What differs from the template or still needs the person, as sentences. */
-      notices: ReadonlyArray<string>;
-    }
-  /** No model can answer yet, so nothing was created. */
-  | { status: "needs_model" }
-  | { status: "failed"; message: string };
-
-/**
- * The model, workspace, and commands a Wisp can have here without asking
- * anything: what the template names when it can be used, otherwise the same
- * default a new Wisp gets, with a sentence saying so.
- */
-function usableSetup(template: WispTemplate, view: WispSetupView | null, name: string) {
-  const notices: string[] = [];
-  const requested = template.setup?.quotaBytes;
-  let quotaBytes = DEFAULT_WISP_SETUP.quotaBytes;
-  // Unlimited is only chosen by hand, after the note on what it means for the disk.
-  if (requested === null) notices.push(`${name} uses the default workspace size instead of an unlimited one.`);
-  else if (requested !== undefined && view && requested > view.maxQuotaBytes) {
-    notices.push(`${name} uses the default workspace size, because the disk has no room for the larger one.`);
-  } else if (requested !== undefined) quotaBytes = requested;
-
-  let executionMode = template.setup?.executionMode ?? DEFAULT_WISP_SETUP.executionMode;
-  if (executionMode === "container" && view?.runtime.available === false) {
-    executionMode = "off";
-    notices.push(`${name} can't run commands until Docker or Podman is installed. Turn them on in its settings then.`);
-  }
-  return { setup: { quotaBytes, executionMode }, notices };
-}
-
-/**
- * Creates a Wisp from a template in one step, asking nothing: what cannot be
- * used here falls back to the default and is reported. Access is never given:
- * a template from someone else could otherwise grant tools or skip approvals.
- */
-export async function createWispFromTemplate(
-  template: WispTemplate,
-  takenNames: ReadonlyArray<string>,
-  create: (
-    wisp: NewWisp,
-    options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
-  ) => Promise<string | null>,
-): Promise<TemplateUseResult> {
-  const name = uniqueWispName(template.name, takenNames);
-  const failedToCreate = { status: "failed", message: `Could not create ${name}. Try again.` } as const;
-  try {
-    const settings = await window.wisp.getAiSettings();
-    if (!settings.ok) return { status: "failed", message: settings.error.message };
-
-    const notices: string[] = [];
-    const chosen = wispModelDraftFromTemplate(template.model, settings.value);
-    let model = chosen.draft;
-    if (template.model && (chosen.notice || isWispModelDraftInvalid(model, settings.value))) {
-      model = createDefaultWispModelDraft();
-      notices.push(`${name} uses your default model, because ${template.model.modelId} isn't available here.`);
-    }
-    if (isWispModelDraftInvalid(model, settings.value)) return { status: "needs_model" };
-
-    // Without this answer, as on an older server, the setup is tried and any failure reported below.
-    const setupView = await window.wisp.getWispSetup().catch(() => null);
-    const usable = usableSetup(template, setupView?.ok ? setupView.value : null, name);
-    notices.push(...usable.notices);
-
-    const color = template.color ?? DEFAULT_WISP.color;
-    const conversationId = await create(
-      {
-        name,
-        role: template.role.trim(),
-        soul: template.soul.trim(),
-        appearance: template.appearance ?? DEFAULT_WISP.appearance,
-        ...(color === undefined ? {} : { color }),
-      },
-      { notifyOnUpdatesEnabled: DEFAULT_WISP.notifyOnUpdatesEnabled, model: resolveWispModelSelection(model) },
-    );
-    if (!conversationId) return failedToCreate;
-
-    const failed = [
-      ...[await applyWispSetup(conversationId, usable.setup)].filter(Boolean),
-      ...(await applyTemplateSkills(conversationId, template)),
-    ].join(" and ");
-    if (failed) notices.push(`${name} was created, but ${failed} could not be set. Change it in the Wisp's settings.`);
-    if (templateAsksForAccess(template)) {
-      notices.push(`${name} asks for more access. Turn on what you want in its Access tab.`);
-    }
-    return { status: "created", name, notices };
-  } catch {
-    return failedToCreate;
   }
 }

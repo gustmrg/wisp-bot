@@ -6,8 +6,11 @@ import {
   type WispSettingsDraft,
 } from "@/components/wisp-settings-fields";
 
-/** Creation is split so no step needs scrolling: how the Wisp looks, how it works, then where it works. */
-export type CreateWispStep = "identity" | "behavior" | "setup";
+/**
+ * Creation is split so no step needs scrolling: how the Wisp looks, how it
+ * works, where it works, and, from a template, the skills and access it brings.
+ */
+export type CreateWispStep = "identity" | "behavior" | "setup" | "template";
 
 interface CreateWispFormProps {
   settings: WispSettingsDraft;
@@ -18,9 +21,19 @@ interface CreateWispFormProps {
   children?: ReactNode;
   /** The setup step's fields. */
   setup?: ReactNode;
+  /** The template step's fields. */
+  template?: ReactNode;
 }
 
-export function CreateWispForm({ settings, step = "identity", onChange, ref, children, setup }: CreateWispFormProps) {
+export function CreateWispForm({
+  settings,
+  step = "identity",
+  onChange,
+  ref,
+  children,
+  setup,
+  template,
+}: CreateWispFormProps) {
   return (
     <div
       ref={ref}
@@ -30,6 +43,8 @@ export function CreateWispForm({ settings, step = "identity", onChange, ref, chi
         <WispIdentityFields settings={settings} onChange={onChange} />
       ) : step === "setup" ? (
         setup
+      ) : step === "template" ? (
+        template
       ) : (
         <>
           <WispBehaviorFields settings={settings} onChange={onChange} />

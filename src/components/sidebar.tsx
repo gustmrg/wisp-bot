@@ -21,6 +21,7 @@ import { NeedsYou } from "@/components/needs-you";
 import { WispOrbs } from "@/components/wisp-orbs";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import type { WispTemplateEntry } from "../../shared/wisp-template";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
@@ -69,6 +70,9 @@ interface SidebarProps {
   ) => Promise<string | null>;
   /** Resolves true once the circle exists; with it, the create button offers a circle as well as a Wisp. */
   onCreateCircle?: (circle: NewCircle) => Promise<boolean>;
+  /** A template chosen in Settings: the create dialog opens with it until it closes. */
+  createFromTemplate?: WispTemplateEntry | null;
+  onCreateFromTemplateClosed?: () => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onOpenTemplates?: () => void;
@@ -120,6 +124,8 @@ function Sidebar({
   error,
   onCreate,
   onCreateCircle,
+  createFromTemplate,
+  onCreateFromTemplateClosed,
   onOpenSearch,
   onOpenSettings,
   onOpenTemplates,
@@ -432,6 +438,15 @@ function Sidebar({
             wisps={Object.values(chats).flatMap((chat) => (chat.kind === "wisp" ? [chat.wisp] : []))}
             {...(onOpenTemplates ? { onOpenTemplates } : {})}
             trigger={createButton(mobile, onCreateCircle ? "Create" : "Create Wisp")}
+            {...(createFromTemplate
+              ? {
+                  template: createFromTemplate,
+                  open: true,
+                  onOpenChange: (open: boolean) => {
+                    if (!open) onCreateFromTemplateClosed?.();
+                  },
+                }
+              : {})}
           />
         </div>
 
