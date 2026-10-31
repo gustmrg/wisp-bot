@@ -330,7 +330,7 @@ describe("McpService", () => {
     expect(service.getAccess({ conversationId: "wisp-a" }).revision).not.toBe(revisionBefore);
   });
 
-  it("revokes grants when the endpoint or credential changes", async () => {
+  it("revokes grants when the endpoint changes", async () => {
     const { service } = await createService();
     const { serverId } = await addServer(service);
     await grantAccess(service, "wisp-a", serverId);
@@ -343,6 +343,26 @@ describe("McpService", () => {
       enabled: true,
     });
 
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "none" }]);
+  });
+
+  it("revokes grants when the credential changes, and only then", async () => {
+    const { service } = await createService();
+    const connection = {
+      name: "Header server",
+      endpoint: "https://h.example.com/mcp",
+      authMode: "header",
+      headerName: "X-Api-Key",
+      enabled: true,
+    };
+    const view = await service.save({ ...connection, headerValue: "first-key" });
+    const serverId = view.servers[0]!.serverId;
+    await grantAccess(service, "wisp-a", serverId);
+
+    await service.save({ ...connection, serverId });
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "use_with_approval" }]);
+
+    await service.save({ ...connection, serverId, headerValue: "second-key" });
     expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "none" }]);
   });
 
@@ -952,6 +972,22 @@ describe("McpService", () => {
     expect(secretsFile.schemaVersion).toBe(1);
     const plaintext = Buffer.from(secretsFile.payload, "base64").toString("utf8");
     expect(plaintext).toContain("sekrit-value");
+  });
+
+  it("deletes a connection's header secret when the connection is removed", async () => {
+    const { service, dataDirectory } = await createService();
+    const view = await service.save({
+      name: "Header server",
+      endpoint: "https://h.example.com/mcp",
+      authMode: "header",
+      headerName: "X-Api-Key",
+      headerValue: "sekrit-value",
+    });
+    await service.remove({ serverId: view.servers[0]!.serverId });
+    const secretsFile = JSON.parse(await readFile(path.join(dataDirectory, "mcp-credentials.enc.json"), "utf8")) as {
+      payload: string;
+    };
+    expect(Buffer.from(secretsFile.payload, "base64").toString("utf8")).not.toContain("sekrit-value");
   });
 });
 
