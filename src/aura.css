@@ -163,19 +163,25 @@
   color: var(--destructive);
 }
 .chat-subline-pulse {
+  position: relative;
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: currentColor;
+}
+.chat-subline-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
   animation: chat-subline-pulse 1.4s ease-out infinite;
 }
 @keyframes chat-subline-pulse {
-  from {
-    box-shadow: 0 0 0 0 currentColor;
-  }
   to {
-    box-shadow: 0 0 0 6px transparent;
+    opacity: 0;
+    scale: 3;
   }
 }
 
@@ -309,7 +315,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .wisp-halo[data-state="working"]::before,
-  .chat-subline-pulse {
+  .chat-subline-pulse::after {
     animation: none;
   }
 }
