@@ -289,7 +289,6 @@
 .conversation-avatar [data-slot="wisp"] .wisp-blink {
   transform-box: fill-box;
   transform-origin: center;
-  animation: wisp-blink 6s infinite;
 }
 [data-slot="wisp"][data-state="working"] .wisp-trail {
   animation: wisp-sway 1.5s ease-in-out infinite;
@@ -310,17 +309,6 @@
   translate: 0 3px;
 }
 
-@keyframes wisp-blink {
-  0%,
-  46%,
-  50%,
-  100% {
-    scale: 1 1;
-  }
-  48% {
-    scale: 1 0.1;
-  }
-}
 @keyframes wisp-sway {
   0%,
   100% {
