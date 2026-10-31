@@ -56,6 +56,7 @@ import { ToolPolicyStore } from "./tool-policy-store.js";
 import { fakeTranscriptionFetch, TranscriptionService } from "./transcription-service.js";
 import { StorageService } from "./storage-service.js";
 import { readWorkspaceQuota, WorkspaceService } from "./workspace-service.js";
+import { WispTemplateStore } from "./wisp-template-store.js";
 import { ContainerRuntimeDetector, type ContainerCli } from "./container-cli.js";
 import { ContainerManager } from "./container-manager.js";
 import { BrowserService } from "./browser-service.js";
@@ -123,6 +124,8 @@ export interface BackendRuntime {
   storage: StorageService;
   transcription: TranscriptionService;
   execution: ExecutionService;
+  /** The built-in Wisp templates and the ones saved in this environment. */
+  templates: WispTemplateStore;
   /** Validates and saves a single Wisp's model override; null clears it. */
   applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void>;
   /** Validates and saves a single Wisp's fallback choice. */
@@ -552,6 +555,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     storage,
     transcription: transcriptionService,
     execution: executionService,
+    templates: new WispTemplateStore(path.join(dataDirectory, "wisp-templates")),
     applyConversationModel: async (conversationId, model) => {
       if (model) {
         await modelService.validateConversationSelection(model);

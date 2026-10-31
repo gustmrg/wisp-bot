@@ -92,6 +92,11 @@ import {
 import { WispBackendError } from "./backend-error.js";
 import { MAX_SKILL_FILE_BYTES } from "./skill-store.js";
 import {
+  MAX_WISP_TEMPLATE_TEXT_LENGTH,
+  type DeleteWispTemplateRequest,
+  type SaveWispTemplateRequest,
+} from "../shared/wisp-template.js";
+import {
   normalizeChatChanges,
   normalizeChat,
   normalizeMessage,
@@ -137,6 +142,23 @@ export function parseSkillRequest(value: unknown): SkillRequest {
 }
 
 /** Contents are checked as a skill by `parseSkillDocument`; this only bounds the request. */
+export function parseSaveWispTemplateRequest(value: unknown): SaveWispTemplateRequest {
+  const request = asRecord(value);
+  if (typeof request.contents !== "string" || request.contents.length > MAX_WISP_TEMPLATE_TEXT_LENGTH) {
+    throw invalidRequest();
+  }
+  if (request.id !== undefined && (typeof request.id !== "string" || request.id.length > MAX_ID_LENGTH)) {
+    throw invalidRequest();
+  }
+  return { contents: request.contents, ...(request.id === undefined ? {} : { id: request.id }) };
+}
+
+export function parseDeleteWispTemplateRequest(value: unknown): DeleteWispTemplateRequest {
+  const request = asRecord(value);
+  if (typeof request.id !== "string" || !request.id || request.id.length > MAX_ID_LENGTH) throw invalidRequest();
+  return { id: request.id };
+}
+
 export function parseImportSkillRequest(value: unknown): ImportSkillRequest {
   const request = asRecord(value);
   if (typeof request.contents !== "string" || request.contents.length > MAX_SKILL_FILE_BYTES) throw invalidRequest();

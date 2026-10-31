@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AiSettingsView } from "../../shared/contracts";
 import { CreateChatDialog } from "@/components/create-chat-dialog";
-import { serializeWispTemplate } from "@/lib/wisp-template";
+import { serializeWispTemplate, wispTemplateFrom } from "../../shared/wisp-template";
 
 const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
   id: `provider-${id}`,
@@ -192,7 +192,9 @@ describe("CreateChatDialog template import", () => {
   it("fills the form and selects the template's model for review", async () => {
     mockAiSettings();
     const { user, onCreate } = await importTemplate(
-      serializeWispTemplate(wisp, { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 512 }),
+      serializeWispTemplate(
+        wispTemplateFrom(wisp, { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 512 }),
+      ),
     );
     expect(screen.getByText(/Template applied/)).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
@@ -212,7 +214,7 @@ describe("CreateChatDialog template import", () => {
   it("asks for a key when the template's provider has none saved", async () => {
     mockAiSettings();
     const { user } = await importTemplate(
-      serializeWispTemplate(wisp, { providerId: "provider-b", modelId: "model-b" }),
+      serializeWispTemplate(wispTemplateFrom(wisp, { providerId: "provider-b", modelId: "model-b" })),
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent("Model b");
@@ -223,7 +225,9 @@ describe("CreateChatDialog template import", () => {
   it("falls back to the global model when the template's model is unavailable", async () => {
     mockAiSettings();
     const { user, onCreate } = await importTemplate(
-      serializeWispTemplate(wisp, { providerId: "provider-z", modelId: "model-z", maxOutputTokens: 512 }),
+      serializeWispTemplate(
+        wispTemplateFrom(wisp, { providerId: "provider-z", modelId: "model-z", maxOutputTokens: 512 }),
+      ),
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText(/uses model-z from provider-z, which isn't available here/)).toBeVisible();

@@ -26,7 +26,8 @@ import { detailsLayoutStyle } from "@/lib/layout";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import { serializeWispTemplate } from "@/lib/wisp-template";
+import { SaveAsTemplateButton } from "@/components/save-as-template-button";
+import { serializeWispTemplate, wispTemplateFrom } from "../../shared/wisp-template";
 
 interface DetailsPanelProps {
   mobile?: boolean;
@@ -73,7 +74,9 @@ function DetailsPanel({
   async function shareTemplate(): Promise<void> {
     if (chat.kind !== "wisp") return;
     const model = await window.wisp.getConversationModel({ conversationId: chat.id }).catch(() => null);
-    await copyFeedback.copy(serializeWispTemplate(chat.wisp, model?.ok ? model.value.effective : null));
+    await copyFeedback.copy(
+      serializeWispTemplate(wispTemplateFrom(chat.wisp, model?.ok ? model.value.effective : null)),
+    );
   }
 
   const name = chatName(chat);
@@ -181,6 +184,7 @@ function DetailsPanel({
           generalActions={
             <>
               {shareControl}
+              <SaveAsTemplateButton conversationId={chat.id} wisp={chat.wisp} />
               {deleteControl}
             </>
           }
