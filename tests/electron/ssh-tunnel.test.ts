@@ -28,6 +28,7 @@ import {
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer } from "../../server/wisp-server.js";
 import type { SshConnectionProfile, SshPromptView } from "../../shared/connections.js";
+import { environmentRestorer } from "../helpers/restore-environment.js";
 
 const TEST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3R0ZXN0dGVzdHRlc3R0ZXN0dGVzdHRlc3Q= wisp@laptop";
 const fakeSsh = path.join(__dirname, "../fixtures/fake-ssh.cjs");
@@ -43,11 +44,11 @@ async function anotherService(): Promise<number> {
   cleanups.push(() => new Promise<void>((resolve) => service.close(() => resolve())));
   return (service.address() as AddressInfo).port;
 }
-const environment = { ...process.env };
+const restoreEnvironment = environmentRestorer();
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-  process.env = { ...environment };
+  restoreEnvironment();
 });
 
 const profile = (serverPort: number): SshConnectionProfile => ({

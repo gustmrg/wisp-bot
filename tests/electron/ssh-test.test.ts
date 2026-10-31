@@ -2,6 +2,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { sshTestFailure, testSshConnection } from "../../electron/connections/ssh-test.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
+import { environmentRestorer } from "../helpers/restore-environment.js";
 
 const profile: SshConnectionProfile = {
   id: "test",
@@ -13,9 +14,9 @@ const profile: SshConnectionProfile = {
   serverPort: 8787,
 };
 const sshPath = path.join(__dirname, "../fixtures/fake-ssh.cjs");
-const environment = { ...process.env };
+const restoreEnvironment = environmentRestorer();
 afterEach(() => {
-  process.env = { ...environment };
+  restoreEnvironment();
 });
 
 describe("SSH connection test", () => {
