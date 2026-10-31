@@ -23,6 +23,7 @@ import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { Tailscale } from "../../electron/local-server/tailscale.js";
 import { FakeTailscale } from "../helpers/fake-tailscale.js";
 import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
+import { environmentRestorer } from "../helpers/restore-environment.js";
 import { adminRequest } from "../../server/admin.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
@@ -40,11 +41,11 @@ const silent = new StructuredLogger({ info: () => undefined, warn: () => undefin
 const fakeSsh = path.join(__dirname, "../fixtures/fake-ssh.cjs");
 const TEST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3R0ZXN0dGVzdHRlc3R0ZXN0dGVzdHRlc3Q= wisp@laptop";
 const cleanups: Array<() => Promise<void> | void> = [];
-const environment = { ...process.env };
+const restoreEnvironment = environmentRestorer();
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-  process.env = { ...environment };
+  restoreEnvironment();
 });
 
 /** Sets up a new store with one Wisp, as the app does on a first run. */
