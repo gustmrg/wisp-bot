@@ -29,7 +29,7 @@ and it never grants access by itself.**
   is still written as version 1, so older apps read what this one shares. A
   newer version asks for an update. The same parser checks templates in the
   app and on the server; a broken skill rejects the template and says which.
-- **Where templates live.** Seven built-in templates, Chief
+- **Where templates live.** Eight built-in templates, Chief
   ([ADR 024](024-chief-and-wisp-tools.md)) and one per starting soul,
   ship in `shared/builtin-wisp-templates.ts`. They are read-only and change
   with the app. Saved templates are one
@@ -70,7 +70,7 @@ and it never grants access by itself.**
   for them, and only the person can turn them on, in the Wisp's **Access** tab.
 - Built-in templates improve with the app; a person who duplicated one keeps
   their copy as it was.
-- The six starting souls stay in the soul picker as before; their text is
+- The starting souls stay in the soul picker as before; their text is
   shared with the built-in templates.
 
 ## Deferred

@@ -66,6 +66,19 @@ const EXTRAS: Readonly<Record<string, BuiltInExtras>> = {
     color: "#ed712e",
     appearance: { body: "pebble", trail: "flame", eyes: "arc", mark: "spark" },
   },
+  product: {
+    name: "Compass",
+    color: "#f19d38",
+    appearance: { body: "crystal", trail: "hook", eyes: "dot", mark: "motes" },
+    skills: [
+      skill("write-a-user-story", "Turns a request into a user story with testable acceptance criteria.", [
+        "Name who wants this and the problem behind the request; ask if either is unclear.",
+        "Write the story in one sentence: as a kind of user, I want something, so that I get a benefit.",
+        "List acceptance criteria that someone could check as passed or failed, including the main failure case.",
+        "End with what is out of scope, and the open questions that block starting.",
+      ]),
+    ],
+  },
   tutor: { name: "Owl", color: "#3c82f6", appearance: { body: "round", trail: "curl", eyes: "oval" } },
 };
 
@@ -93,7 +106,15 @@ const CHIEF_TEMPLATE: { id: string; template: WispTemplate } = {
 };
 
 /** The order of the gallery's cards, which is not the soul picker's. */
-const SOUL_CARD_ORDER: ReadonlyArray<string> = ["writing", "research", "code", "assistant", "projects", "tutor"];
+const SOUL_CARD_ORDER: ReadonlyArray<string> = [
+  "writing",
+  "research",
+  "code",
+  "assistant",
+  "projects",
+  "product",
+  "tutor",
+];
 
 /**
  * Templates that ship with the app: Chief, then one per starting soul. They are

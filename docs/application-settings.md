@@ -193,7 +193,7 @@ again.
 ## Templates
 
 **Templates**, also reached with the **Templates** button in the creation dialog,
-lists ready-made Wisps: seven built in, **Chief** and one per starting soul,
+lists ready-made Wisps: eight built in, **Chief** and one per starting soul,
 and the ones saved on the connected server, as cards with a search and an
 **All**, **Built in** and **Yours** filter. A template holds a Wisp's name,
 role, soul, look, model, skills, workspace size and commands, and the access

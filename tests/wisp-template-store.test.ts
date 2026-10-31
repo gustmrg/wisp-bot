@@ -42,6 +42,7 @@ describe("built-in Wisp templates", () => {
       "Forge",
       "Pip",
       "Sage",
+      "Compass",
       "Owl",
     ]);
     expect(BUILTIN_WISP_TEMPLATES.map(({ id }) => id).sort()).toEqual(
@@ -55,6 +56,12 @@ describe("built-in Wisp templates", () => {
     const code = BUILTIN_WISP_TEMPLATES.find(({ id }) => id === "builtin-code")!.template;
     expect(code.setup).toMatchObject({ executionMode: "container" });
     expect(code.skills).toHaveLength(1);
+  });
+
+  it("offer a product owner with a skill for writing user stories", () => {
+    const compass = BUILTIN_WISP_TEMPLATES.find(({ id }) => id === "builtin-product")!.template;
+    expect(compass).toMatchObject({ name: "Compass", role: "Product owner" });
+    expect(compass.skills?.[0]?.contents).toContain("name: write-a-user-story");
   });
 
   it("bring back the same Chief that onboarding creates", () => {
