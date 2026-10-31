@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Wisp } from "@/components/wisp";
 import { downloadTextFile } from "@/lib/download-file";
-import type { TemplateUseResult } from "@/lib/wisp-template-actions";
+import type { TemplateUseResult } from "@/lib/create-wisp-from-template";
 import { WISP_NAME_MAX_LENGTH } from "../../shared/conversations";
 import { pluginCatalogEntry } from "../../shared/plugins";
 import { parseSkillFile } from "../../shared/skills";
@@ -30,17 +30,21 @@ const UNSUPPORTED = "This server is older than this app and has no templates. Up
 /**
  * The Wisp templates of the active environment: the built-in ones and the
  * ones saved here, like a small gallery of Wisps ready for a job. Each can be
- * previewed in full, and **Use** creates the Wisp at once. Built-in ones only
+ * previewed in full. **Use** creates the Wisp at once, and **Customize** opens
+ * the creation dialog filled in, to change anything first. Built-in ones only
  * come with the app, so importing, duplicating, exporting, renaming and deleting
  * belong to the saved ones.
  */
 export function TemplateSettingsSection({
   onUseTemplate,
+  onCustomizeTemplate,
   onOpenModelSettings,
   onClose,
 }: {
   /** Creates a Wisp from a template; without it there is no Use button. */
   onUseTemplate?: (entry: WispTemplateEntry) => Promise<TemplateUseResult>;
+  /** Opens the creation dialog filled in from a template; without it there is no Customize button. */
+  onCustomizeTemplate?: ((entry: WispTemplateEntry) => void) | undefined;
   onOpenModelSettings?: () => void;
   onClose?: () => void;
 }) {
@@ -141,15 +145,12 @@ export function TemplateSettingsSection({
   /**
    * A skill becomes the Wisp's standing instructions, so the person approves
    * its exact content (ADR 008). Built-in ones come with the app; a saved one
-   * may come from a file, so its preview opens first, and using it there is
+   * may come from a file, so its preview opens first, and choosing there is
    * the approval.
    */
-  function useFromCard(entry: WispTemplateEntry) {
-    if (!entry.builtIn && entry.template.skills?.length) {
-      setPreviewId(entry.id);
-      return;
-    }
-    void use(entry);
+  function fromCard(entry: WispTemplateEntry, choose: (chosen: WispTemplateEntry) => void) {
+    if (!entry.builtIn && entry.template.skills?.length) setPreviewId(entry.id);
+    else choose(entry);
   }
 
   return (
@@ -174,6 +175,7 @@ export function TemplateSettingsSection({
             setMessage("");
           }}
           {...(onUseTemplate ? { onUse: (chosen: WispTemplateEntry) => void use(chosen), usingId } : {})}
+          {...(onCustomizeTemplate ? { onCustomize: onCustomizeTemplate } : {})}
           onSave={save}
           onDelete={remove}
           message={message}
@@ -243,7 +245,12 @@ export function TemplateSettingsSection({
                   <TemplateCard
                     entry={entry}
                     onOpen={() => setPreviewId(entry.id)}
-                    {...(onUseTemplate ? { onUse: useFromCard, usingId } : {})}
+                    {...(onUseTemplate
+                      ? { onUse: (chosen: WispTemplateEntry) => fromCard(chosen, (next) => void use(next)), usingId }
+                      : {})}
+                    {...(onCustomizeTemplate
+                      ? { onCustomize: (chosen: WispTemplateEntry) => fromCard(chosen, onCustomizeTemplate) }
+                      : {})}
                   />
                 </li>
               ))}
@@ -313,11 +320,13 @@ function TemplateCard({
   entry,
   onOpen,
   onUse,
+  onCustomize,
   usingId,
 }: {
   entry: WispTemplateEntry;
   onOpen: () => void;
   onUse?: (entry: WispTemplateEntry) => void;
+  onCustomize?: (entry: WispTemplateEntry) => void;
   usingId?: string | null;
 }) {
   const { template } = entry;
@@ -339,21 +348,37 @@ function TemplateCard({
         >
           {template.name}
         </button>
-        {onUse ? (
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label={`Use ${template.name}`}
-            disabled={Boolean(usingId)}
-            onClick={() => onUse(entry)}
-          >
-            <PlusIcon data-icon="inline-start" aria-hidden="true" />
-            {usingId === entry.id ? "Creating…" : "Use"}
-          </Button>
-        ) : null}
       </div>
       <p className="m-0 line-clamp-2 flex-1 text-xs leading-relaxed">{template.description || "No description."}</p>
-      <p className="m-0 text-2xs text-dim">{templateSummary(entry)}</p>
+      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+        <p className="m-0 min-w-0 text-2xs text-dim">{templateSummary(entry)}</p>
+        <div className="ml-auto flex flex-none items-center gap-1.5">
+          {onCustomize ? (
+            <Button
+              className="template-card-action"
+              variant="ghost"
+              size="sm"
+              aria-label={`Customize ${template.name}`}
+              disabled={Boolean(usingId)}
+              onClick={() => onCustomize(entry)}
+            >
+              Customize
+            </Button>
+          ) : null}
+          {onUse ? (
+            <Button
+              className="template-card-action"
+              variant="outline"
+              size="sm"
+              aria-label={`Use ${template.name}`}
+              disabled={Boolean(usingId)}
+              onClick={() => onUse(entry)}
+            >
+              {usingId === entry.id ? "Creating…" : "Use"}
+            </Button>
+          ) : null}
+        </div>
+      </div>
     </SettingsCard>
   );
 }
@@ -371,6 +396,7 @@ function TemplatePreview({
   entry,
   onBack,
   onUse,
+  onCustomize,
   usingId,
   onSave,
   onDelete,
@@ -379,6 +405,7 @@ function TemplatePreview({
   entry: WispTemplateEntry;
   onBack: () => void;
   onUse?: (entry: WispTemplateEntry) => void;
+  onCustomize?: (entry: WispTemplateEntry) => void;
   usingId?: string | null;
   onSave: (contents: string, id?: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<void>;
@@ -417,6 +444,11 @@ function TemplatePreview({
           <h3 className="m-0 truncate text-base font-semibold">{template.name}</h3>
           <p className="m-0 text-xs text-dim">{templateSummary(entry)}</p>
         </div>
+        {onCustomize ? (
+          <Button variant="outline" disabled={busy || Boolean(usingId)} onClick={() => onCustomize(entry)}>
+            Customize
+          </Button>
+        ) : null}
         {onUse ? (
           <Button disabled={busy || Boolean(usingId)} onClick={() => onUse(entry)}>
             <PlusIcon data-icon="inline-start" aria-hidden="true" />
@@ -543,7 +575,8 @@ function TemplatePreview({
       <SettingsGroup label="Access it asks for">
         <TemplateAccess template={template} />
         <p className="mx-0.5 mt-[7px] text-xs text-dim">
-          Nothing here is granted by the template. Turn on what you want in the Wisp's Access tab.
+          Nothing here is granted by the template. Turn on what you want with Customize, or later in the Wisp's Access
+          tab.
         </p>
       </SettingsGroup>
     </div>

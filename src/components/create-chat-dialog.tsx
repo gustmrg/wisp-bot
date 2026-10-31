@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import type { ReactElement } from "react";
 
 import type { ModelSelection } from "../../shared/contracts";
+import type { WispTemplateEntry } from "../../shared/wisp-template";
 import type { NewCircle, NewWisp, Wisp } from "@/chat-data";
 import { CreateCirclePanel } from "@/components/create-circle-panel";
 import { CreateWispPanel, type CreatePanelStatus } from "@/components/create-wisp-panel";
@@ -34,6 +35,8 @@ interface CreateChatDialogProps {
   trigger?: ReactElement;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** A template the new Wisp starts from. */
+  template?: WispTemplateEntry;
 }
 
 const TITLES: Record<CreateKind, string> = { wisp: "Create new Wisp", circle: "Create new circle" };
@@ -48,6 +51,7 @@ function CreateChatDialog({
   trigger,
   open: controlledOpen,
   onOpenChange,
+  template,
 }: CreateChatDialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
@@ -122,7 +126,9 @@ function CreateChatDialog({
           </DialogHeader>
           <TabsContent className="flex min-h-0 flex-1 flex-col" value="wisp" keepMounted>
             <CreateWispPanel
-              key={draftKey}
+              // Starting from another template is a new draft.
+              key={`${draftKey}:${template?.id ?? ""}`}
+              {...(template ? { template: template.template } : {})}
               active={open}
               onCreate={onCreate}
               onStatusChange={onWispStatus}
