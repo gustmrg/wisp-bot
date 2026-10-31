@@ -79,6 +79,17 @@ follows the person's profile. When the person has a single Wisp, as right
 after onboarding, the first two suggest building a team of Wisps or creating
 an assistant Wisp. The soul's first paragraph is no longer shown there.
 
+An empty circle shows its members, name and description in a neutral color,
+with suggestions of its own, also fixed in the app. The Wisp suggestions do
+not fit there: a circle has no jobs, only one member answers a question about
+connecting a service, and the person still has to learn who answers. So the
+circle's suggestions ask what the team can do, mention a member other than the
+lead, ask where to start when the circle has a description, and ask to split a
+task. None mentions every member, since one tap would pay for a reply from
+each. A new circle starts with no messages, like a Wisp. Circles created
+earlier keep a stored line that marks their beginning, which the introduction
+replaces until the first message.
+
 ## Consequences
 
 - A new person can describe what they need and get a team of Wisps with

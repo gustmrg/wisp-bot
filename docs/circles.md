@@ -15,6 +15,14 @@ A circle's gear (or "…" on a phone) opens its settings in **General** (name,
 label, description, notifications), **Members** (members and lead),
 **Workspace**, and **Usage** tabs.
 
+## An empty circle
+
+Before the first message, a circle shows its members' avatars, its name, its
+description, and suggested first messages that send when tapped. They ask
+what the team can do, mention a member other than the lead, ask where to start
+when the circle has a description, and ask to split a task between members.
+A circle with one member offers only what fits one Wisp.
+
 ## Who answers
 
 - A message that mentions members (`@Atlas`) goes to them, in the order they
@@ -22,9 +30,9 @@ label, description, notifications), **Members** (members and lead),
   Names match without regard to case, and the longest name wins, so `@Ada`
   never matches `@Adam`.
 - Any other message goes to the circle's **lead**, its first member. A small
-  crown marks the lead on its avatar wherever its replies appear, after its
-  name under the circle's name, and beside it in the **Members** list. A
-  circle with one member shows no crown.
+  crown marks the lead after its name under the circle's name, on its avatar
+  in an empty circle, and beside it in the **Members** list. A circle with
+  one member shows no crown.
 - A circle can let a [decision model](models.md#decision-model) choose instead.
   In its **Members** tab, **Without a mention, who answers** is **Lead** by
   default; **Decision model** stays disabled until one is chosen in

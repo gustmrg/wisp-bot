@@ -19,3 +19,26 @@ const GENERAL_STARTERS = [
 export function conversationStarters(options: { soleWisp: boolean }): ReadonlyArray<string> {
   return (options.soleWisp ? [...TEAM_STARTERS, ...GENERAL_STARTERS] : GENERAL_STARTERS).slice(0, MAX_STARTERS);
 }
+
+/**
+ * The prompts an empty circle offers to send. They show what sets a circle
+ * apart: who answers, mentions and handoffs. Jobs and commands stay out, since
+ * a circle has neither (ADR 011). The mention names a member other than the
+ * lead, who answers without one anyway.
+ */
+export function circleStarters(options: {
+  memberNames: ReadonlyArray<string>;
+  hasDescription: boolean;
+}): ReadonlyArray<string> {
+  const { memberNames, hasDescription } = options;
+  if (!memberNames.length) return [];
+  const start = hasDescription ? ["Where should we start?"] : [];
+  const other = memberNames[1];
+  if (other === undefined) return ["What can you help me with?", ...start];
+  return [
+    "What can this team help me with?",
+    `@${other}, what can you do?`,
+    ...start,
+    "Help me split a task between you",
+  ];
+}
