@@ -141,6 +141,6 @@ describe("JobsSettingsSection", () => {
     expect(api.deleteJob).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Delete job" }));
     expect(api.deleteJob).toHaveBeenCalledWith({ jobId: "job-1" });
-    await waitFor(() => expect(screen.getByText("No jobs yet.")).toBeVisible());
+    await waitFor(() => expect(screen.getByText(/No jobs yet\./)).toBeVisible());
   });
 });

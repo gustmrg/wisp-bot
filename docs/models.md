@@ -8,8 +8,10 @@ returned to the renderer (see [security](security.md)).
 
 ## Global model and provider keys
 
-**Settings → AI Model** manages the default model and encrypted, shared
-provider keys. Providers with API-key authentication and models in Pi's
+**Settings → AI Model** chooses the default model, and **Settings → Providers**
+manages encrypted, shared provider keys. A key is added on its own, so adding
+one never changes a model. **AI Model** lists models only from connected
+providers. Providers with API-key authentication and models in Pi's
 installed catalog are available. The app starts from the catalog cached on disk
 and refreshes it over the network in the background (for at most ten seconds),
 so an offline or slow connection never delays the window; a refresh failure is
@@ -30,7 +32,7 @@ the model themselves show no logo.
 
 ## Subscription sign-in
 
-For OpenAI, **Settings → AI Model → Credential → Sign in with ChatGPT** uses the
+For OpenAI, **Settings → Providers → OpenAI → Sign in with ChatGPT** uses the
 person's ChatGPT plan instead of an API key: requests count against the plan's
 usage limits rather than being billed per token
 ([ADR 025](decisions/025-provider-subscription-sign-in.md)). Other providers'
@@ -45,13 +47,13 @@ another vendor's own client; a Claude plan runs Wisps through
   goes to an address starting with `http://127.0.0.1:1455` that does not load;
   paste it into **Address after sign-in**.
 - A provider's models use one credential: signing in replaces its API key, and
-  entering a key in AI Model settings replaces the sign-in. **Sign out**
+  entering a key in **Providers** replaces the sign-in. **Sign out**
   removes the sign-in, and Wisps on that provider stop until it is restored.
 - Voice input needs an OpenAI API key; the sign-in does not reach it. Signing
   in keeps the saved API key for voice input, and a key saved in Voice input
   settings while signed in is kept for voice input alone, beside the sign-in.
-  Removing that key never signs out. Once a key is entered in AI Model
-  settings, voice input uses that one.
+  Removing that key never signs out. Once a key is entered in **Providers**,
+  voice input uses that one.
 - The backend stores the tokens encrypted and refreshes them.
 - Only one sign-in can run at a time, and it is cancelled after ten minutes.
   Pi listens on port 1455 on the server's computer, so an unfinished Codex CLI
@@ -69,7 +71,7 @@ password or token.
   there with `claude auth login`. On a headless server, sign in over SSH by
   pasting the code the browser shows, or run `claude setup-token` and set
   `CLAUDE_CODE_OAUTH_TOKEN` in the server's service environment.
-- **Status:** **Settings → AI Model**, with Claude Code chosen, shows whether
+- **Status:** **Settings → Providers → Claude Code** shows whether
   it is installed, recent enough, and signed in, and with which plan. Claude
   Code must be at least the version the Agent SDK Wisp ships was built with;
   `claude update` brings an older one up to date. **Check again** reads the
@@ -158,8 +160,8 @@ changed, stays saved but is not used, and the setting says why.
 
 ## Auxiliary models
 
-Some models cannot see images. **Settings → AI Model → Auxiliary models →
-Image understanding** chooses a second model that reads images for Wisps on
+Some models cannot see images. **Settings → AI Model → Background tasks →
+Reading images** chooses a second model that reads images for Wisps on
 such models ([ADR 012](decisions/012-auxiliary-models.md)). It is **Off** by
 default, lists only models that accept images from providers with a saved key,
 and is used only while a Wisp's own model lacks image input.
@@ -187,7 +189,7 @@ setting says why.
 
 ### Decision model
 
-**Settings → AI Model → Auxiliary models → Decision model** chooses a model that
+**Settings → AI Model → Background tasks → Decision model** chooses a model that
 decides which Wisp answers a message that mentions no one in a
 [circle](circles.md#who-answers). It is **Off** by default, and there is one for
 the whole app. Decision models only choose among options and cannot write text,
@@ -198,9 +200,8 @@ The message, the circle's recent messages, and a description of its Wisps go to
 the chosen provider. A model whose key is removed, or that leaves the catalog,
 stays saved but is not used, and the setting says why.
 
-A provider that offers only decision models, such as TypeSafe, has no model to
-choose in **Settings → AI Model → Provider**, so its API key is entered next to
-the **Decision model** setting.
+A provider that offers only decision models, such as TypeSafe, is connected in
+**Settings → Providers** like any other, where it says it offers only them.
 
 ## First-time setup
 

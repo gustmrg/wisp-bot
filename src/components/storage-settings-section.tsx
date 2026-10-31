@@ -113,9 +113,8 @@ export function StorageSettingsSection({
         Storage
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Files in workspaces on <strong className="font-medium text-foreground">{connectionName}</strong>. Sizes are the
-        length of the files, not the space they take on disk; a file linked in several places counts once.
-        Conversations, settings and sessions are not counted.
+        Files in workspaces on <strong className="font-medium text-foreground">{connectionName}</strong>. Conversations,
+        settings, and sessions aren't counted.
       </p>
 
       {inspected && inspecting ? (

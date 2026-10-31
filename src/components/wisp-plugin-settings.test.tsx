@@ -137,7 +137,7 @@ describe("WispPluginSettings", () => {
       "Firecrawl",
       "Tavily",
       "Exa",
-      "DeepSeek",
+      "DeepSeek Search",
     ]);
     await user.click(screen.getByRole("option", { name: "Tavily" }));
     await openSelect(user, screen.getByRole("combobox", { name: "Read web pages access" }));
@@ -315,7 +315,7 @@ describe("WispPluginSettings", () => {
     expect(screen.getByText(/Read web pages: no connected plugin provides this/)).toBeVisible();
     expect(
       screen.getByText(
-        /Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, DeepSeek, Google Calendar, Gmail, Google Drive, Home Assistant, GitHub, GitLab, Atlassian\./,
+        /Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, DeepSeek Search, Google Calendar, Gmail, Google Drive, Home Assistant, GitHub, GitLab, Atlassian\./,
       ),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Set up plugins" }));

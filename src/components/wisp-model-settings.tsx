@@ -238,8 +238,8 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
             {applied && appliedProvider && !appliedProvider.credentialConfigured ? (
               <p role="alert" className="m-0 text-destructive">
                 {appliedProvider.id === CLAUDE_CODE_PROVIDER
-                  ? `${claudeCodeUnavailableMessage(catalog?.claudeCode)} See Settings → AI Model.`
-                  : "Configure this provider's API key in Settings → AI Model."}
+                  ? `${claudeCodeUnavailableMessage(catalog?.claudeCode)} See Settings → Providers.`
+                  : "Add this provider's API key in Settings → Providers."}
               </p>
             ) : null}
           </>

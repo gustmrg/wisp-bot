@@ -10,7 +10,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
@@ -73,15 +73,29 @@ export function NotificationSettingsSection({
       aria-labelledby="notification-settings-title"
       className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
     >
-      <h2 id="notification-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="notification-settings-title" scope="device" className="mb-[22px]">
         Notifications
-      </h2>
-      <p className="mb-[22px] text-xs leading-relaxed text-dim">
-        <SettingsScopeNote scope="device" />
-      </p>
+      </SettingsPanelTitle>
       <div className="animate-tab-forward">
         <SettingsGroup label="Channels">
           <SettingsCard variant="stacked">
+            {systemNotifications ? (
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <SettingsRowTitle>System notifications</SettingsRowTitle>
+                  <SettingsRowDescription>
+                    Show Wisp updates in your system, even with the window closed.
+                  </SettingsRowDescription>
+                </SettingsRowCopy>
+                <PreferenceSwitch
+                  label="System notifications"
+                  checked={preferences.systemNotifications}
+                  onChange={() =>
+                    onPreferencesChange({ ...preferences, systemNotifications: !preferences.systemNotifications })
+                  }
+                />
+              </SettingsRow>
+            ) : null}
             <SettingsRow>
               <SettingsRowCopy>
                 <SettingsRowTitle>Notification sounds</SettingsRowTitle>
@@ -120,32 +134,14 @@ export function NotificationSettingsSection({
                 </output>
               </div>
             </SettingsRow>
-            {systemNotifications ? (
-              <SettingsRow>
-                <SettingsRowCopy>
-                  <SettingsRowTitle>System notifications</SettingsRowTitle>
-                  <SettingsRowDescription>
-                    Show Wisp updates in your system's notifications, even with Wisp in the background or its window
-                    closed. Click one to open the conversation.
-                  </SettingsRowDescription>
-                </SettingsRowCopy>
-                <PreferenceSwitch
-                  label="System notifications"
-                  checked={preferences.systemNotifications}
-                  onChange={() =>
-                    onPreferencesChange({ ...preferences, systemNotifications: !preferences.systemNotifications })
-                  }
-                />
-              </SettingsRow>
-            ) : null}
           </SettingsCard>
         </SettingsGroup>
         <SettingsGroup label="Events">
           <SettingsCard variant="stacked">
             <div className="flex items-center gap-3 px-3.5 py-2 text-xs text-dim" aria-hidden="true">
               <span className="flex-1">Notify me when</span>
-              <span className={SOUND_COLUMN}>Sound</span>
               {systemNotifications ? <span className={CHANNEL_COLUMN}>System</span> : null}
+              <span className={SOUND_COLUMN}>Sound</span>
             </div>
             {EVENTS.map(({ key, systemKey, label, description, sound }) => (
               <SettingsRow key={key}>
@@ -155,6 +151,21 @@ export function NotificationSettingsSection({
                 </SettingsRowCopy>
                 {/* Both channels wrap together, beneath the event on a narrow screen. */}
                 <div className="ml-auto flex items-center gap-3">
+                  {systemNotifications ? (
+                    <div className={CHANNEL_COLUMN}>
+                      <TestButton
+                        label={`Test notification: ${label}`}
+                        disabled={!preferences.systemNotifications}
+                        onClick={() => void systemNotifications.test({ kind: sound }).catch(() => undefined)}
+                      />
+                      <PreferenceSwitch
+                        label={`Notification: ${label}`}
+                        checked={preferences[systemKey]}
+                        disabled={!preferences.systemNotifications}
+                        onChange={() => onPreferencesChange({ ...preferences, [systemKey]: !preferences[systemKey] })}
+                      />
+                    </div>
+                  ) : null}
                   <div className={SOUND_COLUMN}>
                     <TestButton
                       label={`Test sound: ${label}`}
@@ -202,21 +213,6 @@ export function NotificationSettingsSection({
                       </SelectContent>
                     </Select>
                   </div>
-                  {systemNotifications ? (
-                    <div className={CHANNEL_COLUMN}>
-                      <TestButton
-                        label={`Test notification: ${label}`}
-                        disabled={!preferences.systemNotifications}
-                        onClick={() => void systemNotifications.test({ kind: sound }).catch(() => undefined)}
-                      />
-                      <PreferenceSwitch
-                        label={`Notification: ${label}`}
-                        checked={preferences[systemKey]}
-                        disabled={!preferences.systemNotifications}
-                        onChange={() => onPreferencesChange({ ...preferences, [systemKey]: !preferences[systemKey] })}
-                      />
-                    </div>
-                  ) : null}
                 </div>
               </SettingsRow>
             ))}
@@ -242,10 +238,8 @@ export function NotificationSettingsSection({
             </SettingsRow>
           </SettingsCard>
           <p className="mx-0.5 mt-[7px] text-dim text-xs leading-[1.45]">
-            Wisps with notifications turned off in their own settings stay silent.
-            {systemNotifications
-              ? " System notifications skip the conversation on screen while Wisp is in focus. If none show up, check that your system allows notifications from Wisp."
-              : null}
+            Wisps with notifications off stay silent.
+            {systemNotifications ? " If none show up, check your system's settings." : null}
           </p>
         </SettingsGroup>
         <SettingsGroup label="App notices">
@@ -254,12 +248,7 @@ export function NotificationSettingsSection({
           </SettingsCard>
         </SettingsGroup>
         <p className="mt-4 text-xs text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
-          {persistenceError ??
-            (persistenceStatus === "saving"
-              ? "Saving preferences…"
-              : persistenceStatus === "saved"
-                ? "Preferences saved on this device."
-                : "Preferences are stored on this device.")}
+          {persistenceError ?? (persistenceStatus === "saving" ? "Saving preferences…" : null)}
         </p>
       </div>
     </section>

@@ -34,7 +34,7 @@ import {
   StatusDot,
   type StatusTone,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -207,12 +207,11 @@ export function PluginSettingsSection({
       id="plugin-settings-panel"
       aria-labelledby="plugin-settings-title"
     >
-      <h2 id="plugin-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="plugin-settings-title" scope="environment">
         Plugins
-      </h2>
+      </SettingsPanelTitle>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Connect services, then choose which Wisps can use them. Connecting a plugin does not give any Wisp access
-        automatically. <SettingsScopeNote scope="environment" />
+        Connect services, then choose which Wisps can use them. Connecting gives no Wisp access.
       </p>
       {view ? (
         <div className="animate-tab-forward">
@@ -596,7 +595,7 @@ function KeyLink({ pluginId }: { pluginId: PluginId }) {
       rel="noreferrer"
       className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
     >
-      {entry.serverAddress ? `Create a ${entry.credentialLabel.toLowerCase()}` : `Get a ${entry.name} API key`}
+      {entry.serverAddress ? `Create a ${entry.credentialLabel.toLowerCase()}` : `Get a ${entry.credentialLabel}`}
       <ExternalLinkIcon className="size-3" aria-hidden="true" />
     </a>
   );

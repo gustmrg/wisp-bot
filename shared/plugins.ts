@@ -133,7 +133,7 @@ export const PLUGIN_CATALOG: ReadonlyArray<PluginCatalogEntry> = [
   },
   {
     id: "deepseek",
-    name: "DeepSeek",
+    name: "DeepSeek Search",
     category: "web",
     credentialLabel: "DeepSeek API key",
     credentialUrl: "https://platform.deepseek.com/api_keys",

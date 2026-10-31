@@ -181,19 +181,20 @@ describe("PluginSettingsSection", () => {
   });
 
   it.each([
-    ["tavily", "Tavily"],
-    ["exa", "Exa"],
-    ["deepseek", "DeepSeek"],
-  ] as const)("connects %s by testing the key before saving it", async (pluginId, name) => {
+    ["tavily", "Tavily", "Tavily"],
+    ["exa", "Exa", "Exa"],
+    // Named apart from DeepSeek's models; the key and the service are still DeepSeek's.
+    ["deepseek", "DeepSeek Search", "DeepSeek"],
+  ] as const)("connects %s by testing the key before saving it", async (pluginId, name, service) => {
     const api = setup();
     const user = userEvent.setup();
     render(<PluginSettingsSection />);
     const form = await openPlugin(name);
-    expect(form.getByRole("link", { name: `Get a ${name} API key` })).toHaveAttribute(
+    expect(form.getByRole("link", { name: `Get a ${service} API key` })).toHaveAttribute(
       "href",
       PLUGIN_CATALOG.find(({ id }) => id === pluginId)!.credentialUrl,
     );
-    const key = form.getByLabelText(`${name} API key`);
+    const key = form.getByLabelText(`${service} API key`);
     expect(key).toHaveAttribute("type", "password");
     expect(form.getByRole("button", { name: "Connect" })).toBeDisabled();
     await user.type(key, `${pluginId}-test-key`);

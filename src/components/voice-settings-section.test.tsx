@@ -43,8 +43,16 @@ function renderSection(
     },
   });
   const onPreferencesChange = vi.fn();
-  render(<VoiceSettingsSection active preferences={preferences} onPreferencesChange={onPreferencesChange} />);
-  return { onPreferencesChange, saveVoiceCredential, removeVoiceCredential };
+  const onOpenProviders = vi.fn();
+  render(
+    <VoiceSettingsSection
+      active
+      preferences={preferences}
+      onPreferencesChange={onPreferencesChange}
+      onOpenProviders={onOpenProviders}
+    />,
+  );
+  return { onPreferencesChange, onOpenProviders, saveVoiceCredential, removeVoiceCredential };
 }
 
 describe("VoiceSettingsSection", () => {
@@ -122,30 +130,23 @@ describe("VoiceSettingsSection", () => {
 
     expect(saveVoiceCredential).toHaveBeenCalledWith({ providerId: "groq", apiKey: "gsk-secret" });
     expect(await screen.findByText("Groq key saved.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Groq API key")).toHaveValue("");
-    expect(screen.getByText(/An encrypted key is saved for Groq/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Groq API key")).not.toBeInTheDocument();
+    expect(screen.getByText("Uses your Groq key from Providers.")).toBeInTheDocument();
   });
 
-  it("reuses a key saved for chat models of the same provider", async () => {
-    renderSection({ ...DEFAULT_PREFERENCES, voiceProvider: "openai", voiceModel: "whisper-1" }, ["openai"]);
-
-    expect(
-      await screen.findByText(/An encrypted key is saved for OpenAI and shared with AI Model/),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("OpenAI API key")).toHaveAttribute("placeholder", "Saved — enter a replacement");
-  });
-
-  it("removes the saved key after confirmation", async () => {
+  it("sends a key shared with chat models to Providers instead of editing it here", async () => {
     const user = userEvent.setup();
-    const { removeVoiceCredential } = renderSection(DEFAULT_PREFERENCES, ["groq"]);
+    const { onOpenProviders } = renderSection(
+      { ...DEFAULT_PREFERENCES, voiceProvider: "openai", voiceModel: "whisper-1" },
+      ["openai"],
+    );
 
-    await user.click(await screen.findByRole("button", { name: "Remove key" }));
-    expect(screen.getByText(/Voice input and Wisps using Groq stop working/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Remove key" }));
-
-    expect(removeVoiceCredential).toHaveBeenCalledWith({ providerId: "groq" });
-    expect(await screen.findByText(/Add a Groq key to use voice input/)).toBeInTheDocument();
+    expect(await screen.findByText("Uses your OpenAI key from Providers.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("OpenAI API key")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remove key" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+
+    expect(onOpenProviders).toHaveBeenCalledOnce();
   });
 
   it("says a key kept for voice input alone leaves the sign-in in place", async () => {
@@ -157,7 +158,7 @@ describe("VoiceSettingsSection", () => {
     );
 
     expect(
-      await screen.findByText(/saved for OpenAI voice input only; AI Model settings use your sign-in/),
+      await screen.findByText(/Saved for voice input only; your models use your OpenAI sign-in/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remove key" }));
     expect(screen.getByText(/Voice input with OpenAI stops working .* Your sign-in is kept/)).toBeInTheDocument();

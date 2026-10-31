@@ -18,6 +18,7 @@ import {
   ExternalLinkIcon,
   InfoIcon,
   KeyboardIcon,
+  KeyRoundIcon,
   LoaderCircleIcon,
   MicIcon,
   PlugIcon,
@@ -36,6 +37,7 @@ import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { JobsSettingsSection } from "@/components/jobs-settings-section";
 import { PermissionSettingsSection } from "@/components/permission-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
+import { ProviderSettingsSection } from "@/components/provider-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
 import { McpSettingsSection } from "@/components/mcp-settings-section";
 import { ShortcutSettingsSection } from "@/components/shortcut-settings-section";
@@ -77,6 +79,7 @@ type SettingsSection =
   | "connections"
   | "remote-access"
   | "model"
+  | "providers"
   | "voice"
   | "plugins"
   | "mcp"
@@ -91,6 +94,7 @@ export type SettingsEntrySection =
   | "general"
   | "connections"
   | "model"
+  | "providers"
   | "voice"
   | "plugins"
   | "mcp"
@@ -130,8 +134,15 @@ const NAV_ITEMS: ReadonlyArray<
     section: "model",
     panelId: "model-settings-panel",
     label: "AI Model",
-    description: "The provider and model your Wisps use",
+    description: "Which model your Wisps use",
     icon: BotIcon,
+  },
+  {
+    section: "providers",
+    panelId: "provider-settings-panel",
+    label: "Providers",
+    description: "Connect model services and manage their keys",
+    icon: KeyRoundIcon,
   },
   {
     section: "voice",
@@ -208,7 +219,7 @@ const NAV_ITEMS: ReadonlyArray<
 /** How the navigation groups the sections, on the desktop and under the profile card on mobile. */
 const NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
   { label: "Account and server", sections: ["general", "connections", "remote-access"] },
-  { label: "Wisps", sections: ["model", "voice", "plugins", "mcp", "permissions", "jobs"] },
+  { label: "Wisps", sections: ["model", "providers", "voice", "plugins", "mcp", "permissions", "jobs"] },
   { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
   { label: "Storage and data", sections: ["storage", "usage"] },
   { label: "App", sections: ["about"] },
@@ -308,6 +319,7 @@ function AppSettingsDialog({
     connections: "Connections",
     "remote-access": "Remote access",
     model: "AI Model",
+    providers: "Providers",
     voice: "Voice input",
     shortcuts: "Shortcuts",
     plugins: "Plugins",
@@ -539,7 +551,6 @@ function AppSettingsDialog({
                 <SettingsRow>
                   <SettingsRowCopy>
                     <SettingsRowTitle htmlFor="app-theme">Theme</SettingsRowTitle>
-                    <SettingsRowDescription>Choose how Wisp looks on this device.</SettingsRowDescription>
                   </SettingsRowCopy>
                   <Select
                     items={THEME_OPTIONS}
@@ -593,10 +604,7 @@ function AppSettingsDialog({
                 <SettingsRow>
                   <SettingsRowCopy>
                     <SettingsRowTitle>Conversation order</SettingsRowTitle>
-                    <SettingsRowDescription>
-                      Show the latest activity first, or keep conversations in the order they were created. Pinned
-                      conversations come first.
-                    </SettingsRowDescription>
+                    <SettingsRowDescription>Pinned conversations always come first.</SettingsRowDescription>
                   </SettingsRowCopy>
                   <SegmentedControl<ChatListOrder>
                     label="Conversation order"
@@ -622,12 +630,7 @@ function AppSettingsDialog({
             </SettingsGroup>
             <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
             <p className="mt-4 text-xs text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
-              {persistenceError ??
-                (persistenceStatus === "saving"
-                  ? "Saving preferences…"
-                  : persistenceStatus === "saved"
-                    ? "Preferences saved on this device."
-                    : "Preferences are stored on this device.")}
+              {persistenceError ?? (persistenceStatus === "saving" ? "Saving preferences…" : null)}
             </p>
           </div>
         </section>
@@ -642,11 +645,15 @@ function AppSettingsDialog({
             persistenceError={persistenceError}
           />
         ) : null}
-        <ModelSettingsSection active={section === "model" && !showOverview} />
+        {section === "model" && open && !showOverview ? (
+          <ModelSettingsSection onOpenProviders={() => openSection("providers")} />
+        ) : null}
+        {section === "providers" && open && !showOverview ? <ProviderSettingsSection /> : null}
         <VoiceSettingsSection
           active={open && section === "voice" && !showOverview}
           preferences={preferences}
           onPreferencesChange={onPreferencesChange}
+          onOpenProviders={() => openSection("providers")}
         />
         <ShortcutSettingsSection
           active={section === "shortcuts" && !showOverview}

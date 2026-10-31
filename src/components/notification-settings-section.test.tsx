@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { NotificationSettingsSection } from "@/components/notification-settings-section";
@@ -110,6 +110,23 @@ it("controls system notifications apart from sounds, with a test for each event,
     expect(screen.getByRole("button", { name: "Test notification: Approval needed" })).toBeDisabled();
     expect(screen.getByRole("switch", { name: "Notification: Response completed" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Test sound: Approval needed" })).toBeEnabled();
+  } finally {
+    Reflect.deleteProperty(window, "wisp");
+  }
+});
+
+it("lists system notifications first, in Channels and in each event's columns", () => {
+  Object.defineProperty(window, "wisp", { configurable: true, value: { systemNotifications: { test: vi.fn() } } });
+  try {
+    render(<Settings />);
+    const channels = within(screen.getByRole("region", { name: "Channels" }));
+    expect(channels.getAllByRole("switch").map((control) => control.getAttribute("aria-label"))).toEqual([
+      "System notifications",
+      "Notification sounds",
+    ]);
+    const system = screen.getByRole("switch", { name: "Notification: Execution error" });
+    const sound = screen.getByRole("combobox", { name: "Sound: Execution error" });
+    expect(system.compareDocumentPosition(sound) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   } finally {
     Reflect.deleteProperty(window, "wisp");
   }

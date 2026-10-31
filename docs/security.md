@@ -119,7 +119,7 @@ rechecked after the approval wait and again immediately before dispatch.
 Cancellation cannot roll back a mutation already accepted remotely; uncertain
 write outcomes instruct the agent to check the external system before retrying.
 
-With an image model chosen in **Settings → AI Model → Auxiliary models**, the
+With an image model chosen in **Settings → AI Model → Background tasks**, the
 `read` tool sends images and scanned PDF pages from the workspaces of Wisps on
 text-only models to that model's provider, which can differ from the provider
 running the conversation (see [AI models](models.md#auxiliary-models)). The
