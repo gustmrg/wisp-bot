@@ -311,47 +311,57 @@
   translate: 0 3px;
 }
 
+/* These stay on `transform`: Chromium runs it on SVG elements off the main thread, but
+   lays out every frame for the individual rotate and translate properties. */
 @keyframes wisp-sway {
   0%,
   100% {
-    rotate: -7deg;
+    transform: rotate(-7deg);
   }
   50% {
-    rotate: 8deg;
+    transform: rotate(8deg);
   }
 }
 @keyframes wisp-look {
   0%,
   100% {
-    translate: 0 0;
+    transform: translate(0, 0);
   }
   35%,
   65% {
-    translate: 3px -3px;
+    transform: translate(3px, -3px);
   }
 }
 @keyframes wisp-bob {
   0%,
   100% {
-    translate: 0 0;
+    transform: translate(0, 0);
   }
   50% {
-    translate: 0 -2px;
+    transform: translate(0, -2px);
   }
 }
 
 /* The shimmer over the running step's share of the connection card's progress bar. */
 .connection-progress-step {
-  background: linear-gradient(90deg, transparent, var(--tone), transparent) 0 0 / 200% 100% no-repeat;
+  overflow: hidden;
+}
+.connection-progress-step::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 200%;
+  background: linear-gradient(90deg, transparent, var(--tone), transparent);
   animation: connection-progress-step 1.4s ease-in-out infinite;
 }
 
 @keyframes connection-progress-step {
   from {
-    background-position: 200% 0;
+    transform: translateX(-100%);
   }
   to {
-    background-position: -100% 0;
+    transform: translateX(50%);
   }
 }
 
@@ -359,7 +369,9 @@
   .connection-progress-step {
     background: var(--tone);
     opacity: 0.4;
-    animation: none;
+  }
+  .connection-progress-step::before {
+    display: none;
   }
 }
 

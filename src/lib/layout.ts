@@ -5,6 +5,8 @@ interface ResizablePanelLayout {
   readonly minWidth: number;
   readonly maxWidth: number;
   readonly direction: 1 | -1;
+  /** The custom property on the panel that sets its width. */
+  readonly cssVariable: string;
 }
 
 type SidebarLayoutStyle = CSSProperties & {
@@ -22,6 +24,7 @@ const SIDEBAR_LAYOUT = {
     minWidth: 220,
     maxWidth: 400,
     direction: 1,
+    cssVariable: "--sidebar-width",
   },
 } as const satisfies {
   readonly resize: ResizablePanelLayout;
@@ -33,6 +36,7 @@ const DETAILS_LAYOUT = {
     minWidth: 280,
     maxWidth: 480,
     direction: -1,
+    cssVariable: "--details-width",
   },
 } as const satisfies {
   readonly resize: ResizablePanelLayout;

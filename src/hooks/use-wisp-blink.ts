@@ -10,10 +10,11 @@ const BLINK_DURATION_MS = 240;
 /** Only the large picture and the conversation list blink; elsewhere the eyes are too small to read. */
 const BLINKING_WISP = '[data-slot="wisp"][data-size="xl"], .conversation-avatar [data-slot="wisp"]';
 
+/** `transform`, not `scale`: Chromium runs it on SVG elements off the main thread. */
 const BLINK_KEYFRAMES: Keyframe[] = [
-  { scale: "1 1", easing: "ease" },
-  { scale: "1 0.1", easing: "ease" },
-  { scale: "1 1" },
+  { transform: "scaleY(1)", easing: "ease" },
+  { transform: "scaleY(0.1)", easing: "ease" },
+  { transform: "scaleY(1)" },
 ];
 
 /**
