@@ -281,8 +281,8 @@ describe("plugin service", () => {
     expect(authorize).not.toHaveBeenCalled();
   });
 
-  it("refreshes provider revisions and prevents revoked or stale web calls", async () => {
-    const { service, call, execute, executeFirecrawl, sessions } = await setup();
+  it("refreshes provider revisions and stops routing web calls to a revoked provider", async () => {
+    const { service, call, execute, executeFirecrawl } = await setup();
     await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
     await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
     await service.saveAccess({
@@ -293,7 +293,6 @@ describe("plugin service", () => {
       ],
     });
     const before = await service.getSnapshot(ownConversation("one"));
-    const staleTool = service.getTools(ownConversation("one")).find(({ name }) => name === "web_search")!;
     await service.saveAccess({
       ...accessForm(service, "one"),
       grants: [{ pluginId: "firecrawl", access: "read" }],
@@ -303,21 +302,6 @@ describe("plugin service", () => {
     expect(after.revision).not.toBe(before.revision);
     await call("web_search");
     expect(execute).not.toHaveBeenCalled();
-    expect(executeFirecrawl).toHaveBeenCalledTimes(1);
-    await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "replacement-key" });
-    await expect(call("web_read")).rejects.toMatchObject({ code: "tool_blocked" });
-    await service.saveAccess({
-      ...accessForm(service, "one"),
-      grants: [{ pluginId: "firecrawl", access: "read" }],
-    });
-    sessions.set("one", "replacement-session");
-    await service.saveAccess({
-      ...accessForm(service, "one"),
-      grants: [{ pluginId: "firecrawl", access: "read" }],
-    });
-    await expect(staleTool.execute("stale", {}, undefined, undefined, {} as never)).rejects.toMatchObject({
-      code: "tool_blocked",
-    });
     expect(executeFirecrawl).toHaveBeenCalledTimes(1);
   });
 

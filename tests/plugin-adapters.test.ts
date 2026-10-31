@@ -644,16 +644,11 @@ describe("Firecrawl", () => {
     expect(JSON.stringify(result)).not.toContain(KEY);
   });
 
-  it.each([
-    { query: "" },
-    { query: "x".repeat(501) },
-    { query: "a ".repeat(76) },
-    { query: "example", count: 11 },
-    { query: "example", count: 1.5 },
-    { query: "example", scrapeOptions: {} },
-  ])("rejects invalid search arguments %j before fetching", async (input) => {
+  it("rejects scrape options on a search before fetching", async () => {
     const fetchMock = mockJson({});
-    await expect(search.execute(KEY, input)).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(search.execute(KEY, { query: "example", scrapeOptions: {} })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -685,15 +680,6 @@ describe("Firecrawl", () => {
     expect(result.markdown.length).toBeLessThan(21_000);
     expect(tool("web_read").access).toBe("read");
   });
-
-  it.each(["file:///etc/passwd", "https://user:secret@example.com", "not a URL"])(
-    "rejects invalid URL %s before fetching",
-    async (url) => {
-      const fetchMock = mockJson({});
-      await expect(tool("web_read").execute(KEY, { url })).rejects.toMatchObject({ code: "invalid_request" });
-      expect(fetchMock).not.toHaveBeenCalled();
-    },
-  );
 
   it("checks credentials without scraping a page", async () => {
     const fetchMock = mockJson({ success: true, data: { remainingCredits: 0 } });
@@ -935,7 +921,7 @@ describe("DeepSeek", () => {
   });
 });
 
-describe.each(["tavily", "exa", "deepseek"] as const)("%s web adapter boundaries", (id) => {
+describe.each(["tavily", "exa", "deepseek", "firecrawl"] as const)("%s web adapter boundaries", (id) => {
   const adapter = PLUGIN_ADAPTERS.find((item) => item.id === id)!;
   const search = adapter.tools.find(({ name }) => name === "web_search")!;
   const read = adapter.tools.find(({ name }) => name === "web_read")!;
@@ -965,17 +951,6 @@ describe.each(["tavily", "exa", "deepseek"] as const)("%s web adapter boundaries
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("uses the default result count, handles empty searches and rejects malformed responses", async () => {
-    const fetchMock = mockJson({ results: [] });
-    const result = JSON.parse(await search.execute(KEY, { query: "example" }));
-    expect(result.results).toEqual([]);
-    expect(requestBody(fetchMock)[{ tavily: "max_results", exa: "numResults", deepseek: "count" }[id]]).toBe(5);
-    mockJson({ error: KEY });
-    await expect(search.execute(KEY, { query: "example" })).rejects.toThrow("invalid search result");
-    mockJson({ results: [{}] });
-    await expect(read.execute(KEY, { url: "https://example.com" })).rejects.toThrow("could not read this page");
-  });
-
   it.each([401, 429])("sanitizes HTTP %s failures", async (status) => {
     mockJson({ error: KEY }, status);
     const error = await search.execute(KEY, { query: "example" }).catch((error: unknown) => error);
@@ -1000,5 +975,23 @@ describe.each(["tavily", "exa", "deepseek"] as const)("%s web adapter boundaries
     controller.abort();
     await pending;
     expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+});
+
+/** Firecrawl wraps its responses differently and has its own tests for them. */
+describe.each(["tavily", "exa", "deepseek"] as const)("%s web adapter responses", (id) => {
+  const adapter = PLUGIN_ADAPTERS.find((item) => item.id === id)!;
+  const search = adapter.tools.find(({ name }) => name === "web_search")!;
+  const read = adapter.tools.find(({ name }) => name === "web_read")!;
+
+  it("uses the default result count, handles empty searches and rejects malformed responses", async () => {
+    const fetchMock = mockJson({ results: [] });
+    const result = JSON.parse(await search.execute(KEY, { query: "example" }));
+    expect(result.results).toEqual([]);
+    expect(requestBody(fetchMock)[{ tavily: "max_results", exa: "numResults", deepseek: "count" }[id]]).toBe(5);
+    mockJson({ error: KEY });
+    await expect(search.execute(KEY, { query: "example" })).rejects.toThrow("invalid search result");
+    mockJson({ results: [{}] });
+    await expect(read.execute(KEY, { url: "https://example.com" })).rejects.toThrow("could not read this page");
   });
 });
