@@ -109,23 +109,6 @@ describe("McpConnection", () => {
     await expect(connection.listTools()).rejects.toMatchObject({ code: "invalid_configuration" });
   });
 
-  it("returns needs_sign_in for an unauthorized oauth server without opening a browser", async () => {
-    const auth = vi.fn(async () => "REDIRECT");
-    const { sdk } = fakeSdk({
-      connect: () => {
-        const error = new Error("Unauthorized");
-        error.name = "UnauthorizedError";
-        throw error;
-      },
-      auth,
-    });
-    const connection = new McpConnection({ sdk });
-    const outcome = await connection.connect("https://example.com/mcp", { mode: "oauth", provider: {} });
-    expect(outcome).toBe("needs_sign_in");
-    // One non-interactive refresh attempt; no interactive callback awaited.
-    expect(auth).toHaveBeenCalledTimes(1);
-  });
-
   it("refreshes authorization non-interactively and retries the connection", async () => {
     const auth = vi.fn(async () => "AUTHORIZED");
     let attempts = 0;

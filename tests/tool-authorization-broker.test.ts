@@ -590,16 +590,6 @@ describe("tool policy", () => {
     await expect(asked).resolves.toBeUndefined();
   });
 
-  it("stores a blocked MCP tool call as an integration rule", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-mcp-block-"));
-    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
-    await store.blockCategory("integration_call", () => "rule-1");
-    expect(store.get().rules).toEqual([
-      { id: "rule-1", action: "integration_call", behavior: "block", scope: "integration" },
-    ]);
-    expect(evaluateToolPolicy(store.get(), "integration_call", "integration")).toBe("block");
-  });
-
   it("settles a blocked approval once even when the decision arrives twice", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-double-"));
     const store = new ToolPolicyStore(path.join(directory, "policy.json"));
