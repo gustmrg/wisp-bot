@@ -313,6 +313,7 @@ function Workspace({
               }}
               onOpenSearch={() => showSearch(true)}
               onOpenSettings={() => showSettings("general")}
+              onOpenTemplates={() => showSettings("templates")}
               onManageConnections={() => showSettings("connections")}
               onOpenApprovals={showApprovals}
               onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}

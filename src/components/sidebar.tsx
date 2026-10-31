@@ -71,6 +71,7 @@ interface SidebarProps {
   onCreateCircle?: (circle: NewCircle) => Promise<boolean>;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
+  onOpenTemplates?: () => void;
   /** Opens the connections in Settings; without it, Settings opens where it does for the profile. */
   onManageConnections?: () => void;
   /** Opens the mobile Approvals tab. */
@@ -121,6 +122,7 @@ function Sidebar({
   onCreateCircle,
   onOpenSearch,
   onOpenSettings,
+  onOpenTemplates,
   onManageConnections,
   onOpenApprovals,
   onResolveApproval,
@@ -428,6 +430,7 @@ function Sidebar({
             onCreate={onCreate}
             onCreateCircle={onCreateCircle}
             wisps={Object.values(chats).flatMap((chat) => (chat.kind === "wisp" ? [chat.wisp] : []))}
+            {...(onOpenTemplates ? { onOpenTemplates } : {})}
             trigger={createButton(mobile, onCreateCircle ? "Create" : "Create Wisp")}
           />
         </div>
