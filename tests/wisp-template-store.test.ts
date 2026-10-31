@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseDeleteWispTemplateRequest, parseSaveWispTemplateRequest } from "../backend/validators.js";
 import { WispTemplateStore } from "../backend/wisp-template-store.js";
 import { BUILTIN_WISP_TEMPLATES } from "../shared/builtin-wisp-templates.js";
+import { CHIEF_WISP } from "../shared/chief-wisp.js";
 import { SOUL_TEMPLATES } from "../shared/soul-templates.js";
 import { MAX_SAVED_WISP_TEMPLATES, parseWispTemplate, serializeWispTemplate } from "../shared/wisp-template.js";
 
@@ -33,8 +34,19 @@ const atlas = serializeWispTemplate({
 });
 
 describe("built-in Wisp templates", () => {
-  it("offer one complete template per starting soul, each valid and asking for no plugin or MCP access", () => {
-    expect(BUILTIN_WISP_TEMPLATES.map(({ id }) => id)).toEqual(SOUL_TEMPLATES.map(({ id }) => `builtin-${id}`));
+  it("offer Chief and one complete template per starting soul, each valid and asking for no plugin or MCP access", () => {
+    expect(BUILTIN_WISP_TEMPLATES.map(({ template }) => template.name)).toEqual([
+      "Chief",
+      "Quill",
+      "Atlas",
+      "Forge",
+      "Pip",
+      "Sage",
+      "Owl",
+    ]);
+    expect(BUILTIN_WISP_TEMPLATES.map(({ id }) => id).sort()).toEqual(
+      ["builtin-chief", ...SOUL_TEMPLATES.map(({ id }) => `builtin-${id}`)].sort(),
+    );
     for (const { id, template } of BUILTIN_WISP_TEMPLATES) {
       expect(parseWispTemplate(serializeWispTemplate(template)), id).toEqual({ ok: true, template });
       expect(template.description, id).toBeTruthy();
@@ -43,6 +55,11 @@ describe("built-in Wisp templates", () => {
     const code = BUILTIN_WISP_TEMPLATES.find(({ id }) => id === "builtin-code")!.template;
     expect(code.setup).toMatchObject({ executionMode: "container" });
     expect(code.skills).toHaveLength(1);
+  });
+
+  it("bring back the same Chief that onboarding creates", () => {
+    const chief = BUILTIN_WISP_TEMPLATES.find(({ id }) => id === "builtin-chief")!.template;
+    expect(chief).toMatchObject(CHIEF_WISP);
   });
 });
 

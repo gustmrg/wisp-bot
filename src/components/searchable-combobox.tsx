@@ -14,7 +14,7 @@ interface SearchableOption {
   /** Secondary line shown under the label and matched by search. */
   description?: string;
   /** Image shown before the label, such as the logo of whoever made a model. */
-  iconSrc?: string;
+  iconSrc?: string | undefined;
 }
 
 interface SearchableComboboxProps {
@@ -29,6 +29,8 @@ interface SearchableComboboxProps {
   /** Shown while no option is selected. */
   placeholder?: string;
   className?: string;
+  /** Makes the popup as wide as the trigger, for a trigger that fills its row. */
+  popupMatchesTrigger?: boolean;
 }
 
 function searchText(option: SearchableOption): string {
@@ -47,6 +49,7 @@ function SearchableCombobox({
   disabled = false,
   placeholder,
   className,
+  popupMatchesTrigger = false,
 }: SearchableComboboxProps) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -94,7 +97,10 @@ function SearchableCombobox({
         <Combobox.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={12} className="z-50">
           <Combobox.Popup
             initialFocus={inputRef}
-            className="flex max-h-(--available-height) w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+            className={cn(
+              "flex max-h-(--available-height) max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10",
+              popupMatchesTrigger ? "w-(--anchor-width)" : "w-80",
+            )}
           >
             <div className="flex items-center gap-2 border-b border-border px-3 py-2">
               <SearchIcon className="size-4 shrink-0 text-dim" aria-hidden="true" />

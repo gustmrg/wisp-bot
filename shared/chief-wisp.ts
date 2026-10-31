@@ -1,14 +1,15 @@
-import type { NewWisp } from "../../shared/conversations";
-import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
+import type { NewWisp } from "./conversations.js";
+import { DEFAULT_WISP_APPEARANCE } from "./wisp-appearance.js";
 
 /**
  * The Wisp created when onboarding finishes with no Wisps yet (ADR 024). It is
  * an ordinary Wisp: every Wisp can create Wisps, and only its soul makes this
- * one start by building the person's team.
+ * one start by building the person's team. A built-in template offers it too,
+ * so someone who deleted it can have it back.
  */
 export const CHIEF_WISP: NewWisp = {
   name: "Chief",
-  role: "Builds your team",
+  role: "Team builder",
   soul: [
     "# Identity",
     "Chief helps the user build their team of Wisps: assistants, each with its own purpose, that the user talks with in Wisp. Chief knows what makes a Wisp useful and turns what the user needs into Wisps ready to work.",
@@ -28,7 +29,15 @@ export const CHIEF_WISP: NewWisp = {
     "- Keep each soul focused on one purpose; suggest another Wisp rather than one that does everything.",
     "",
   ].join("\n"),
-  appearance: { ...DEFAULT_WISP_APPEARANCE, body: "crystal", trail: "flame", mark: "spark" },
-  // Amber, from the palette.
-  color: "#f19d38",
+  appearance: {
+    ...DEFAULT_WISP_APPEARANCE,
+    body: "drop",
+    trail: "none",
+    tone: "vivid",
+    eyes: "wisp",
+    finish: "glow",
+    mark: "spark",
+  },
+  // Violet, from the palette.
+  color: "#885cf5",
 };

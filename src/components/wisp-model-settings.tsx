@@ -13,12 +13,7 @@ import { LogoTile } from "@/components/logo-tile";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import { SettingsRowTitle } from "@/components/settings/settings-primitives";
-import {
-  canChooseThinkingLevel,
-  keepThinkingLevel,
-  THINKING_LEVEL_LABELS,
-  ThinkingLevelRow,
-} from "@/components/thinking-level-select";
+import { canChooseThinkingLevel, keepThinkingLevel, ThinkingLevelRow } from "@/components/thinking-level-select";
 import { imageModelName } from "@/hooks/use-model-image-input";
 import {
   catalogModel,
@@ -106,6 +101,9 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   const overrideModel = override && catalog ? catalogModel(catalog, override) : undefined;
   const effective = view?.effective ?? null;
   const effectiveModel = effective && catalog ? catalogModel(catalog, effective) : undefined;
+  // What the Wisp reasons with: its own model's level, or the global model's while it follows that one.
+  const reasoning = override ?? effective;
+  const reasoningModel = override ? overrideModel : effectiveModel;
 
   async function saveModel(model: ModelSelection | null, failure: string): Promise<void> {
     setSaving(true);
@@ -206,16 +204,21 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               disabled={saving}
               onChange={(model) => void saveModel(model, "Could not change this Wisp's model.")}
             />
-            {override && canChooseThinkingLevel(overrideModel) ? (
+            {reasoning && canChooseThinkingLevel(reasoningModel) ? (
               <section aria-label="Reasoning" className="rounded-lg border border-border bg-card p-3">
                 <ThinkingLevelRow
                   id="wisp-thinking-level"
                   stacked
-                  model={overrideModel}
-                  value={keepThinkingLevel(override.thinkingLevel ?? "off", overrideModel)}
-                  disabled={saving}
+                  model={reasoningModel}
+                  value={keepThinkingLevel(reasoning.thinkingLevel ?? "off", reasoningModel)}
+                  disabled={saving || !override}
                   onChange={(level) => void changeThinkingLevel(level)}
                 />
+                {override ? null : (
+                  <p className="m-0 mt-1.5 text-xs leading-relaxed text-dim">
+                    Set with the global model in Settings → AI Model.
+                  </p>
+                )}
               </section>
             ) : null}
             <FallbackSection
@@ -224,12 +227,6 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               disabled={saving}
               onChange={(fallback) => void changeFallback(fallback)}
             />
-            {!override && effective && canChooseThinkingLevel(effectiveModel) ? (
-              <p className="m-0 text-xs text-dim">
-                Reasoning: {THINKING_LEVEL_LABELS[keepThinkingLevel(effective.thinkingLevel ?? "off", effectiveModel)]}{" "}
-                — set with the global model in Settings → AI Model.
-              </p>
-            ) : null}
             {saveError ? (
               <p role="alert" className="m-0 text-destructive">
                 {saveError}

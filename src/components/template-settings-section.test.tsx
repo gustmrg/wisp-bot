@@ -105,6 +105,9 @@ it("keeps a built-in template to its preview, without saved templates' actions",
   for (const name of ["Duplicate", "Export", "Delete", "Rename"]) {
     expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
   }
+  // It asks for no access, so there is nothing to say is not granted.
+  expect(screen.getByText("None.")).toBeInTheDocument();
+  expect(screen.queryByText(/Nothing here is granted by the template/)).not.toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "Template name" })).not.toBeInTheDocument();
 });
 
@@ -122,15 +125,33 @@ it("duplicates a saved template into an editable copy", async () => {
   expect(screen.getByRole("textbox", { name: "Template name" })).toHaveValue("Release Manager copy");
 });
 
-it("offers Import only among the person's own templates", async () => {
+it("offers Import under every filter", async () => {
   const user = userEvent.setup();
   install();
   render(<TemplateSettingsSection />);
   await screen.findByRole("button", { name: "Preview Atlas" });
-  expect(screen.queryByRole("button", { name: "Import" })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole("radio", { name: "Yours" }));
-  expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
+  for (const name of ["All", "Built in", "Yours"]) {
+    await user.click(screen.getByRole("radio", { name }));
+    expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
+  }
+});
+
+it("shows an import made under Built in when coming back from its preview", async () => {
+  const user = userEvent.setup();
+  install();
+  const { container } = render(<TemplateSettingsSection />);
+  await screen.findByRole("button", { name: "Preview Atlas" });
+  await user.click(screen.getByRole("radio", { name: "Built in" }));
+
+  const contents = JSON.stringify({ format: "wisp-template", version: 1, name: "Imported", role: "", soul: "" });
+  await user.upload(
+    container.querySelector<HTMLInputElement>('input[type="file"]')!,
+    new File([contents], "imported.wisp-template.json", { type: "application/json" }),
+  );
+  await user.click(await screen.findByRole("button", { name: "All templates" }));
+
+  expect(screen.getByRole("button", { name: "Preview Imported" })).toBeInTheDocument();
 });
 
 it("renames and deletes a saved template", async () => {
@@ -158,7 +179,6 @@ it("imports a template file as text and opens it, and reports one the server ref
   const api = install();
   const { container } = render(<TemplateSettingsSection />);
   await screen.findByRole("button", { name: "Preview Atlas" });
-  await user.click(screen.getByRole("radio", { name: "Yours" }));
   const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
 
   const contents = JSON.stringify({ format: "wisp-template", version: 1, name: "Imported", role: "", soul: "" });

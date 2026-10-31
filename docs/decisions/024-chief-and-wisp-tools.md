@@ -68,7 +68,8 @@ Chief is not a type, a flag or a column: it is a Wisp with a soul written for
 building the team. When onboarding finishes and the person has no Wisps,
 the app creates Chief and opens its conversation. It is created once per
 onboarding, so one the person deleted is not created again, and a person
-who already has Wisps never gets one.
+who already has Wisps never gets one. A built-in template in **Settings →
+Templates** brings it back ([ADR 040](040-wisp-templates.md)).
 
 ### What an empty conversation offers
 

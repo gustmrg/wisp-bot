@@ -2,6 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import groqLogo from "@/assets/providers/groq.svg";
+import openrouterLogo from "@/assets/providers/openrouter.svg";
 import { ProviderSettingsSection } from "@/components/provider-settings-section";
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
 
@@ -57,6 +59,34 @@ describe("ProviderSettingsSection", () => {
     expect(connected.getByText("API key saved")).toBeVisible();
     expect(connected.getByText("Signed in with your subscription · Also used for voice")).toBeVisible();
     expect(connected.queryByText("Groq")).not.toBeInTheDocument();
+  });
+
+  it("shows each connected provider's logo, or its initial when it has none", async () => {
+    renderSection(
+      aiView({
+        providers: [
+          provider("openrouter", "OpenRouter", { credentialConfigured: true, credentialKind: "api_key" }),
+          provider("radius", "Radius", { credentialConfigured: true, credentialKind: "api_key" }),
+        ],
+      }),
+    );
+
+    const connected = await screen.findByRole("region", { name: "Connected" });
+    const logos = [...connected.querySelectorAll("img")].map((logo) => logo.getAttribute("src"));
+    expect(logos).toEqual([openrouterLogo]);
+    expect(within(connected).getByText("R")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("shows logos in the list of providers to add", async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(await screen.findByRole("combobox", { name: "Provider" }));
+
+    const groq = await screen.findByRole("option", { name: /Groq/ });
+    expect(groq.querySelector("img")).toHaveAttribute("src", groqLogo);
+    // TypeSafe has no logo, and keeps the space so the names stay aligned.
+    expect(screen.getByRole("option", { name: /TypeSafe/ }).querySelector("img")).toBeNull();
   });
 
   it("adds a provider's key without touching the default model", async () => {

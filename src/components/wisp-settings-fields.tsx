@@ -98,9 +98,21 @@ const SOUL_MODES = [
 const BLANK = "blank";
 const CUSTOM = "custom";
 
-/** The Wisp's soul: a markdown document that defines who it is and how it behaves. */
-function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: string) => void }) {
-  const [mode, setMode] = useState<SoulMode>("edit");
+/**
+ * The Wisp's soul: a markdown document that defines who it is and how it
+ * behaves. With `opensOnPreview`, for a Wisp that already exists, the soul is
+ * first read rather than edited. An empty one offers its templates in both views.
+ */
+function WispSoulField({
+  soul,
+  onChange,
+  opensOnPreview = false,
+}: {
+  soul: string;
+  onChange: (soul: string) => void;
+  opensOnPreview?: boolean;
+}) {
+  const [mode, setMode] = useState<SoulMode>(opensOnPreview ? "preview" : "edit");
   // A template or a blank soul picked over edited text, waiting for the person to confirm losing the edits.
   const [pending, setPending] = useState<SoulTemplate | typeof BLANK | null>(null);
   const applied = SOUL_TEMPLATES.find((template) => template.soul === soul);
@@ -201,7 +213,7 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
           {soul.trim() ? <MarkdownView text={soul} /> : <p className="m-0 text-dim">Nothing written yet.</p>}
         </div>
       )}
-      {mode === "edit" && !soul.trim() ? (
+      {!soul.trim() ? (
         <div className="flex flex-col gap-1.5" role="group" aria-label="Soul templates">
           <FieldTitle>Start from a template</FieldTitle>
           <div className="flex flex-wrap gap-1.5">
@@ -231,10 +243,14 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
 }
 
 /** Soul and notifications: how the Wisp works. */
-function WispBehaviorFields({ settings, onChange }: WispSettingsFieldsProps) {
+function WispBehaviorFields({
+  settings,
+  onChange,
+  soulOpensOnPreview = false,
+}: WispSettingsFieldsProps & { soulOpensOnPreview?: boolean }) {
   return (
     <>
-      <WispSoulField soul={settings.soul} onChange={(soul) => onChange({ soul })} />
+      <WispSoulField soul={settings.soul} onChange={(soul) => onChange({ soul })} opensOnPreview={soulOpensOnPreview} />
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>

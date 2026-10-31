@@ -28,7 +28,6 @@ import { useSystemNotifications } from "@/hooks/use-system-notifications";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone, transcriptionFallbacks } from "@/lib/app-preferences";
-import { CHIEF_WISP } from "@/lib/chief-wisp";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
@@ -36,6 +35,7 @@ import { cn } from "@/lib/utils";
 import type { SettingsPluginId } from "@/lib/plugin-access";
 import { createWispFromTemplate } from "@/lib/create-wisp-from-template";
 import { uniqueWispName } from "@/lib/wisp-template-actions";
+import { CHIEF_WISP } from "../shared/chief-wisp";
 import type { WispTemplateEntry } from "../shared/wisp-template";
 
 export default function App() {

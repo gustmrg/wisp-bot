@@ -160,6 +160,7 @@ export function WispDetails({
             <WispBehaviorFields
               settings={draft}
               onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+              soulOpensOnPreview
             />
           </SettingsGroup>
           {/* Each of these sections saves its own changes. */}

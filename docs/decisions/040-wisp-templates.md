@@ -29,7 +29,8 @@ and it never grants access by itself.**
   is still written as version 1, so older apps read what this one shares. A
   newer version asks for an update. The same parser checks templates in the
   app and on the server; a broken skill rejects the template and says which.
-- **Where templates live.** Six built-in templates, one per starting soul,
+- **Where templates live.** Seven built-in templates, Chief
+  ([ADR 024](024-chief-and-wisp-tools.md)) and one per starting soul,
   ship in `shared/builtin-wisp-templates.ts`. They are read-only and change
   with the app. Saved templates are one
   file each in the server's `wisp-templates/` folder (`WispTemplateStore`),
