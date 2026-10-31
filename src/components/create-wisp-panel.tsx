@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ClipboardPasteIcon } from "lucide-react";
+import { ClipboardPasteIcon, LayoutTemplateIcon } from "lucide-react";
 
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
 import type { WispSetupView } from "../../shared/execution";
@@ -49,6 +49,8 @@ interface CreateWispPanelProps {
   onStatusChange: (status: CreatePanelStatus) => void;
   /** Called once the Wisp exists with all of its setup. */
   onDone: () => void;
+  /** Opens the templates; without it they aren't offered. */
+  onOpenTemplates?: () => void;
 }
 
 const STEPS: ReadonlyArray<CreateWispStep> = ["identity", "behavior", "setup"];
@@ -68,7 +70,7 @@ export const DEFAULT_WISP: WispSettingsDraft = {
 };
 
 /** The steps that create a Wisp; the dialog around them resets it by remounting it. */
-function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone }: CreateWispPanelProps) {
+function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone, onOpenTemplates }: CreateWispPanelProps) {
   const [step, setStep] = useState<CreateWispStep>("identity");
   const stepRef = useRef<HTMLDivElement>(null);
   const focusStep = useRef<CreateWispStep | null>(null);
@@ -294,18 +296,34 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone }: Cre
         {step === "identity" ? (
           <>
             {importOpen ? null : (
-              <Button
-                className="create-wisp-import sm:mr-auto"
-                variant="ghost"
-                type="button"
-                aria-label="Import template"
-                title="Import template"
-                disabled={saving}
-                onClick={() => setImportOpen(true)}
-              >
-                <ClipboardPasteIcon />
-                <span className="max-[760px]:hidden">Import template</span>
-              </Button>
+              <>
+                {onOpenTemplates ? (
+                  <Button
+                    className="create-wisp-import"
+                    variant="ghost"
+                    type="button"
+                    aria-label="Browse templates"
+                    title="Browse templates"
+                    disabled={saving}
+                    onClick={onOpenTemplates}
+                  >
+                    <LayoutTemplateIcon />
+                    <span className="max-[760px]:hidden">Templates</span>
+                  </Button>
+                ) : null}
+                <Button
+                  className="create-wisp-import sm:mr-auto"
+                  variant="ghost"
+                  type="button"
+                  aria-label="Import template"
+                  title="Import template"
+                  disabled={saving}
+                  onClick={() => setImportOpen(true)}
+                >
+                  <ClipboardPasteIcon />
+                  <span className="max-[760px]:hidden">Import template</span>
+                </Button>
+              </>
             )}
             <DialogClose render={<Button variant="outline" type="button" disabled={saving} />}>Cancel</DialogClose>
           </>

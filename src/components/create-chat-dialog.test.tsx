@@ -422,3 +422,23 @@ describe("CreateChatDialog soul templates", () => {
     expect(screen.getByRole("textbox", { name: "Soul" })).toHaveValue("");
   });
 });
+
+describe("CreateChatDialog templates", () => {
+  it("closes and opens the templates from Browse templates", async () => {
+    const user = userEvent.setup();
+    const onOpenTemplates = vi.fn();
+    const onOpenChange = vi.fn();
+    render(<CreateChatDialog onCreate={vi.fn()} open onOpenChange={onOpenChange} onOpenTemplates={onOpenTemplates} />);
+
+    await user.click(screen.getByRole("button", { name: "Browse templates" }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onOpenTemplates).toHaveBeenCalledOnce();
+  });
+
+  it("offers no templates without a way to open them", () => {
+    render(<CreateChatDialog onCreate={vi.fn()} open />);
+
+    expect(screen.queryByRole("button", { name: "Browse templates" })).not.toBeInTheDocument();
+  });
+});
