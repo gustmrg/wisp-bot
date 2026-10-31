@@ -7,6 +7,7 @@ import {
   type AppSettingsDialogProps,
   type SettingsEntrySection,
 } from "@/components/app-settings-dialog";
+import type { WispTemplateEntry } from "../../shared/wisp-template";
 
 export interface AppSettingsDialogHandle {
   open(section: SettingsEntrySection, pluginId?: SettingsPluginId, storageConversationId?: string): void;
@@ -23,7 +24,7 @@ type AppSettingsDialogHostProps = Omit<
  * there would re-render Sidebar and ChatPanel on every open).
  */
 export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSettingsDialogHostProps>(
-  function AppSettingsDialogHost({ onOpenConversations, onOpenApprovals, ...dialogProps }, ref) {
+  function AppSettingsDialogHost({ onOpenConversations, onOpenApprovals, onCustomizeTemplate, ...dialogProps }, ref) {
     const [section, setSection] = useState<SettingsEntrySection | null>(null);
     const [pluginId, setPluginId] = useState<SettingsPluginId | undefined>();
     const [storageConversationId, setStorageConversationId] = useState<string | undefined>();
@@ -50,6 +51,15 @@ export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSett
           setPluginId(undefined);
           setStorageConversationId(undefined);
         }}
+        {...(onCustomizeTemplate
+          ? {
+              onCustomizeTemplate: (entry: WispTemplateEntry) => {
+                // Settings closes so the creation dialog it opens is the one in front.
+                setSection(null);
+                onCustomizeTemplate(entry);
+              },
+            }
+          : {})}
         onOpenConversations={() => {
           setSection(null);
           onOpenConversations?.();

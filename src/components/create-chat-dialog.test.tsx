@@ -442,3 +442,99 @@ describe("CreateChatDialog templates", () => {
     expect(screen.queryByRole("button", { name: "Browse templates" })).not.toBeInTheDocument();
   });
 });
+
+describe("CreateChatDialog from a template", () => {
+  const template = {
+    id: "builtin-research",
+    builtIn: true,
+    updatedAt: null,
+    template: {
+      name: "Atlas",
+      role: "Research",
+      soul: "# Atlas\nCites sources.",
+      color: "#54b9a6",
+      model: { providerId: "provider-a", modelId: "model-a" },
+      skills: [{ contents: "---\nname: source-brief\ndescription: Writes a brief.\n---\n1. Search.\n" }],
+      setup: { quotaBytes: 2 * GIB, executionMode: "container" as const },
+      access: {
+        plugins: [
+          { pluginId: "linear" as const, access: "write" as const },
+          { pluginId: "gmail" as const, access: "read" as const },
+        ],
+      },
+    },
+  };
+
+  function install() {
+    const api = mockAiSettings();
+    const extra = {
+      getPluginSettings: vi.fn(async () => ({
+        ok: true,
+        value: {
+          plugins: [
+            { id: "linear", name: "Linear", configured: true },
+            { id: "gmail", name: "Gmail", configured: false },
+          ],
+        },
+      })),
+      importSkill: vi.fn(async () => ({ ok: true, value: [] })),
+      getWispPluginAccess: vi.fn(async () => ({ ok: true, value: { revision: "r1", grants: [] } })),
+      saveWispPluginAccess: vi.fn(async () => ({ ok: true, value: {} })),
+    };
+    Object.assign(window.wisp, extra);
+    return { ...api, ...extra };
+  }
+
+  it("fills in every step and asks before giving any access the template asks for", async () => {
+    const api = install();
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockResolvedValue("atlas");
+    const onOpenChange = vi.fn();
+    render(<CreateChatDialog onCreate={onCreate} open onOpenChange={onOpenChange} template={template} />);
+
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
+    expect(screen.getByText(/Starting from the Atlas template/)).toBeVisible();
+    expect(screen.getByText("Step 1 of 4 · Appearance and name")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("textbox", { name: /Soul/ })).toHaveValue("# Atlas\nCites sources.");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByRole("combobox", { name: "Workspace size" })).toHaveTextContent("2.0 GiB");
+    expect(screen.getByRole("switch", { name: "Run commands in a container" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Step 4 of 4 · Skills and access")).toBeVisible();
+
+    expect(screen.getByRole("switch", { name: "Skill: source-brief" })).toBeChecked();
+    const linear = screen.getByRole("switch", { name: "Plugin: Linear" });
+    expect(linear).not.toBeChecked();
+    expect(await screen.findByText(/Not connected here/)).toBeVisible();
+    expect(screen.getByRole("switch", { name: "Plugin: Gmail" })).toBeDisabled();
+    await user.click(linear);
+
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Atlas", role: "Research", soul: "# Atlas\nCites sources.", color: "#54b9a6" }),
+      expect.objectContaining({ model: { providerId: "provider-a", modelId: "model-a" } }),
+    );
+    expect(api.setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "atlas", quotaBytes: 2 * GIB });
+    expect(api.importSkill).toHaveBeenCalledWith({
+      conversationId: "atlas",
+      contents: template.template.skills[0]!.contents,
+    });
+    expect(api.saveWispPluginAccess).toHaveBeenCalledWith({
+      conversationId: "atlas",
+      revision: "r1",
+      grants: [{ pluginId: "linear", access: "write" }],
+    });
+  });
+
+  it("gives no access when the person leaves it off", async () => {
+    const api = install();
+    const user = userEvent.setup();
+    render(<CreateChatDialog onCreate={vi.fn().mockResolvedValue("atlas")} open template={template} />);
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await waitFor(() => expect(api.importSkill).toHaveBeenCalled());
+    expect(api.getWispPluginAccess).not.toHaveBeenCalled();
+    expect(api.saveWispPluginAccess).not.toHaveBeenCalled();
+  });
+});
