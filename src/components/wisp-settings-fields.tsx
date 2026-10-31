@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { DicesIcon } from "lucide-react";
+import { useId, useState } from "react";
 
 import {
   WISP_NAME_MAX_LENGTH,
@@ -18,7 +19,7 @@ import {
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldTitle } from "@/components/ui/field";
+import { Field, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SOUL_TEMPLATES, type SoulTemplate } from "@/lib/soul-templates";
+import { suggestWispName } from "@/lib/wisp-name-suggestions";
 
 /** A Wisp as its settings form edits it, with its conversation's notification setting. */
 export type WispSettingsDraft = NewWisp & { notifyOnUpdatesEnabled: boolean };
@@ -38,18 +40,41 @@ interface WispSettingsFieldsProps {
 
 /** Appearance, name, and role: how the Wisp shows up in the app. */
 function WispIdentityFields({ settings, onChange }: WispSettingsFieldsProps) {
+  const nameId = useId();
   return (
     <>
       <AvatarEditor wisp={settings} onChange={onChange} />
-      <SettingsField label="Name">
-        <Input
-          value={settings.name}
-          required
-          maxLength={WISP_NAME_MAX_LENGTH}
-          placeholder="New Wisp"
-          onChange={(event) => onChange({ name: event.currentTarget.value })}
-        />
-      </SettingsField>
+      {/* The suggest button sits outside the label, so the input stays named "Name". */}
+      <Field className="mb-3">
+        <FieldLabel htmlFor={nameId}>Name</FieldLabel>
+        <div className="flex items-center gap-1.5">
+          <Input
+            id={nameId}
+            value={settings.name}
+            required
+            maxLength={WISP_NAME_MAX_LENGTH}
+            placeholder="New Wisp"
+            onChange={(event) => onChange({ name: event.currentTarget.value })}
+          />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="flex-none text-dim hover:text-foreground"
+                  aria-label="Suggest a name"
+                  onClick={() => onChange({ name: suggestWispName(settings.name) })}
+                />
+              }
+            >
+              <DicesIcon aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipContent>Suggest a name</TooltipContent>
+          </Tooltip>
+        </div>
+      </Field>
       <SettingsField label="Role (optional)">
         <Input
           value={settings.role}
