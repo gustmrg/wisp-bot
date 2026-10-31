@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Wisp } from "@/components/wisp";
 import { downloadTextFile } from "@/lib/download-file";
+import type { TemplateUseResult } from "@/lib/wisp-template-actions";
 import { WISP_NAME_MAX_LENGTH } from "../../shared/conversations";
 import { pluginCatalogEntry } from "../../shared/plugins";
 import { parseSkillFile } from "../../shared/skills";
@@ -29,16 +30,28 @@ const UNSUPPORTED = "This server is older than this app and has no templates. Up
 /**
  * The Wisp templates of the active environment: the built-in ones and the
  * ones saved here, like a small gallery of Wisps ready for a job. Each can be
- * previewed in full. Built-in ones only come with the app, so importing,
- * duplicating, exporting, renaming and deleting belong to the saved ones.
+ * previewed in full, and **Use** creates the Wisp at once. Built-in ones only
+ * come with the app, so importing, duplicating, exporting, renaming and deleting
+ * belong to the saved ones.
  */
-export function TemplateSettingsSection({ onUseTemplate }: { onUseTemplate?: (entry: WispTemplateEntry) => void }) {
+export function TemplateSettingsSection({
+  onUseTemplate,
+  onOpenModelSettings,
+  onClose,
+}: {
+  /** Creates a Wisp from a template; without it there is no Use button. */
+  onUseTemplate?: (entry: WispTemplateEntry) => Promise<TemplateUseResult>;
+  onOpenModelSettings?: () => void;
+  onClose?: () => void;
+}) {
   const [entries, setEntries] = useState<ReadonlyArray<WispTemplateEntry> | null>(null);
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TemplateFilter>("all");
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [usingId, setUsingId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<TemplateUseResult | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -111,6 +124,34 @@ export function TemplateSettingsSection({ onUseTemplate }: { onUseTemplate?: (en
     }
   }
 
+  async function use(entry: WispTemplateEntry) {
+    if (!onUseTemplate || usingId) return;
+    setOutcome(null);
+    setUsingId(entry.id);
+    try {
+      const result = await onUseTemplate(entry);
+      // With nothing to say, the new Wisp's conversation is what comes next.
+      if (result.status === "created" && !result.notices.length) onClose?.();
+      else setOutcome(result);
+    } finally {
+      setUsingId(null);
+    }
+  }
+
+  /**
+   * A skill becomes the Wisp's standing instructions, so the person approves
+   * its exact content (ADR 008). Built-in ones come with the app; a saved one
+   * may come from a file, so its preview opens first, and using it there is
+   * the approval.
+   */
+  function useFromCard(entry: WispTemplateEntry) {
+    if (!entry.builtIn && entry.template.skills?.length) {
+      setPreviewId(entry.id);
+      return;
+    }
+    void use(entry);
+  }
+
   return (
     <section
       id="template-settings-panel"
@@ -120,7 +161,10 @@ export function TemplateSettingsSection({ onUseTemplate }: { onUseTemplate?: (en
       <SettingsPanelTitle id="template-settings-title" scope="environment">
         Templates
       </SettingsPanelTitle>
-      <p className="mb-4 text-xs leading-relaxed text-dim">Ready-made Wisps, each with a specialty.</p>
+      <p className="mb-4 text-xs leading-relaxed text-dim">
+        Ready-made Wisps, each with a specialty. Use one to start right away.
+      </p>
+      {outcome ? <UseOutcome outcome={outcome} onOpenModelSettings={onOpenModelSettings} onClose={onClose} /> : null}
       {previewed ? (
         <TemplatePreview
           key={previewed.id}
@@ -129,7 +173,7 @@ export function TemplateSettingsSection({ onUseTemplate }: { onUseTemplate?: (en
             setPreviewId(null);
             setMessage("");
           }}
-          onUse={onUseTemplate}
+          {...(onUseTemplate ? { onUse: (chosen: WispTemplateEntry) => void use(chosen), usingId } : {})}
           onSave={save}
           onDelete={remove}
           message={message}
@@ -196,7 +240,11 @@ export function TemplateSettingsSection({ onUseTemplate }: { onUseTemplate?: (en
             <ul className="m-0 grid list-none grid-cols-2 gap-3 p-0 max-[620px]:grid-cols-1">
               {visible.map((entry) => (
                 <li key={entry.id}>
-                  <TemplateCard entry={entry} onOpen={() => setPreviewId(entry.id)} onUse={onUseTemplate} />
+                  <TemplateCard
+                    entry={entry}
+                    onOpen={() => setPreviewId(entry.id)}
+                    {...(onUseTemplate ? { onUse: useFromCard, usingId } : {})}
+                  />
                 </li>
               ))}
             </ul>
@@ -215,14 +263,62 @@ function templateSummary({ builtIn, template }: WispTemplateEntry): string {
     .join(" · ");
 }
 
+/** What came of using a template, when there is more to say than opening the new Wisp. */
+function UseOutcome({
+  outcome,
+  onOpenModelSettings,
+  onClose,
+}: {
+  outcome: TemplateUseResult;
+  onOpenModelSettings?: (() => void) | undefined;
+  onClose?: (() => void) | undefined;
+}) {
+  if (outcome.status === "failed") {
+    return (
+      <p role="alert" className="mb-3 mt-0 text-xs text-destructive">
+        {outcome.message}
+      </p>
+    );
+  }
+  return (
+    <SettingsCard className="mb-4 flex flex-wrap items-center gap-3 p-3.5" role="status">
+      <div className="min-w-0 flex-1 space-y-1 text-xs leading-relaxed">
+        {outcome.status === "needs_model" ? (
+          <p className="m-0">Choose a default model first, so your new Wisp can respond.</p>
+        ) : (
+          <>
+            <p className="m-0 font-medium">{outcome.name} is ready.</p>
+            {outcome.notices.map((notice) => (
+              <p key={notice} className="m-0 text-dim">
+                {notice}
+              </p>
+            ))}
+          </>
+        )}
+      </div>
+      {outcome.status === "needs_model" ? (
+        <Button size="sm" onClick={onOpenModelSettings}>
+          Open AI Model
+        </Button>
+      ) : (
+        <Button size="sm" onClick={onClose}>
+          Open {outcome.name}
+        </Button>
+      )}
+    </SettingsCard>
+  );
+}
+
 function TemplateCard({
   entry,
   onOpen,
   onUse,
+  usingId,
 }: {
   entry: WispTemplateEntry;
   onOpen: () => void;
   onUse?: (entry: WispTemplateEntry) => void;
+  usingId?: string | null;
 }) {
   const { template } = entry;
   return (
@@ -244,9 +340,15 @@ function TemplateCard({
           {template.name}
         </button>
         {onUse ? (
-          <Button variant="outline" size="sm" aria-label={`Use ${template.name}`} onClick={() => onUse(entry)}>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={`Use ${template.name}`}
+            disabled={Boolean(usingId)}
+            onClick={() => onUse(entry)}
+          >
             <PlusIcon data-icon="inline-start" aria-hidden="true" />
-            Use
+            {usingId === entry.id ? "Creating…" : "Use"}
           </Button>
         ) : null}
       </div>
@@ -269,6 +371,7 @@ function TemplatePreview({
   entry,
   onBack,
   onUse,
+  usingId,
   onSave,
   onDelete,
   message,
@@ -276,6 +379,7 @@ function TemplatePreview({
   entry: WispTemplateEntry;
   onBack: () => void;
   onUse?: (entry: WispTemplateEntry) => void;
+  usingId?: string | null;
   onSave: (contents: string, id?: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<void>;
   message: string;
@@ -314,9 +418,9 @@ function TemplatePreview({
           <p className="m-0 text-xs text-dim">{templateSummary(entry)}</p>
         </div>
         {onUse ? (
-          <Button disabled={busy} onClick={() => onUse(entry)}>
+          <Button disabled={busy || Boolean(usingId)} onClick={() => onUse(entry)}>
             <PlusIcon data-icon="inline-start" aria-hidden="true" />
-            Use template
+            {usingId === entry.id ? "Creating…" : "Use template"}
           </Button>
         ) : null}
       </div>
