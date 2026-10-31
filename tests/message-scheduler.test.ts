@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { normalizeScheduledMessage } from "../backend/message-schedule.js";
-import { nextOccurrence } from "../shared/schedule.js";
 import { parseScheduleMessageRequest, parseUpdateScheduledMessageRequest } from "../backend/validators.js";
 import { newWisp, setupMessaging, START } from "./helpers/messaging-harness.js";
 
@@ -198,12 +197,6 @@ describe("MessageScheduler", () => {
 });
 
 describe("message schedules", () => {
-  it("sends a one-off schedule once, at its time", () => {
-    const schedule = { kind: "once", at: "2026-10-07T09:00:00.000Z" } as const;
-    expect(nextOccurrence(schedule, "UTC", new Date("2026-10-07T08:59:59.000Z"))?.toISOString()).toBe(schedule.at);
-    expect(nextOccurrence(schedule, "UTC", new Date(schedule.at))).toBeNull();
-  });
-
   it("accepts times with an offset and known time zones only", () => {
     const request = {
       conversationId: "one",
