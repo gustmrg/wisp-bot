@@ -10,7 +10,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useJobs, type JobsController } from "@/hooks/use-jobs";
@@ -67,17 +67,19 @@ export function JobsSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wisp
       aria-labelledby="jobs-settings-title"
       className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
     >
-      <h2 id="jobs-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="jobs-settings-title" scope="environment">
         Jobs
-      </h2>
+      </SettingsPanelTitle>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Tasks your Wisps run on a schedule in the background, sending you only their results. To create or change a job,
-        ask a Wisp, for example: “Every weekday at 9:00, look for new openings and send me a summary.”{" "}
-        <SettingsScopeNote scope="environment" />
+        Tasks your Wisps run on a schedule. To create or change one, ask a Wisp.
       </p>
       {listed.length === 0 ? (
         <p role="status" className="mx-0.5 text-xs text-dim">
-          {!controller.available ? "Loading jobs…" : controller.jobs.length ? "No scheduled jobs." : "No jobs yet."}
+          {!controller.available
+            ? "Loading jobs…"
+            : controller.jobs.length
+              ? "No scheduled jobs."
+              : "No jobs yet. Try asking a Wisp: “Every weekday at 9:00, look for new openings and send me a summary.”"}
         </p>
       ) : (
         [...groups].map(([conversationId, jobs]) => {

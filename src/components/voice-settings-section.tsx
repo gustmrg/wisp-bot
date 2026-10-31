@@ -33,6 +33,7 @@ interface VoiceSettingsSectionProps {
   active: boolean;
   preferences: AppPreferences;
   onPreferencesChange: (preferences: AppPreferences) => void;
+  onOpenProviders: () => void;
 }
 
 const PROVIDER_OPTIONS: SettingsOption[] = VOICE_PROVIDERS.map((provider) => ({
@@ -73,7 +74,12 @@ function useMicrophones(active: boolean): SettingsOption[] {
   return microphones;
 }
 
-function VoiceSettingsSection({ active, preferences, onPreferencesChange }: VoiceSettingsSectionProps) {
+function VoiceSettingsSection({
+  active,
+  preferences,
+  onPreferencesChange,
+  onOpenProviders,
+}: VoiceSettingsSectionProps) {
   const microphones = useMicrophones(active);
   const [view, setView] = useState<VoiceSettingsView | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -128,7 +134,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
     }
   }
 
-  /** A shared key is the one AI Model settings use, so removing it here removes it there too. */
+  /** Only a key kept for voice input alone is removed here; a shared key is managed under Providers. */
   async function handleRemoveKey(): Promise<void> {
     setSaving(true);
     setError(null);
@@ -159,8 +165,8 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
         Voice input
       </h2>
       <p className="mb-[22px] text-dim text-xs leading-relaxed">
-        Dictate messages with the microphone button or {formatShortcut(preferences.shortcuts.voiceInput)}. Recordings
-        are sent to the provider below for transcription and are not stored.
+        Dictate with the microphone button or {formatShortcut(preferences.shortcuts.voiceInput)}. Recordings go to your
+        provider for transcription and are not stored.
       </p>
       <div className="animate-tab-forward">
         <SettingsGroup label="Recording" note={<SettingsScopeNote scope="device" />}>
@@ -168,9 +174,12 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             <SettingsRow>
               <SettingsRowCopy>
                 <SettingsRowTitle htmlFor="voice-microphone">Microphone</SettingsRowTitle>
-                <SettingsRowDescription>
-                  Device names appear after Wisp first uses the microphone.
-                </SettingsRowDescription>
+                {/* Browsers hide device names until the microphone has been used once. */}
+                {!microphones.length || microphones.some(({ label }) => label.startsWith("Microphone ")) ? (
+                  <SettingsRowDescription>
+                    Device names appear after Wisp first uses the microphone.
+                  </SettingsRowDescription>
+                ) : null}
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-microphone"
@@ -202,9 +211,6 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             <SettingsRow>
               <SettingsRowCopy>
                 <SettingsRowTitle htmlFor="voice-provider">Provider</SettingsRowTitle>
-                <SettingsRowDescription>
-                  The speech-to-text service that transcribes your recordings.
-                </SettingsRowDescription>
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-provider"
@@ -233,7 +239,6 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             <SettingsRow>
               <SettingsRowCopy>
                 <SettingsRowTitle htmlFor="voice-language">Language</SettingsRowTitle>
-                <SettingsRowDescription>Choosing the language you speak improves accuracy.</SettingsRowDescription>
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-language"
@@ -244,62 +249,69 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
                 }}
               />
             </SettingsRow>
+            <FallbackVoiceModel view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
           </SettingsCard>
         </SettingsGroup>
 
-        <SettingsGroup label="Credential" note={<SettingsScopeNote scope="environment" />}>
+        <SettingsGroup label="API key" note={<SettingsScopeNote scope="environment" />}>
           <SettingsCard>
-            <div className="flex flex-col gap-3 px-3.5 py-3.5">
-              <div className="flex flex-wrap items-start gap-3">
+            {providerStatus?.credentialConfigured && providerStatus.credentialSource !== "voice" ? (
+              <SettingsRow>
                 <SettingsRowCopy>
-                  <SettingsRowTitle htmlFor="voice-api-key">{provider.name} API key</SettingsRowTitle>
-                  <SettingsRowDescription>
-                    {providerStatus?.credentialSource === "voice"
-                      ? `An encrypted key is saved for ${provider.name} voice input only; AI Model settings use your sign-in. Enter a new key to replace it.`
-                      : providerStatus?.credentialConfigured
-                        ? `An encrypted key is saved for ${provider.name} and shared with AI Model settings. Enter a new key to replace it.`
-                        : `Add a ${provider.name} key to use voice input. It is encrypted using your operating system's credential storage.`}
-                  </SettingsRowDescription>
+                  <SettingsRowTitle>{provider.name} API key</SettingsRowTitle>
+                  <SettingsRowDescription>Uses your {provider.name} key from Providers.</SettingsRowDescription>
                 </SettingsRowCopy>
-                {providerStatus?.credentialConfigured ? (
-                  <ConfirmAction
-                    label="Remove key"
-                    confirmLabel="Remove key"
-                    variant="ghost"
-                    className="shrink-0"
-                    disabled={saving}
-                    description={
-                      providerStatus.credentialSource === "voice"
-                        ? `Voice input with ${provider.name} stops working until you enter a new key. Your sign-in is kept.`
-                        : `Voice input and Wisps using ${provider.name} stop working until you enter a new key.`
-                    }
-                    onConfirm={() => void handleRemoveKey()}
+                <Button type="button" variant="ghost" className="shrink-0" onClick={onOpenProviders}>
+                  Manage
+                </Button>
+              </SettingsRow>
+            ) : (
+              <div className="flex flex-col gap-3 px-3.5 py-3.5">
+                <div className="flex flex-wrap items-start gap-3">
+                  <SettingsRowCopy>
+                    <SettingsRowTitle htmlFor="voice-api-key">{provider.name} API key</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      {providerStatus?.credentialConfigured
+                        ? `Saved for voice input only; your models use your ${provider.name} sign-in.`
+                        : `Add a ${provider.name} key to use voice input.`}
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  {providerStatus?.credentialConfigured ? (
+                    <ConfirmAction
+                      label="Remove key"
+                      confirmLabel="Remove key"
+                      variant="ghost"
+                      className="shrink-0"
+                      disabled={saving}
+                      description={`Voice input with ${provider.name} stops working until you enter a new key. Your sign-in is kept.`}
+                      onConfirm={() => void handleRemoveKey()}
+                    />
+                  ) : null}
+                </div>
+                <div className="flex gap-2">
+                  <SecretInput
+                    id="voice-api-key"
+                    autoComplete="new-password"
+                    value={apiKey}
+                    disabled={view ? !view.secureStorageAvailable : true}
+                    placeholder={providerStatus?.credentialConfigured ? "Saved — enter a replacement" : "Enter API key"}
+                    onChange={(event) => {
+                      setApiKey(event.currentTarget.value);
+                      setError(null);
+                      setSaved(false);
+                    }}
                   />
+                  <Button type="button" disabled={saving || !apiKey.trim()} onClick={() => void handleSaveKey()}>
+                    {saving ? "Saving…" : "Save key"}
+                  </Button>
+                </div>
+                {view && !view.secureStorageAvailable ? (
+                  <p className="m-0 text-xs leading-relaxed text-destructive">
+                    Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
+                  </p>
                 ) : null}
               </div>
-              <div className="flex gap-2">
-                <SecretInput
-                  id="voice-api-key"
-                  autoComplete="new-password"
-                  value={apiKey}
-                  disabled={view ? !view.secureStorageAvailable : true}
-                  placeholder={providerStatus?.credentialConfigured ? "Saved — enter a replacement" : "Enter API key"}
-                  onChange={(event) => {
-                    setApiKey(event.currentTarget.value);
-                    setError(null);
-                    setSaved(false);
-                  }}
-                />
-                <Button type="button" disabled={saving || !apiKey.trim()} onClick={() => void handleSaveKey()}>
-                  {saving ? "Saving…" : "Save key"}
-                </Button>
-              </div>
-              {view && !view.secureStorageAvailable ? (
-                <p className="m-0 text-xs leading-relaxed text-destructive">
-                  Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
-                </p>
-              ) : null}
-            </div>
+            )}
           </SettingsCard>
         </SettingsGroup>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -308,8 +320,6 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             {saved ? <p className="m-0 text-xs text-dim">{provider.name} key saved.</p> : null}
           </div>
         </div>
-
-        <FallbackVoiceModel view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
       </div>
     </section>
   );
@@ -375,37 +385,29 @@ function FallbackVoiceModel({
           ? `This model is from ${primaryName}, the provider above, so it fails along with it. Choose a model from another provider.`
           : null;
   return (
-    <SettingsGroup label="Fallback" note={<SettingsScopeNote scope="device" />}>
-      <SettingsCard>
-        <SettingsRow>
-          <SettingsRowCopy>
-            <SettingsRowTitle htmlFor="voice-fallback-model">Fallback model</SettingsRowTitle>
-            <SettingsRowDescription>
-              Transcribes the recording when the provider above fails for a reason another may not share: it can't be
-              reached, takes too long, is rate limited, or rejects its key. A recording no provider could read is not
-              sent again. Only models from other providers with a saved key are listed.
-            </SettingsRowDescription>
-            {unavailable ? (
-              <span role="alert" className="text-xs leading-relaxed text-warning">
-                {unavailable}
-              </span>
-            ) : null}
-          </SettingsRowCopy>
-          <SearchableCombobox
-            id="voice-fallback-model"
-            value={selected ? choiceValue(selected) : OFF}
-            options={options}
-            className="h-8 w-[260px] max-w-[62%] text-base"
-            searchLabel="Search fallback models"
-            searchPlaceholder="Search model name or ID…"
-            emptyText="No models from providers with a saved key."
-            onChange={(value) =>
-              onPreferencesChange({ ...preferences, voiceFallback: value === OFF ? null : (choiceOf(value) ?? null) })
-            }
-          />
-        </SettingsRow>
-      </SettingsCard>
-    </SettingsGroup>
+    <SettingsRow>
+      <SettingsRowCopy>
+        <SettingsRowTitle htmlFor="voice-fallback-model">Fallback model</SettingsRowTitle>
+        <SettingsRowDescription>Transcribes the recording when the provider above fails.</SettingsRowDescription>
+        {unavailable ? (
+          <span role="alert" className="text-xs leading-relaxed text-warning">
+            {unavailable}
+          </span>
+        ) : null}
+      </SettingsRowCopy>
+      <SearchableCombobox
+        id="voice-fallback-model"
+        value={selected ? choiceValue(selected) : OFF}
+        options={options}
+        className="h-8 w-[260px] max-w-[62%] text-base"
+        searchLabel="Search fallback models"
+        searchPlaceholder="Search model name or ID…"
+        emptyText="No models from providers with a saved key."
+        onChange={(value) =>
+          onPreferencesChange({ ...preferences, voiceFallback: value === OFF ? null : (choiceOf(value) ?? null) })
+        }
+      />
+    </SettingsRow>
   );
 }
 

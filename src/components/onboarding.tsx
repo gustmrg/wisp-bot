@@ -5,7 +5,7 @@ import { LaptopIcon, ServerIcon, SparklesIcon } from "lucide-react";
 import type { AiSettingsView } from "../../shared/contracts";
 import { missingModelSetup, type SetupRequirement } from "../../shared/setup-status";
 import { PROFILE_LIMITS } from "../../shared/user-profile";
-import { ModelSettingsSection } from "@/components/model-settings-section";
+import { OnboardingModelSettings } from "@/components/onboarding-model-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
@@ -155,7 +155,7 @@ function Onboarding({
           </p>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
-          <ModelSettingsSection active showHeading={false} showAuxiliaryModels={false} onViewChange={setModelView} />
+          <OnboardingModelSettings onViewChange={setModelView} />
         </div>
         <footer className="flex items-center justify-between gap-3 border-t border-border px-[30px] py-4 max-[620px]:px-4">
           <p className="m-0 text-xs text-dim" aria-live="polite">

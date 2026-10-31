@@ -50,7 +50,7 @@ describe("AuxiliaryModelSettings", () => {
     const user = userEvent.setup();
     const { saveAuxiliaryModel, onViewChange, saved } = renderSettings(view());
 
-    await user.click(screen.getByRole("combobox", { name: "Image understanding" }));
+    await user.click(screen.getByRole("combobox", { name: "Reading images" }));
 
     expect(await screen.findByRole("option", { name: /Off/ })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /TEXT-ONLY/ })).not.toBeInTheDocument();
@@ -118,22 +118,10 @@ describe("AuxiliaryModelSettings", () => {
       });
     });
 
-    it("asks here only for the key of a provider with no text models, and saves it alone", async () => {
-      const user = userEvent.setup();
-      const saved = decisionView(undefined, true);
-      const saveProviderKey = vi.fn(async () => ({ ok: true as const, value: saved }));
-      const onViewChange = vi.fn();
-      Object.defineProperty(window, "wisp", { configurable: true, value: { saveProviderKey } });
-      render(<AuxiliaryModelSettings view={decisionView()} onViewChange={onViewChange} />);
+    it("leaves provider keys to Providers", () => {
+      renderSettings(decisionView());
 
-      expect(screen.queryByLabelText("OpenAI API key")).not.toBeInTheDocument();
-      expect(screen.queryByLabelText("Google API key")).not.toBeInTheDocument();
-      await user.type(screen.getByLabelText("TypeSafe API key"), "secret");
-      await user.click(screen.getByRole("button", { name: "Save key" }));
-
-      expect(saveProviderKey).toHaveBeenCalledWith({ providerId: "typesafe", apiKey: "secret" });
-      expect(onViewChange).toHaveBeenCalledWith(saved);
-      expect(await screen.findByText("TypeSafe API key saved.")).toBeInTheDocument();
+      expect(screen.queryByLabelText("TypeSafe API key")).not.toBeInTheDocument();
     });
 
     it("says circles answer with their lead while the saved model cannot be used", () => {
@@ -152,6 +140,6 @@ describe("AuxiliaryModelSettings", () => {
     renderSettings(view({ selection: { providerId: "google", modelId: "gemini" }, unavailable: "missing_key" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("Add an API key for Google to use this model.");
-    expect(screen.getByRole("combobox", { name: "Image understanding" })).toHaveTextContent("gemini (unavailable)");
+    expect(screen.getByRole("combobox", { name: "Reading images" })).toHaveTextContent("gemini (unavailable)");
   });
 });

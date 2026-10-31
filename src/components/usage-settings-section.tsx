@@ -4,7 +4,7 @@ import { ChartColumnIcon, CircleAlertIcon, RefreshCwIcon, TriangleAlertIcon } fr
 
 import { Wisp } from "@/components/wisp";
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import {
   CacheStats,
   formatUsd,
@@ -44,12 +44,11 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
       aria-labelledby="usage-settings-title"
       className="@container min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
     >
-      <h2 id="usage-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="usage-settings-title" scope="environment">
         Token usage
-      </h2>
+      </SettingsPanelTitle>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Tokens and estimated cost per Wisp and per model, from saved session history.{" "}
-        <SettingsScopeNote scope="environment" />
+        Tokens and estimated cost per Wisp and per model, from saved session history.
       </p>
       <UsageReportPanel wisps={wisps} />
     </section>

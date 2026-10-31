@@ -1,7 +1,7 @@
 # Bundled plugins
 
 Wisp ships with bundled integrations: **Brave Search** (web search),
-**Linear**, **Firecrawl**, **Tavily**, **Exa**, and **DeepSeek** (the latter
+**Linear**, **Firecrawl**, **Tavily**, **Exa**, and **DeepSeek Search** (the latter
 four support web search and page reading), **Google Calendar**, **Gmail**, and **Google
 Drive**, which sign in with your own Google OAuth client, and **Home
 Assistant**, which connects to your own server. Connections are configured globally in
@@ -96,7 +96,7 @@ model the choice stays saved, and the Wisp has no web search.
 | Firecrawl | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Tavily | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Exa | Web & research | `none`, `read` | `web_search`, `web_read` |
-| DeepSeek | Web & research | `none`, `read` | `web_search`, `web_read` |
+| DeepSeek Search | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Google Calendar | Productivity | `none`, `read`, `write` | `google_calendar_list_calendars`, `google_calendar_list_events`, `google_calendar_get_event`, `google_calendar_free_busy`; write also enables `google_calendar_create_event`, `google_calendar_update_event`, and `google_calendar_respond_to_event` |
 | Gmail | Productivity | `none`, `read`, `write` | `gmail_search_messages`, `gmail_read_message`, `gmail_read_thread`, `gmail_list_labels`, `gmail_list_drafts`; write also enables `gmail_create_draft` and `gmail_update_draft` |
 | Google Drive | Productivity | `none`, `read`, `write` | `google_drive_search_files`, `google_drive_get_file`, `google_drive_read_file`; write also enables `google_drive_create_file`, `google_drive_create_folder`, and `google_drive_update_file` |
@@ -134,7 +134,7 @@ reading can consume provider credits. Brave Search provides search only.
 
 Wisps whose access was saved before per-capability choices existed keep their
 grants and use the first granted, connected provider in catalog order (Brave
-Search → Firecrawl → Tavily → Exa → DeepSeek) until their access is saved again. Updating
+Search → Firecrawl → Tavily → Exa → DeepSeek Search) until their access is saved again. Updating
 from an older version preserves existing connections and grants; newly added
 plugins start disabled with no Wisp access.
 

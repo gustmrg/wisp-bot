@@ -9,7 +9,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import type { AppPreferences } from "@/lib/app-preferences";
 import {
@@ -96,12 +96,9 @@ function ShortcutSettingsSection({ active, preferences, onPreferencesChange }: S
       aria-labelledby="shortcut-settings-title"
       hidden={!active}
     >
-      <h2 id="shortcut-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="shortcut-settings-title" scope="device" className="mb-[22px]">
         Shortcuts
-      </h2>
-      <p className="mb-[22px] text-xs leading-relaxed text-dim">
-        <SettingsScopeNote scope="device" />
-      </p>
+      </SettingsPanelTitle>
       <div className="animate-tab-forward">
         <SettingsGroup label="Customizable">
           <SettingsCard variant="stacked">

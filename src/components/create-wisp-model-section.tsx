@@ -180,7 +180,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
       {draft.useGlobal && view && missingModelSetup(view).length > 0 ? (
         <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
           {view.selection
-            ? "No API key is saved for the global default provider. Add one in Settings → AI Model, or choose a model for this Wisp."
+            ? "No API key is saved for the global default provider. Add one in Settings → Providers, or choose a model for this Wisp."
             : "No global default model is set. Choose one in Settings → AI Model, or choose a model for this Wisp."}
         </p>
       ) : null}
@@ -196,8 +196,8 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
       {provider && !provider.credentialConfigured ? (
         <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
           {provider.id === CLAUDE_CODE_PROVIDER
-            ? `${claudeCodeUnavailableMessage(view?.claudeCode)} See Settings → AI Model.`
-            : `No API key saved for ${provider.name} yet. Add one in Settings → AI Model before creating this Wisp.`}
+            ? `${claudeCodeUnavailableMessage(view?.claudeCode)} See Settings → Providers.`
+            : `No API key saved for ${provider.name} yet. Add one in Settings → Providers before creating this Wisp.`}
         </p>
       ) : null}
     </SettingsCard>

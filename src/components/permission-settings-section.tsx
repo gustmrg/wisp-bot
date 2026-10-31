@@ -10,7 +10,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AppPreferences, AutoReviewRule, RuleBehavior } from "@/lib/app-preferences";
@@ -59,12 +59,11 @@ export function PermissionSettingsSection({
       id="permission-settings-panel"
       aria-labelledby="permission-settings-title"
     >
-      <h2 id="permission-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="permission-settings-title" scope="environment">
         Permissions
-      </h2>
+      </SettingsPanelTitle>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        What Wisps can do without asking. These are the defaults for every Wisp, and a Wisp's Access tab can change them
-        for that Wisp. <SettingsScopeNote scope="environment" />
+        What Wisps can do without asking. A Wisp's Access tab can override this.
       </p>
       <div className="animate-tab-forward">
         <SettingsGroup label="File changes">
@@ -134,10 +133,6 @@ export function PermissionSettingsSection({
               </SettingsRow>
             ) : null}
           </SettingsCard>
-          <p className="mx-0.5 mt-[7px] text-dim text-xs leading-[1.45]">
-            Rules are enforced in the desktop backend before the Wisp can create or modify a file. Shell execution
-            remains blocked.
-          </p>
           <span className="sr-only" role="status">
             {ruleNotice}
           </span>

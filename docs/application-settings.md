@@ -4,7 +4,7 @@
 and on a phone:
 
 - **Account and server**: **General**, **Connections**, **Remote access**
-- **Wisps**: **AI Model**, **Voice input**, **Plugins**, **MCP servers**, **Permissions**, **Jobs**
+- **Wisps**: **AI Model**, **Providers**, **Voice input**, **Plugins**, **MCP servers**, **Permissions**, **Jobs**
 - **Notifications and input**: **Notifications**, **Shortcuts**
 - **Storage and data**: **Token usage**, **Storage**
 - **App**: **About**
@@ -13,7 +13,7 @@ Where they are covered elsewhere:
 
 - **Connections** and **Remote access**: [headless server](remote-server.md#connect-the-desktop-app)
   and [remote access to this computer](remote-server.md#remote-access-to-this-computer).
-- **AI Model**: [AI models](models.md).
+- **AI Model** and **Providers**: [AI models](models.md).
 - **Plugins** and **MCP servers**: [plugins](plugins.md) and
   [remote MCP servers](mcp-servers.md).
 - **Jobs**: [scheduled jobs](jobs.md).
@@ -24,9 +24,12 @@ Where they are covered elsewhere:
 A setting is saved in one of two places. On the **device**, it applies only to
 this app or browser. In the **environment**, it applies to **This computer** or
 to the server in use, and every device connected to that server shares it. Each
-environment keeps its own, and nothing is copied between them. Each panel says
-which it is, and **General** and **Voice input**, which hold both, say it for
-each group.
+environment keeps its own, and nothing is copied between them.
+
+With the Wisps on **This computer**, the device and the environment are the same
+machine, so the panels say nothing about it. On a server, or in the browser app,
+each panel's title shows the server's name or **This device**. **General** and
+**Voice input**, which hold both, show it for each group.
 
 | Panel | Settings | Saved |
 | --- | --- | --- |
@@ -36,7 +39,8 @@ each group.
 | **General** | **Launch at login** | This computer's system |
 | **Connections** | Saved servers and their pairing | Device |
 | **Remote access** | **Remote access**, **Address**, **Paired devices** | This computer |
-| **AI Model** | **Provider**, **Model**, **Maximum output tokens**, API keys, subscription sign-in, **Fallback**, **Auxiliary models** | Environment |
+| **AI Model** | **Default model**, **Reasoning**, **Maximum output tokens**, **Fallback**, **Background tasks** | Environment |
+| **Providers** | API keys, subscription sign-in, Claude Code's status | Environment |
 | **Voice input** | **Microphone**, **Send automatically**, **Provider**, **Model**, **Language**, **Fallback model** | Device |
 | **Voice input** | API key | Environment |
 | **Plugins** | Connections and their keys, **Default web providers**, which Wisps can use each one | Environment |
@@ -56,7 +60,7 @@ same value:
 - Which Wisps can use a plugin or an MCP server, in **Plugins** or **MCP
   servers** and in **Wisp settings → Access**.
 - A Wisp's jobs, in **Jobs** and in **Wisp settings → Jobs**.
-- A provider's API key, in **AI Model** and in **Voice input**.
+- A provider's API key, in **Providers** and in **Voice input**.
 
 **Wisp settings** holds what applies to one Wisp, and some of it overrides a
 default here: **Wisp settings → Model** overrides **AI Model**, and **Wisp
@@ -123,14 +127,14 @@ with the model and the **Language** you speak (or auto-detect) chosen here,
 along with the microphone. **Send automatically** sends the message as soon as
 it is transcribed; otherwise the transcript waits in the composer for review.
 
-Each provider needs its API key. A key saved for that provider's chat models
-in **AI Model** is used too; see [subscription sign-in](models.md#subscription-sign-in)
+Each provider needs its API key. A key saved in **Settings → Providers** is used
+too, and **Voice input** links to it; see [subscription sign-in](models.md#subscription-sign-in)
 for how a voice key and a ChatGPT sign-in coexist. In the browser app, voice
 input needs HTTPS.
 
 ### Fallback model
 
-**Settings → Voice input → Fallback** works like the
+**Settings → Voice input → Transcription → Fallback model** works like the
 [fallback model](models.md#fallback-models) in **AI Model**: **Fallback model**
 is a model a recording goes to when the provider above cannot transcribe it:
 it cannot be reached, takes longer than 30 seconds, is rate limited or down,
@@ -213,10 +217,11 @@ registration. Disable this option before removing the application.
 
 ## Notifications
 
-The **Notifications** panel contains the app-level **Notification sounds** toggle,
-a volume slider (0–100%), and, for each event, a sound and a Test button. In
-the desktop app it also has **System notifications**, with a switch and a Test
-button per event; see [below](#system-notifications).
+The **Notifications** panel contains, in the desktop app, **System
+notifications**, with a switch and a Test button per event; see
+[below](#system-notifications). It also contains the app-level **Notification
+sounds** toggle, a volume slider (0–100%), and, for each event, a sound and a
+Test button.
 Existing sound preferences are preserved. New settings default to full volume,
 the **Chime** for all three events, and open-conversation muting off.
 

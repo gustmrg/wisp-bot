@@ -425,6 +425,6 @@ describe("WispModelSettings", () => {
     api(baseView, false);
     render(<WispModelSettings conversationId="wisp-one" />);
 
-    expect(await screen.findByText(/Configure this provider's API key/)).toBeVisible();
+    expect(await screen.findByText(/Add this provider's API key/)).toBeVisible();
   });
 });

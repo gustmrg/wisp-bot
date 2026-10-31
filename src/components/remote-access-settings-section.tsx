@@ -146,8 +146,7 @@ export function RemoteAccessSettingsSection() {
         Remote access
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Use the Wisps on this computer from your phone or another device, over your private Tailscale network. This is
-        not where this app's Wisps run: that is under Connections.
+        Use this computer's Wisps from another device, over your private Tailscale network.
       </p>
       {!view ? (
         loadError ? (

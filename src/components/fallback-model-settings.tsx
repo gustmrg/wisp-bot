@@ -83,10 +83,7 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
           <SettingsRowCopy>
             <SettingsRowTitle htmlFor="ai-fallback-model">Fallback model</SettingsRowTitle>
             <SettingsRowDescription>
-              Answers for Wisps on the global model when it fails for good, for example when the provider is out of
-              credits or rejects the key. Each message tries the global model first. Wisps with a model of their own
-              choose their fallback in their settings. Only models from other providers with a saved key are listed: a
-              provider that is down or out of credits fails with all its models. Changes save automatically.
+              Answers when the default model fails for good, such as no credits or a rejected key.
             </SettingsRowDescription>
             {unavailable ? (
               <span role="alert" className="text-xs leading-relaxed text-warning">
@@ -107,7 +104,7 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
             className="h-8 w-[260px] max-w-[62%] text-base"
             searchLabel="Search fallback models"
             searchPlaceholder="Search model name or ID…"
-            emptyText="No models from other providers with a saved key."
+            emptyText="No models from other connected providers."
             onChange={(value) => void handleChange(value)}
           />
         </SettingsRow>
