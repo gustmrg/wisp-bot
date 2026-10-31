@@ -1017,7 +1017,7 @@ describe("McpService interactive sign-in", () => {
     expect(view.servers[0]?.enabled).toBe(false);
   });
 
-  it("discards sign-in results when the connection changed during the flow", async () => {
+  it("says the connection changed when that interrupts its sign-in before it reaches the server", async () => {
     const gate = deferred<"connected" | "needs_sign_in">();
     const { service } = await createService({}, [{ gate: gate.promise, outcome: "connected", tools: [TOOL] }]);
     const { serverId, server } = await addServer(service, { authMode: "oauth" });
