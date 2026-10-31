@@ -68,6 +68,33 @@ export interface WispTemplate {
   access?: WispTemplateAccess;
 }
 
+/** A template as the Templates section lists it. */
+export interface WispTemplateEntry {
+  /** `builtin-…` for the templates that ship with the app. */
+  id: string;
+  builtIn: boolean;
+  template: WispTemplate;
+  /** When a saved template last changed, as ISO 8601; null for built-ins. */
+  updatedAt: string | null;
+}
+
+/**
+ * Saves a template on the server: a new one without `id`, or replaces a saved
+ * one. `contents` is the template as `serializeWispTemplate` writes it, so an
+ * imported file and an edit are checked the same way.
+ */
+export interface SaveWispTemplateRequest {
+  id?: string;
+  contents: string;
+}
+
+export interface DeleteWispTemplateRequest {
+  id: string;
+}
+
+/** Most templates the person can save in one environment. */
+export const MAX_SAVED_WISP_TEMPLATES = 200;
+
 export type WispTemplateParseResult = { ok: true; template: WispTemplate } | { ok: false; error: string };
 
 const INVALID_TEMPLATE = "This is not a valid Wisp template. Export or copy it again from Wisp Bot.";
