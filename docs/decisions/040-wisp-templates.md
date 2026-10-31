@@ -38,7 +38,9 @@ and it never grants access by itself.**
   template moves between them only when the person exports and imports it.
 - **The section.** **Settings → Templates** lists the built-in and saved
   templates as cards, with search and a filter, and previews everything a
-  template sets up before it is used. It reads as a gallery, so built-in
+  template sets up before it is used. The **Templates** button in the creation
+  dialog opens it too; the dialog keeps its **Import template** paste field. It
+  reads as a gallery, so built-in
   templates offer only **Use**. Saved templates can be duplicated, renamed,
   deleted, exported as one `.wisp-template.json` file, and imported from one.
   The app reads an imported file and sends its text, never a path.
@@ -75,8 +77,6 @@ and it never grants access by itself.**
 - Marking on a Wisp which template it came from and what changed since.
   That needs a new field on the Wisp record and a store upgrade.
 - Starting memory and sample files in the workspace.
-- A shortcut from the creation dialog to the template gallery; the dialog
-  keeps its **Import template** paste field.
 - Capturing an unlimited workspace size in a template. Using one never applies
   it, since unlimited is only chosen by hand after a note on what it means for
   the disk.

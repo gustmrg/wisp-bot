@@ -28,6 +28,8 @@ interface CreateChatDialogProps {
   onCreateCircle?: (circle: NewCircle) => Promise<boolean>;
   /** The Wisps a new circle can gather. */
   wisps?: ReadonlyArray<Wisp>;
+  /** Opens the templates, for someone who wants a Wisp ready for a job; without it they aren't offered. */
+  onOpenTemplates?: () => void;
   /** The button that opens the dialog; without it, `open` and `onOpenChange` control it. */
   trigger?: ReactElement;
   open?: boolean;
@@ -42,6 +44,7 @@ function CreateChatDialog({
   onCreate,
   onCreateCircle,
   wisps = [],
+  onOpenTemplates,
   trigger,
   open: controlledOpen,
   onOpenChange,
@@ -124,6 +127,14 @@ function CreateChatDialog({
               onCreate={onCreate}
               onStatusChange={onWispStatus}
               onDone={() => setOpen(false)}
+              {...(onOpenTemplates
+                ? {
+                    onOpenTemplates: () => {
+                      setOpen(false);
+                      onOpenTemplates();
+                    },
+                  }
+                : {})}
             />
           </TabsContent>
           {onCreateCircle ? (
