@@ -33,7 +33,8 @@ const UNSUPPORTED = "This server is older than this app and has no templates. Up
  * previewed in full. **Use** creates the Wisp at once, and **Customize** opens
  * the creation dialog filled in, to change anything first. Built-in ones only
  * come with the app, so importing, duplicating, exporting, renaming and deleting
- * belong to the saved ones.
+ * belong to the saved ones. The panel keeps room for its scrollbar, so a filter
+ * with fewer cards does not change the search's width.
  */
 export function TemplateSettingsSection({
   onUseTemplate,
@@ -110,7 +111,9 @@ export function TemplateSettingsSection({
 
   async function importFile(file: File) {
     // Read here and sent as text: the renderer never hands the server a path.
-    await save(await file.text());
+    const saved = await save(await file.text());
+    // Back from its preview, the list has to show what was just imported.
+    if (saved && filter === "builtin") setFilter("saved");
   }
 
   async function remove(id: string) {
@@ -157,7 +160,7 @@ export function TemplateSettingsSection({
     <section
       id="template-settings-panel"
       aria-labelledby="template-settings-title"
-      className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
+      className="min-w-0 overflow-y-auto [scrollbar-gutter:stable] px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
     >
       <SettingsPanelTitle id="template-settings-title" scope="environment">
         Templates
@@ -197,27 +200,23 @@ export function TemplateSettingsSection({
               />
             </div>
             <SegmentedControl label="Show" value={filter} options={FILTER_OPTIONS} onChange={setFilter} />
-            {filter === "saved" ? (
-              <>
-                <Button variant="outline" size="sm" disabled={!entries} onClick={() => fileInput.current?.click()}>
-                  <UploadIcon data-icon="inline-start" aria-hidden="true" />
-                  Import
-                </Button>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept=".json,application/json"
-                  className="hidden"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    event.currentTarget.value = "";
-                    if (file) void importFile(file);
-                  }}
-                />
-              </>
-            ) : null}
+            <Button variant="outline" size="sm" disabled={!entries} onClick={() => fileInput.current?.click()}>
+              <UploadIcon data-icon="inline-start" aria-hidden="true" />
+              Import
+            </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              aria-hidden="true"
+              tabIndex={-1}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) void importFile(file);
+              }}
+            />
           </div>
           {message ? (
             <p role="alert" className="mb-3 mt-0 text-xs text-destructive">
@@ -546,7 +545,9 @@ function TemplatePreview({
             })}
           </SettingsCard>
         ) : (
-          <p className="mx-0.5 my-0 text-xs text-dim">No skills.</p>
+          <SettingsCard className="p-4 text-sm">
+            <p className="m-0 text-dim">No skills.</p>
+          </SettingsCard>
         )}
       </SettingsGroup>
 
@@ -574,10 +575,6 @@ function TemplatePreview({
 
       <SettingsGroup label="Access it asks for">
         <TemplateAccess template={template} />
-        <p className="mx-0.5 mt-[7px] text-xs text-dim">
-          Nothing here is granted by the template. Turn on what you want with Customize, or later in the Wisp's Access
-          tab.
-        </p>
       </SettingsGroup>
     </div>
   );
@@ -602,14 +599,27 @@ function TemplateAccess({ template }: { template: WispTemplate }) {
       ({ name, access: level }) => `${name}: ${level === "allow_all" ? "use without asking" : "use with approval"}`,
     ),
   ];
-  if (!lines.length) return <p className="mx-0.5 my-0 text-xs text-dim">None.</p>;
+  if (!lines.length) {
+    return (
+      <SettingsCard className="p-4 text-sm">
+        <p className="m-0 text-dim">None.</p>
+      </SettingsCard>
+    );
+  }
   return (
-    <SettingsCard variant="stacked">
-      {lines.map((line) => (
-        <p key={line} className="m-0 px-3.5 py-2.5 text-xs">
-          {line}
-        </p>
-      ))}
-    </SettingsCard>
+    <>
+      <SettingsCard variant="stacked">
+        {lines.map((line) => (
+          <p key={line} className="m-0 px-3.5 py-2.5 text-xs">
+            {line}
+          </p>
+        ))}
+      </SettingsCard>
+      {/* The list reads like what the Wisp will get, and Allow everything is on it, so this says it is only a request. */}
+      <p className="mx-0.5 mt-[7px] text-xs text-dim">
+        Nothing here is granted by the template. Turn on what you want with Customize, or later in the Wisp's Access
+        tab.
+      </p>
+    </>
   );
 }

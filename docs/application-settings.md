@@ -193,7 +193,7 @@ again.
 ## Templates
 
 **Templates**, also reached with the **Templates** button in the creation dialog,
-lists ready-made Wisps: six built in, one per starting soul,
+lists ready-made Wisps: eight built in, **Chief** and one per starting soul,
 and the ones saved on the connected server, as cards with a search and an
 **All**, **Built in** and **Yours** filter. A template holds a Wisp's name,
 role, soul, look, model, skills, workspace size and commands, and the access
@@ -217,8 +217,8 @@ it asks for ([ADR 040](decisions/040-wisp-templates.md)).
   cannot be turned on.
 - Saved templates can be duplicated, renamed, and deleted. Built-in templates
   come with the app and cannot be changed.
-- **Yours → Import** reads a `.wisp-template.json` file, and **Export** in a
-  saved template's preview writes one. Templates stay on the server they were
+- **Import** reads a `.wisp-template.json` file, and **Export** in a saved
+  template's preview writes one. Templates stay on the server they were
   saved on; exporting and importing is how one moves to another.
 
 A Wisp's settings and its profile page have **Save as template**, which keeps

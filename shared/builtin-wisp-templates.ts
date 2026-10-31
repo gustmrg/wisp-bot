@@ -1,3 +1,4 @@
+import { CHIEF_WISP } from "./chief-wisp.js";
 import { SOUL_TEMPLATES, type SoulTemplate } from "./soul-templates.js";
 import { DEFAULT_WISP_APPEARANCE, type WispAppearance } from "./wisp-appearance.js";
 import type { WispTemplate } from "./wisp-template.js";
@@ -19,7 +20,7 @@ const skill = (name: string, description: string, steps: ReadonlyArray<string>) 
   `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}\n`;
 
 const EXTRAS: Readonly<Record<string, BuiltInExtras>> = {
-  assistant: { name: "Pip", color: "#885cf5", appearance: { body: "round", trail: "hook", eyes: "wisp" } },
+  assistant: { name: "Pip", color: "#ff3b30", appearance: { body: "round", trail: "hook", eyes: "wisp" } },
   research: {
     name: "Atlas",
     color: "#54b9a6",
@@ -65,6 +66,19 @@ const EXTRAS: Readonly<Record<string, BuiltInExtras>> = {
     color: "#ed712e",
     appearance: { body: "pebble", trail: "flame", eyes: "arc", mark: "spark" },
   },
+  product: {
+    name: "Compass",
+    color: "#f19d38",
+    appearance: { body: "crystal", trail: "hook", eyes: "dot", mark: "motes" },
+    skills: [
+      skill("write-a-user-story", "Turns a request into a user story with testable acceptance criteria.", [
+        "Name who wants this and the problem behind the request; ask if either is unclear.",
+        "Write the story in one sentence: as a kind of user, I want something, so that I get a benefit.",
+        "List acceptance criteria that someone could check as passed or failed, including the main failure case.",
+        "End with what is out of scope, and the open questions that block starting.",
+      ]),
+    ],
+  },
   tutor: { name: "Owl", color: "#3c82f6", appearance: { body: "round", trail: "curl", eyes: "oval" } },
 };
 
@@ -85,10 +99,29 @@ function builtIn(soul: SoulTemplate): { id: string; template: WispTemplate } {
   };
 }
 
+/** Chief, the Wisp onboarding creates, which is otherwise lost once deleted (ADR 024). */
+const CHIEF_TEMPLATE: { id: string; template: WispTemplate } = {
+  id: `${BUILTIN_WISP_TEMPLATE_PREFIX}chief`,
+  template: { ...CHIEF_WISP, description: "Suggests the Wisps you need and creates them with you" },
+};
+
+/** The order of the gallery's cards, which is not the soul picker's. */
+const SOUL_CARD_ORDER: ReadonlyArray<string> = [
+  "writing",
+  "research",
+  "code",
+  "assistant",
+  "projects",
+  "product",
+  "tutor",
+];
+
 /**
- * Templates that ship with the app, one per starting soul. They are read-only
- * and change with the app's version; duplicating one makes an editable copy.
- * None asks for access to plugins or MCP servers.
+ * Templates that ship with the app: Chief, then one per starting soul. They are
+ * read-only and change with the app's version; duplicating one makes an editable
+ * copy. None asks for access to plugins or MCP servers.
  */
-export const BUILTIN_WISP_TEMPLATES: ReadonlyArray<{ id: string; template: WispTemplate }> =
-  SOUL_TEMPLATES.map(builtIn);
+export const BUILTIN_WISP_TEMPLATES: ReadonlyArray<{ id: string; template: WispTemplate }> = [
+  CHIEF_TEMPLATE,
+  ...SOUL_CARD_ORDER.flatMap((id) => SOUL_TEMPLATES.filter((soul) => soul.id === id).map(builtIn)),
+];

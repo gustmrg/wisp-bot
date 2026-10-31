@@ -189,7 +189,7 @@ function WispProfileEditor({
     >
       <div className="wisp-settings-scroll min-h-0 flex-1 overflow-y-auto p-3.5">
         <WispIdentityFields settings={settings} onChange={change} />
-        <WispSoulField soul={draft.soul} onChange={(soul) => change({ soul })} />
+        <WispSoulField soul={draft.soul} onChange={(soul) => change({ soul })} opensOnPreview />
       </div>
       {changed || error ? (
         <footer className="flex flex-none flex-col gap-3 border-t border-border p-3.5">

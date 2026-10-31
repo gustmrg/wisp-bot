@@ -934,7 +934,7 @@ describe("Onboarding", () => {
     expect(api.createWisp).toHaveBeenCalledTimes(1);
     expect(api.createWisp).toHaveBeenCalledWith(
       expect.objectContaining({
-        wisp: expect.objectContaining({ name: "Chief", role: "Builds your team" }),
+        wisp: expect.objectContaining({ name: "Chief", role: "Team builder" }),
         notifyOnUpdatesEnabled: true,
       }),
     );

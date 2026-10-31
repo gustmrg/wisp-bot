@@ -108,6 +108,7 @@ describe("WispModelSettings", () => {
 
     const select = await screen.findByRole("combobox", { name: "Reasoning" });
     expect(select).toHaveTextContent("Off");
+    expect(screen.queryByText(/Set with the global model/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Reasoning uses more tokens/)).not.toBeInTheDocument();
     await user.hover(screen.getByRole("button", { name: "About reasoning cost" }));
     expect(await screen.findByText(/Reasoning uses more tokens/)).toBeVisible();
@@ -321,8 +322,10 @@ describe("WispModelSettings", () => {
     api({ ...baseView, effective: global, applied: global }, true, undefined, reasoningProviders);
     render(<WispModelSettings conversationId="wisp-one" />);
 
-    expect(await screen.findByText(/Reasoning: Low/)).toBeVisible();
-    expect(screen.queryByRole("combobox", { name: "Reasoning" })).not.toBeInTheDocument();
+    const select = await screen.findByRole("combobox", { name: "Reasoning" });
+    expect(select).toHaveTextContent("Low");
+    expect(select).toBeDisabled();
+    expect(screen.getByText("Set with the global model in Settings → AI Model.")).toBeVisible();
   });
 
   it("lets a Wisp with its own model turn on the global fallback or choose a model of its own", async () => {

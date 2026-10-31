@@ -1,4 +1,4 @@
-import { CheckIcon, ChevronLeftIcon, Share2Icon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, Share2Icon, Trash2Icon, XIcon } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
 
 import type { ChatChanges, ChatView, WispChanges, WispCollection } from "@/chat-data";
@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { WispDetails, type WispSettingsTab } from "@/components/wisp-details";
 import {
   type WispSettingsSection,
@@ -85,9 +86,31 @@ function DetailsPanel({
   const title = mobile && chat.kind === "wisp" ? pageTitle : "Settings";
   const deleteControl = (
     <Dialog>
-      <DialogTrigger render={<Button variant="destructive" type="button" />}>
-        Delete {chat.kind === "circle" ? "circle" : "Wisp"}
-      </DialogTrigger>
+      {/* A Wisp's panel has three actions in a row, so this one is only its icon. */}
+      {chat.kind === "circle" ? (
+        <DialogTrigger render={<Button variant="destructive" type="button" />}>Delete circle</DialogTrigger>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DialogTrigger
+                render={
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    type="button"
+                    className="ml-auto"
+                    aria-label="Delete Wisp"
+                  />
+                }
+              />
+            }
+          >
+            <Trash2Icon aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>Delete Wisp</TooltipContent>
+        </Tooltip>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Delete {name}?</DialogTitle>

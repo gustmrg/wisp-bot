@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
+import { LogoTile } from "@/components/logo-tile";
 import { ClaudeCodeStatus, SubscriptionSignIn } from "@/components/provider-credentials";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import {
@@ -16,6 +17,7 @@ import {
 import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { SecretInput } from "@/components/ui/secret-input";
+import { providerLogo } from "@/lib/provider-logo";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code";
 import { voiceProvider } from "../../shared/voice";
@@ -52,6 +54,20 @@ function statusText(entry: ProviderEntry, view: AiSettingsView): string {
   const credential = entry.credentialKind === "subscription" ? "Signed in with your subscription" : "API key saved";
   const uses = entry.decisionOnly ? " · Decision models only" : voiceProvider(entry.id) ? " · Also used for voice" : "";
   return `${credential}${uses}`;
+}
+
+/** A provider's logo, or the first letter of its name for one without a logo. */
+function ProviderLogo({ id, name }: { id: string; name: string }) {
+  const logo = providerLogo(id);
+  if (logo) return <LogoTile src={logo} className="size-8 rounded-lg p-1" />;
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-sm font-medium text-dim"
+    >
+      {name.charAt(0).toUpperCase()}
+    </span>
+  );
 }
 
 /** Lists the providers that are connected, so a key never has to be entered along with a model choice. */
@@ -151,6 +167,7 @@ function ProviderSettingsSection() {
                   return (
                     <div key={entry.id}>
                       <SettingsRow>
+                        <ProviderLogo id={entry.id} name={entry.name} />
                         <SettingsRowCopy>
                           <SettingsRowTitle>{entry.name}</SettingsRowTitle>
                           <SettingsRowDescription className="flex items-center gap-1.5">
@@ -189,19 +206,21 @@ function ProviderSettingsSection() {
             <SettingsGroup label="Add a provider">
               <SettingsCard variant="stacked">
                 <SettingsRow>
-                  <SettingsRowCopy>
-                    <SettingsRowTitle htmlFor="ai-add-provider">Provider</SettingsRowTitle>
-                  </SettingsRowCopy>
+                  <SettingsRowTitle htmlFor="ai-add-provider" className="sr-only">
+                    Provider
+                  </SettingsRowTitle>
                   <SearchableCombobox
                     id="ai-add-provider"
                     value={adding?.id ?? ""}
                     options={available.map(({ id, name, decisionOnly }) => ({
                       value: id,
                       label: name,
+                      iconSrc: providerLogo(id),
                       ...(decisionOnly ? { description: "Decision models only" } : {}),
                     }))}
                     placeholder="Choose a provider"
-                    className="h-8 w-[260px] max-w-[62%] text-base"
+                    className="h-8 w-full max-w-none shrink text-base"
+                    popupMatchesTrigger
                     searchLabel="Search providers"
                     searchPlaceholder="Search providers…"
                     emptyText="No providers found."

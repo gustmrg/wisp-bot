@@ -17,9 +17,42 @@ describe("variant details", () => {
       expect(screen.getByRole("group", { name: axis })).toBeVisible();
     }
     expect(screen.getByRole("textbox", { name: "Role (optional)" })).toHaveValue("Research");
+    // A written soul opens on its preview.
+    expect(screen.getByText("Researches")).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: "Soul" })).not.toBeInTheDocument();
+  });
+
+  it("edits the soul after switching to Edit", async () => {
+    const user = userEvent.setup();
+    render(<WispSettingsSectionContent chat={wisp} section="profile" onChangeWisp={vi.fn()} />);
+
+    await user.click(screen.getByRole("radio", { name: "Edit" }));
+
     const soul = screen.getByRole("textbox", { name: "Soul" });
     expect(soul).toHaveValue("Researches");
     expect(soul).toHaveAttribute("maxlength", "10000");
+  });
+
+  it("opens an empty soul on its preview too, still offering its templates", () => {
+    render(
+      <WispSettingsSectionContent
+        chat={wispChatView("nova", { wisp: { soul: "" } })}
+        section="profile"
+        onChangeWisp={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("radio", { name: "Preview" })).toBeChecked();
+    expect(screen.queryByRole("textbox", { name: "Soul" })).not.toBeInTheDocument();
+    expect(screen.getByText("Nothing written yet.")).toBeVisible();
+    expect(screen.getByRole("group", { name: "Soul templates" })).toBeVisible();
+  });
+
+  it("opens a written soul on its preview in the details panel too", () => {
+    render(<WispDetails chat={wisp} onChangeWisp={vi.fn()} onChangeNotifications={vi.fn()} />);
+
+    expect(screen.getByRole("radio", { name: "Preview" })).toBeChecked();
+    expect(screen.queryByRole("textbox", { name: "Soul" })).not.toBeInTheDocument();
   });
 
   it("previews the soul as markdown and offers templates for an empty one", async () => {
