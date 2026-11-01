@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, symlink, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, symlink, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -276,6 +276,15 @@ describe("SdkPiSessionFactory", () => {
     sdk.toolExecute.mockResolvedValueOnce({ content: [{ type: "text", text: "x".repeat(70_000) }], details: {} });
     const boundedResult = await read.execute("tool-3", { path: "inside.txt" }, undefined, undefined, {});
     expect((boundedResult as { content: Array<{ text: string }> }).content[0]?.text.length).toBeLessThanOrEqual(64_000);
+    // Commands see the workspace at /workspace, so file tools read that path as the same file.
+    await read.execute("tool-container-path", { path: "/workspace/inside.txt" }, undefined, undefined, {});
+    expect(sdk.toolExecute).toHaveBeenLastCalledWith(
+      "tool-container-path",
+      expect.objectContaining({ path: await realpath(path.join(context.workspaceDirectory, "inside.txt")) }),
+      undefined,
+      undefined,
+      {},
+    );
     const write = options.customTools.find(({ name }) => name === "write")!;
     await expect(
       write.execute("tool-4", { path: "new.txt", content: "safe" }, undefined, undefined, {}),
@@ -306,7 +315,7 @@ describe("SdkPiSessionFactory", () => {
     await expect(
       write.execute("tool-6", { path: "broken-escape/new.txt", content: "blocked" }, undefined, undefined, {}),
     ).rejects.toMatchObject({ code: "invalid_request" });
-    expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+    expect(sdk.toolExecute).toHaveBeenCalledTimes(3);
     // A sparse file reports its full size without using the disk space.
     const fullFile = path.join(context.workspaceDirectory, "full.bin");
     await writeFile(fullFile, "");
@@ -316,7 +325,7 @@ describe("SdkPiSessionFactory", () => {
       write.execute("tool-full", { path: "more.txt", content: "no room" }, undefined, undefined, {}),
     ).rejects.toMatchObject({ code: "invalid_request", message: expect.stringContaining("workspace is full") });
     expect(authorize).not.toHaveBeenCalled();
-    expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+    expect(sdk.toolExecute).toHaveBeenCalledTimes(3);
   });
 
   it("turns images into text with the image model when the Wisp's model cannot see them", async () => {
@@ -778,6 +787,9 @@ describe("SdkPiSessionFactory", () => {
     await expect(
       tool("save_skill").execute("tool-8", { path: "inbox/SKILL.md", name: "other" }, undefined),
     ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      tool("save_skill").execute("tool-container-path", { path: "/workspace/inbox/SKILL.md" }, undefined),
+    ).resolves.toMatchObject({ content: [{ text: expect.stringContaining("Updated skill gh-flow") }] });
     await writeFile(path.join(directory, "outside.md"), file);
     await expect(tool("save_skill").execute("tool-9", { path: "../outside.md" }, undefined)).rejects.toMatchObject({
       message: expect.stringContaining("outside this Wisp's workspace"),

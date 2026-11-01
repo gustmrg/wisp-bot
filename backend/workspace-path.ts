@@ -1,6 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 
+import { CONTAINER_WORKSPACE } from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
 
 export interface ResolvedWorkspacePath {
@@ -19,7 +20,7 @@ export async function resolveWorkspacePath(
   allowMissing: boolean,
 ): Promise<ResolvedWorkspacePath> {
   const workspace = await realpath(workspaceDirectory);
-  const unresolved = path.resolve(workspaceDirectory, requestedPath);
+  const unresolved = path.resolve(workspaceDirectory, fromContainerPath(workspaceDirectory, requestedPath));
   assertContainedPath(path.resolve(workspaceDirectory), unresolved);
   let canonicalPath: string;
   let exists = true;
@@ -61,9 +62,28 @@ export async function resolveWorkspacePath(
   return { canonicalPath: canonicalPath!, relativePath: relative || ".", exists };
 }
 
-function assertContainedPath(workspace: string, candidate: string): void {
+/**
+ * Commands see the workspace at /workspace, so a Wisp also reaches for that
+ * path in its file tools. It names the same files, so it is translated instead
+ * of refused, and the result still goes through every check on the way out. A
+ * real path inside the workspace wins, in case the workspace itself lives
+ * under a host folder called /workspace.
+ */
+export function fromContainerPath(workspaceDirectory: string, requestedPath: string): string {
+  if (!requestedPath.startsWith("/")) return requestedPath;
+  const normalized = path.posix.normalize(requestedPath);
+  if (normalized !== CONTAINER_WORKSPACE && !normalized.startsWith(`${CONTAINER_WORKSPACE}/`)) return requestedPath;
+  if (isContainedPath(path.resolve(workspaceDirectory), path.resolve(requestedPath))) return requestedPath;
+  return path.posix.relative(CONTAINER_WORKSPACE, normalized);
+}
+
+function isContainedPath(workspace: string, candidate: string): boolean {
   const relative = path.relative(workspace, candidate);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+  return !(relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
+}
+
+function assertContainedPath(workspace: string, candidate: string): void {
+  if (!isContainedPath(workspace, candidate)) {
     throw new WispBackendError("invalid_request", "The requested path is outside this Wisp's workspace.");
   }
 }
