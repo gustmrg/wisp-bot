@@ -52,7 +52,6 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    transition: none;
   }
   /* Stuck to the bottom, the bar keeps the gap its margin gives it on the other tabs: a sticky offset ignores margins. */
   .workspace-sidebar > .mobile-navigation {

@@ -591,7 +591,10 @@ export function ChatComposer({
           anchor={boxRef}
           align="start"
           sideOffset={8}
-          className={menuView === "actions" ? "w-56 p-1" : menuView === "new_topic" ? "w-72" : undefined}
+          className={cn(
+            "data-open:animate-none data-closed:animate-none",
+            menuView === "actions" ? "w-56 p-1" : menuView === "new_topic" && "w-72",
+          )}
         >
           {menuView === "actions" ? (
             <div className="flex flex-col gap-0.5">
@@ -940,8 +943,8 @@ function RecordingMeter({ levels, elapsed }: { levels: ReadonlyArray<number>; el
           <span
             // The bars scroll left as new samples arrive, so their position is their identity.
             key={index}
-            className="w-[3px] flex-none rounded-full bg-destructive/70 transition-[height] duration-[60ms]"
-            style={{ height: `${Math.max(3, Math.round(level * 22))}px` }}
+            className="h-[22px] w-[3px] flex-none rounded-full bg-destructive/70"
+            style={{ transform: `scaleY(${Math.max(3 / 22, level).toFixed(3)})` }}
           />
         ))}
       </span>

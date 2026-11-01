@@ -132,7 +132,7 @@ function MessageView({
 
   if (message.type === "card") {
     return (
-      <div className="relative mt-3 flex animate-message-in flex-col items-start">
+      <div className="relative mt-3 flex flex-col items-start">
         <div className="message-card max-w-[min(820px,78vw)] rounded-[11px] border border-border bg-card px-[11px] py-[9px] leading-[1.42] select-text">
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {message.items.map((item) => (
@@ -151,7 +151,7 @@ function MessageView({
 
   if (message.type === "prompt") {
     return (
-      <div className="relative mt-3 flex animate-message-in flex-col items-start">
+      <div className="relative mt-3 flex flex-col items-start">
         <section
           className="message-prompt w-[min(820px,78vw)] rounded-[11px] border border-border bg-popover p-2.5"
           aria-label={message.question}
@@ -188,7 +188,7 @@ function MessageView({
   const empty = !message.text.trim();
   if (empty && (message.status === "cancelled" || message.status === "failed")) {
     return (
-      <div className="mt-[13px] mb-[5px] flex animate-message-in items-center justify-center gap-1.5 text-faint text-2xs">
+      <div className="mt-[13px] mb-[5px] flex items-center justify-center gap-1.5 text-faint text-2xs">
         {message.status === "failed" ? (
           <FailedNotice
             reason={message.type === "incoming" ? message.error?.message : undefined}
@@ -205,13 +205,7 @@ function MessageView({
   }
   if (empty || (!outgoing && !reveal.text.trim())) return null;
   return (
-    <div
-      className={cn(
-        "relative flex animate-message-in flex-col",
-        outgoing ? "items-end" : "items-start",
-        dense ? "mt-2" : "mt-3",
-      )}
-    >
+    <div className={cn("relative flex flex-col", outgoing ? "items-end" : "items-start", dense ? "mt-2" : "mt-3")}>
       {author && showAuthor && !outgoing ? (
         <span className="message-author">
           <WispAvatar wisp={author} size="sm" />

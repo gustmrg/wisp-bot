@@ -16,7 +16,8 @@ function pointerEvent(type: string, clientX = 0) {
 }
 
 function resizeHandle() {
-  const handle = document.createElement("div");
+  const panel = document.createElement("aside");
+  const handle = panel.appendChild(document.createElement("div"));
   let captured = false;
   const setPointerCapture = vi.fn(() => {
     captured = true;
@@ -32,7 +33,7 @@ function resizeHandle() {
     setPointerCapture: { value: setPointerCapture },
   });
 
-  return { handle, hasPointerCapture, releasePointerCapture, setPointerCapture };
+  return { handle, panel, hasPointerCapture, releasePointerCapture, setPointerCapture };
 }
 
 function startResize(
@@ -55,7 +56,7 @@ function startResize(
 describe("useResizablePanel", () => {
   it("resizes to the right and clamps both bounds", () => {
     const { result } = renderHook(() =>
-      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 }),
+      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1, cssVariable: "--width" }),
     );
     const capture = resizeHandle();
 
@@ -65,34 +66,69 @@ describe("useResizablePanel", () => {
     expect(document.body).toHaveClass("resizing");
 
     act(() => capture.handle.dispatchEvent(pointerEvent("pointermove", 500)));
-    expect(result.current.width).toBe(400);
+    expect(capture.panel.style.getPropertyValue("--width")).toBe("400px");
 
     act(() => capture.handle.dispatchEvent(pointerEvent("pointermove", -100)));
-    expect(result.current.width).toBe(220);
+    expect(capture.panel.style.getPropertyValue("--width")).toBe("220px");
 
     act(() => capture.handle.dispatchEvent(pointerEvent("pointerup")));
+    expect(result.current.width).toBe(220);
   });
 
   it("resizes to the left and clamps both bounds", () => {
     const { result } = renderHook(() =>
-      useResizablePanel({ defaultWidth: 318, minWidth: 280, maxWidth: 480, direction: -1 }),
+      useResizablePanel({ defaultWidth: 318, minWidth: 280, maxWidth: 480, direction: -1, cssVariable: "--width" }),
     );
-    const { handle } = resizeHandle();
+    const { handle, panel } = resizeHandle();
     startResize(result.current.onResizeStart, handle);
 
     act(() => handle.dispatchEvent(pointerEvent("pointermove", -100)));
-    expect(result.current.width).toBe(480);
+    expect(panel.style.getPropertyValue("--width")).toBe("480px");
 
     act(() => handle.dispatchEvent(pointerEvent("pointermove", 200)));
+    expect(panel.style.getPropertyValue("--width")).toBe("280px");
+
+    act(() => handle.dispatchEvent(pointerEvent("pointerup")));
+    expect(result.current.width).toBe(280);
+  });
+
+  it("does not render while dragging, only when the drag ends", () => {
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useResizablePanel({
+        defaultWidth: 280,
+        minWidth: 220,
+        maxWidth: 400,
+        direction: 1,
+        cssVariable: "--width",
+      });
+    });
+    const { handle } = resizeHandle();
+    startResize(result.current.onResizeStart, handle);
+    const rendersBeforeDrag = renders;
+
+    act(() => handle.dispatchEvent(pointerEvent("pointermove", 120)));
+    act(() => handle.dispatchEvent(pointerEvent("pointermove", 140)));
+    expect(renders).toBe(rendersBeforeDrag);
     expect(result.current.width).toBe(280);
 
     act(() => handle.dispatchEvent(pointerEvent("pointerup")));
+    expect(renders).toBe(rendersBeforeDrag + 1);
+    expect(result.current.width).toBe(320);
   });
 
   it("reports the final width once a drag ends", () => {
     const onResizeEnd = vi.fn();
     const { result } = renderHook(() =>
-      useResizablePanel({ defaultWidth: 400, minWidth: 280, maxWidth: 480, direction: -1, onResizeEnd }),
+      useResizablePanel({
+        defaultWidth: 400,
+        minWidth: 280,
+        maxWidth: 480,
+        direction: -1,
+        cssVariable: "--width",
+        onResizeEnd,
+      }),
     );
     const { handle } = resizeHandle();
     startResize(result.current.onResizeStart, handle);
@@ -108,7 +144,14 @@ describe("useResizablePanel", () => {
   it("does not report a click that leaves the width unchanged", () => {
     const onResizeEnd = vi.fn();
     const { result } = renderHook(() =>
-      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1, onResizeEnd }),
+      useResizablePanel({
+        defaultWidth: 280,
+        minWidth: 220,
+        maxWidth: 400,
+        direction: 1,
+        cssVariable: "--width",
+        onResizeEnd,
+      }),
     );
     const { handle } = resizeHandle();
     startResize(result.current.onResizeStart, handle);
@@ -119,7 +162,7 @@ describe("useResizablePanel", () => {
 
   it.each(["pointerup", "pointercancel", "lostpointercapture"])("cleans up after %s", (eventType) => {
     const { result } = renderHook(() =>
-      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 }),
+      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1, cssVariable: "--width" }),
     );
     const capture = resizeHandle();
     startResize(result.current.onResizeStart, capture.handle);
@@ -134,7 +177,7 @@ describe("useResizablePanel", () => {
 
   it("cleans up on window blur", () => {
     const { result } = renderHook(() =>
-      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 }),
+      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1, cssVariable: "--width" }),
     );
     const capture = resizeHandle();
     startResize(result.current.onResizeStart, capture.handle);
@@ -147,7 +190,7 @@ describe("useResizablePanel", () => {
 
   it("cleans up on unmount", () => {
     const { result, unmount } = renderHook(() =>
-      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 }),
+      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1, cssVariable: "--width" }),
     );
     const capture = resizeHandle();
     startResize(result.current.onResizeStart, capture.handle);
@@ -159,7 +202,7 @@ describe("useResizablePanel", () => {
   });
 
   it("cleans up and ignores resize starts when disabled", () => {
-    const options = { defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 as const };
+    const options = { defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 as const, cssVariable: "--width" };
     const { result, rerender } = renderHook(({ enabled }) => useResizablePanel({ ...options, enabled }), {
       initialProps: { enabled: true },
     });

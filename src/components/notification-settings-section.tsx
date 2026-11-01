@@ -76,7 +76,7 @@ export function NotificationSettingsSection({
       <SettingsPanelTitle id="notification-settings-title" scope="device" className="mb-[22px]">
         Notifications
       </SettingsPanelTitle>
-      <div className="animate-tab-forward">
+      <div>
         <SettingsGroup label="Channels">
           <SettingsCard variant="stacked">
             {systemNotifications ? (

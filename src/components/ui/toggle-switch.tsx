@@ -21,8 +21,8 @@ function ToggleSwitch({ checked, label, onChange, disabled = false }: ToggleSwit
     >
       <span
         className={cn(
-          "absolute top-[3px] left-[3px] size-3.5 rounded-full bg-dim transition-[left,background-color] duration-[140ms]",
-          checked && "left-[17px] bg-primary-foreground",
+          "absolute top-[3px] left-[3px] size-3.5 rounded-full bg-dim transition-[translate,background-color] duration-[140ms]",
+          checked && "translate-x-[14px] bg-primary-foreground",
         )}
       />
     </button>

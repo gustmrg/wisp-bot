@@ -106,7 +106,7 @@ export function ToastFrame({ children }: { children: ReactNode }) {
   return createPortal(
     <div
       role="status"
-      className="pointer-events-auto flex w-full items-start gap-2.5 rounded-xl border border-border bg-card p-3.5 text-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2"
+      className="pointer-events-auto flex w-full items-start gap-2.5 rounded-xl border border-border bg-card p-3.5 text-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2 ease-out"
     >
       {children}
     </div>,

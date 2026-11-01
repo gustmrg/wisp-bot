@@ -73,7 +73,6 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
   // The previous report stays visible (dimmed) while the next one loads, so
   // switching periods or refreshing does not collapse the page.
   const [state, setState] = useState<{ report?: UsageReport; error?: string; loading: boolean }>({ loading: true });
-  const [slide, setSlide] = useState<"animate-tab-forward" | "animate-tab-back">("animate-tab-forward");
   const [breakdown, setBreakdown] = useState<Breakdown>("wisp");
   const [modelKey, setModelKey] = useState(ALL_MODELS);
   useEffect(() => {
@@ -96,8 +95,6 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
     };
   }, [request, conversationId, active]);
   const changePeriod = (period: UsagePeriod) => {
-    const order = PERIOD_OPTIONS.map((option) => option.value);
-    setSlide(order.indexOf(period) > order.indexOf(request.period) ? "animate-tab-forward" : "animate-tab-back");
     setRequest({ period });
   };
   const refresh = () => setRequest((value) => ({ ...value }));
@@ -136,9 +133,8 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
         <UsageSkeleton />
       ) : (
         <div
-          key={report.period}
           aria-busy={state.loading || undefined}
-          className={cn("transition-opacity duration-200", slide, state.loading && "opacity-60")}
+          className={cn("transition-opacity duration-200", state.loading && "opacity-60")}
         >
           {report.wisps.length === 0 ? (
             <EmptyUsage

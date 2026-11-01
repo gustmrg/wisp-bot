@@ -5,7 +5,7 @@ import { DETAILS_LAYOUT, SIDEBAR_LAYOUT, detailsLayoutStyle, sidebarLayoutStyle 
 describe("panel layout", () => {
   it("keeps the draggable sidebar dimensions", () => {
     expect(SIDEBAR_LAYOUT).toEqual({
-      resize: { defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 },
+      resize: { defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1, cssVariable: "--sidebar-width" },
     });
   });
 
@@ -15,6 +15,12 @@ describe("panel layout", () => {
       "--details-width": "360px",
       "--details-min-width": "280px",
     });
-    expect(DETAILS_LAYOUT.resize).toEqual({ defaultWidth: 400, minWidth: 280, maxWidth: 480, direction: -1 });
+    expect(DETAILS_LAYOUT.resize).toEqual({
+      defaultWidth: 400,
+      minWidth: 280,
+      maxWidth: 480,
+      direction: -1,
+      cssVariable: "--details-width",
+    });
   });
 });

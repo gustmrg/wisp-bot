@@ -86,7 +86,8 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
     >
       <DialogContent
         mobileFullscreen
-        className="search-dialog mt-[9vh] max-w-[620px] gap-0 self-start overflow-hidden p-0"
+        backdropClassName="data-open:animate-none data-closed:animate-none"
+        className="search-dialog mt-[9vh] max-w-[620px] gap-0 self-start overflow-hidden p-0 data-open:animate-none data-closed:animate-none"
         showCloseButton={false}
       >
         <DialogHeader className="sr-only">

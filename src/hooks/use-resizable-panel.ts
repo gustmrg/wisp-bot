@@ -18,6 +18,7 @@ function useResizablePanel({
   minWidth,
   maxWidth,
   direction,
+  cssVariable,
   enabled = true,
   onResizeEnd,
 }: UseResizablePanelOptions) {
@@ -63,7 +64,8 @@ function useResizablePanel({
         if (pointerEvent.pointerId !== pointerId) return;
         const delta = (pointerEvent.clientX - startX) * direction;
         lastWidth = clampWidth(startWidth + delta, minWidth, maxWidth);
-        setWidth(lastWidth);
+        // Written straight to the panel: a state update here would render the whole app on every move.
+        handle.parentElement?.style.setProperty(cssVariable, `${lastWidth}px`);
       }
 
       function stop(stopEvent: Event) {
@@ -92,7 +94,10 @@ function useResizablePanel({
         }
 
         if (cleanupRef.current === cleanup) cleanupRef.current = () => undefined;
-        if (lastWidth !== startWidth) onResizeEndRef.current?.(lastWidth);
+        if (lastWidth !== startWidth) {
+          setWidth(lastWidth);
+          onResizeEndRef.current?.(lastWidth);
+        }
       }
 
       cleanupRef.current = cleanup;
@@ -103,7 +108,7 @@ function useResizablePanel({
       if (captured) handle.addEventListener("lostpointercapture", stop);
       window.addEventListener("blur", cleanup);
     },
-    [cancelResize, direction, enabled, maxWidth, minWidth, width],
+    [cancelResize, cssVariable, direction, enabled, maxWidth, minWidth, width],
   );
 
   return { onResizeStart, width };

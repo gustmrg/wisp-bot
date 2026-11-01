@@ -1,10 +1,10 @@
-import { createElement, useId, type CSSProperties, type ComponentProps, type ReactNode } from "react";
+import { createElement, useId, useRef, type CSSProperties, type ComponentProps, type ReactNode } from "react";
 
 import { DEFAULT_WISP_APPEARANCE, type WispAppearance } from "../../shared/wisp-appearance";
+import { useWispBlink } from "@/hooks/use-wisp-blink";
 import { cn } from "@/lib/utils";
 import {
   BODY_GEOMETRY,
-  hashSeed,
   NO_TRAIL_OFFSET,
   TRAIL_GEOMETRY,
   luminance,
@@ -132,6 +132,8 @@ function Wisp({
   ...props
 }: WispProps) {
   const id = `wisp-${useId().replace(/[^a-zA-Z0-9-]/g, "")}`;
+  const eyesRef = useRef<SVGGElement>(null);
+  useWispBlink(eyesRef, name);
   const pixels = PIXELS[size];
   const small = pixels < 32;
   const large = pixels >= 48;
@@ -227,7 +229,7 @@ function Wisp({
           )}
           <g transform={`translate(${faceX} ${faceY})`}>
             <g className="wisp-look">
-              <g className="wisp-blink" style={{ animationDelay: `${-(hashSeed(name) % 6000)}ms` }}>
+              <g ref={eyesRef} className="wisp-blink">
                 <WispEyes kind={appearance.eyes} ink={ink} scale={eyeScale} />
               </g>
             </g>
