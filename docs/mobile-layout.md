@@ -137,6 +137,20 @@ draft right away. The layout respects safe areas and follows the visual
 viewport height when the software keyboard opens. It does not focus the
 composer merely because a conversation was opened.
 
+## Touch
+
+These follow what the device can do, not the size of its screen, so a tablet
+in the desktop panels gets them too:
+
+- A tap dims the button under the finger, and lights up a row in a list.
+- Message actions stay visible, since there is no pointer to reveal them.
+- Form fields use 16px text, so the page does not zoom in on focus. Pinch zoom
+  still works.
+- Pulling down does not reload the app.
+- The installed app keeps clear of the notch and the home indicator.
+- The status bar follows the theme in **Settings → General**, even when it
+  differs from the system's.
+
 ## On the desktop
 
 The desktop shares the Wisps' colors, state rings, the chat's light, the

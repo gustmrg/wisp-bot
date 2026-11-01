@@ -828,6 +828,7 @@ export function ChatComposer({
                 hidden={recording}
                 autoFocus={autoFocus}
                 rows={1}
+                enterKeyHint={enterToSend ? "send" : "enter"}
                 className="max-h-[200px] min-h-7 min-w-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-1 text-foreground outline-none leading-5 placeholder:text-dim field-sizing-content"
                 aria-label={`Message ${chatName(chat)}`}
                 placeholder={transcribing ? "Transcribing…" : mobile ? "Message" : `Message ${chatName(chat)}`}
