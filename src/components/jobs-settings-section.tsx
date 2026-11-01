@@ -65,7 +65,7 @@ export function JobsSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wisp
     <section
       id="jobs-settings-panel"
       aria-labelledby="jobs-settings-title"
-      className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
     >
       <SettingsPanelTitle id="jobs-settings-title" scope="environment">
         Jobs
