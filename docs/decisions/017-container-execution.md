@@ -37,7 +37,9 @@ and approving each `npm test` makes development impractical.
   change. Docker or Podman, found on the server; with neither, the mode is
   unavailable and says why.
 - **What it sees:** only the Wisp's workspace, mounted at `/workspace`, the
-  same files its file tools see. The home folder is `/workspace/.home`, so what
+  same files its file tools see. File tools take paths relative to the
+  workspace and also accept `/workspace/...`, which they translate to the same
+  file and confine as usual. The home folder is `/workspace/.home`, so what
   the Wisp installs is kept and counts toward the workspace size. Nothing else
   from the server is mounted: no other Wisp, no config or credential store, no
   container socket. None of the server's environment variables are passed.
