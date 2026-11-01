@@ -211,7 +211,7 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
 
   return (
     <section
-      className="@container overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      className="@container overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
       id="mcp-settings-panel"
       aria-labelledby="mcp-settings-title"
     >

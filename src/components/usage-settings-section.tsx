@@ -42,7 +42,7 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
     <section
       id="usage-settings-panel"
       aria-labelledby="usage-settings-title"
-      className="@container min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      className="@container min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
     >
       <SettingsPanelTitle id="usage-settings-title" scope="environment">
         Token usage

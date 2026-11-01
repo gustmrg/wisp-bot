@@ -203,7 +203,7 @@ export function PluginSettingsSection({
 
   return (
     <section
-      className="@container overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      className="@container overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
       id="plugin-settings-panel"
       aria-labelledby="plugin-settings-title"
     >

@@ -45,7 +45,7 @@ export function SettingsPanelTitle({
   children: ReactNode;
 }) {
   return (
-    <div className={cn("mb-1 flex flex-wrap items-center justify-between gap-x-3", className)}>
+    <div className={cn("mb-1 flex flex-wrap items-center justify-between gap-x-3 pr-9", className)}>
       <h2 id={id} className="m-0 text-lg font-semibold">
         {children}
       </h2>
