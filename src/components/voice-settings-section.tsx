@@ -168,7 +168,7 @@ function VoiceSettingsSection({
         Dictate with the microphone button or {formatShortcut(preferences.shortcuts.voiceInput)}. Recordings go to your
         provider for transcription and are not stored.
       </p>
-      <div>
+      <div className="animate-panel-in">
         <SettingsGroup label="Recording" note={<SettingsScopeNote scope="device" />}>
           <SettingsCard variant="stacked">
             <SettingsRow>

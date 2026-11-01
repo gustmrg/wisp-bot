@@ -566,7 +566,7 @@ function AppSettingsDialog({
           <h2 id="general-settings-title" className="mb-[22px] mt-0 text-lg font-semibold">
             General
           </h2>
-          <div>
+          <div className="animate-panel-in">
             {userProfile.loading ? (
               <p role="status">Loading profile…</p>
             ) : (
@@ -697,7 +697,7 @@ function AppSettingsDialog({
           <h2 id="about-settings-title" className="mb-[22px] mt-0 text-lg font-semibold">
             About
           </h2>
-          <div>
+          <div className="animate-panel-in">
             <p className="m-0 text-xs leading-relaxed text-dim">
               {appMetadata.displayName} is an open-source app for a squad of AI agents, your Wisps, that keep their
               memory, tools, and workspace across conversations. You bring your own model provider keys.

@@ -79,7 +79,7 @@ function ModelSettingsSection({ onOpenProviders }: ModelSettingsSectionProps) {
 
       {!view && !error ? <p className="text-dim text-sm">Loading models…</p> : null}
       {view ? (
-        <div>
+        <div className="animate-panel-in">
           <DefaultModelSettings view={view} onViewChange={setView} />
           <FallbackModelSettings view={view} onViewChange={setView} />
           <AuxiliaryModelSettings view={view} onViewChange={setView} />
