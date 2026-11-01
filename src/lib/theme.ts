@@ -4,6 +4,9 @@ export function normalizeTheme(value: unknown): ThemePreference {
   return value === "light" || value === "dark" ? value : "system";
 }
 
+/** Keep equal to `--background` in styles.css and the theme-color tags in web/index.html. */
+const THEME_COLORS = { light: "#ffffff", dark: "#0a0a0a" } as const;
+
 // Only the last applied preference may follow the system theme.
 let stopFollowingSystem = (): void => undefined;
 
@@ -15,6 +18,10 @@ export function applyTheme(preference: ThemePreference): () => void {
     const dark = preference === "dark" || (preference === "system" && systemTheme.matches);
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
     document.documentElement.classList.toggle("dark", dark);
+    // The tags choose by the system theme, which a preference may contradict, so both take the app's color.
+    for (const tag of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+      tag.content = dark ? THEME_COLORS.dark : THEME_COLORS.light;
+    }
   }
 
   updateTheme();

@@ -67,7 +67,10 @@ export function ManualSignInForm({
           value={redirectUrl}
           disabled={finishing}
           placeholder="http://127.0.0.1:…/callback?code=…"
+          inputMode="url"
+          autoCapitalize="none"
           autoComplete="off"
+          autoCorrect="off"
           spellCheck={false}
           onChange={(event) => {
             setRedirectUrl(event.target.value);

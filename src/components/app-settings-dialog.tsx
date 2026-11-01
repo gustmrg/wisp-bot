@@ -443,7 +443,7 @@ function AppSettingsDialog({
       <DialogContent
         mobileFullscreen
         showCloseButton={!mobile}
-        className="app-settings-dialog grid h-[min(760px,calc(100vh-64px))] w-[min(1080px,calc(100vw-32px))] max-w-[1080px] grid-cols-[190px_1fr] lg:grid-cols-[220px_1fr] gap-0 overflow-hidden p-0"
+        className="app-settings-dialog grid h-[min(760px,calc(100dvh-64px))] w-[min(1080px,calc(100vw-32px))] max-w-[1080px] grid-cols-[190px_1fr] lg:grid-cols-[220px_1fr] gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Wisp settings</DialogTitle>

@@ -46,6 +46,27 @@ describe("applyTheme", () => {
     expect(document.documentElement).toHaveClass("dark");
     expect(document.documentElement.style.colorScheme).toBe("dark");
   });
+
+  it("gives the status bar the app's theme even when the system's differs", () => {
+    const system = systemTheme(true);
+    const tags = ["(prefers-color-scheme: light)", "(prefers-color-scheme: dark)"].map((media) => {
+      const tag = document.createElement("meta");
+      tag.name = "theme-color";
+      tag.media = media;
+      document.head.append(tag);
+      return tag;
+    });
+    try {
+      applyTheme("light");
+      expect(tags.map((tag) => tag.content)).toEqual(["#ffffff", "#ffffff"]);
+      applyTheme("system");
+      expect(tags.map((tag) => tag.content)).toEqual(["#0a0a0a", "#0a0a0a"]);
+      system.set(false);
+      expect(tags.map((tag) => tag.content)).toEqual(["#ffffff", "#ffffff"]);
+    } finally {
+      for (const tag of tags) tag.remove();
+    }
+  });
 });
 
 describe("applyWispColors", () => {

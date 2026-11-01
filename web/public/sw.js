@@ -8,7 +8,9 @@ const VERSION = "dev";
 const ASSETS = [];
 
 const CACHE = `wisp-shell-${VERSION}`;
-const SHELL = ["/", "/manifest.webmanifest", "/favicon.svg", "/icons/icon-256.png", "/icons/icon-512.png", ...ASSETS];
+// The splash shows the touch icon, so it must not depend on the network either.
+const ICONS = ["/apple-touch-icon.png", "/favicon.svg", "/icons/icon-256.png", "/icons/icon-512.png"];
+const SHELL = ["/", "/manifest.webmanifest", ...ICONS, ...ASSETS];
 // How long opening the app waits for the server before it uses the cached shell.
 const NAVIGATION_TIMEOUT_MS = 4_000;
 // With no cached shell, how long it waits before saying the server is not answering.
@@ -53,8 +55,8 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(openApp(network));
     return;
   }
-  if (url.pathname.startsWith("/assets/")) {
-    // Built assets are named by their content, so a cached copy is always right.
+  if (url.pathname.startsWith("/assets/") || ICONS.includes(url.pathname)) {
+    // Built assets are named by their content, and each release installs its icons again.
     event.respondWith(
       caches.match(request).then(
         (cached) =>
@@ -101,7 +103,7 @@ function unreachablePage() {
 <style>
   html { background: #ffffff; color: #202020; }
   @media (prefers-color-scheme: dark) { html { background: #0a0a0a; color: #ededed; } }
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; font: 15px/1.4 system-ui, -apple-system, sans-serif; text-align: center; }
+  body { margin: 0; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; font: 15px/1.4 system-ui, -apple-system, sans-serif; text-align: center; }
   main { max-width: 22rem; }
   h1 { font-size: 18px; margin: 0 0 8px; }
   p { margin: 0 0 16px; opacity: 0.75; }

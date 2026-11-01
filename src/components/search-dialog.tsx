@@ -105,6 +105,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
             className="min-w-0 flex-1 border-0 bg-transparent text-foreground outline-none"
             autoFocus
             aria-label="Search"
+            enterKeyHint="search"
             placeholder="Search Wisps, circles, and messages"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}

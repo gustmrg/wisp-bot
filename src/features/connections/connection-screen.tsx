@@ -323,6 +323,10 @@ export function ConnectionScreen({
           aria-label="Pairing code"
           className="w-44 font-mono uppercase"
           placeholder="ABCDE-FGHJK"
+          autoCapitalize="characters"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           value={code}
           onChange={(event) => setCode(event.target.value)}
         />

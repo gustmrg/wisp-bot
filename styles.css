@@ -209,6 +209,13 @@
   }
   html {
     font-family: var(--font-sans);
+    /* Pinch zoom stays; only double-tap zoom goes, and with it the wait after each tap. */
+    touch-action: manipulation;
+  }
+  /* The app scrolls inside its own panels, so a pull at the top must not reload it. */
+  html,
+  body {
+    overscroll-behavior: none;
   }
   body {
     margin: 0;
@@ -226,6 +233,10 @@
   }
   button {
     color: inherit;
+    /* A long press on a control opens its menu, and never selects its label. */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
