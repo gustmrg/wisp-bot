@@ -133,8 +133,9 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
         <UsageSkeleton />
       ) : (
         <div
+          key={report.period}
           aria-busy={state.loading || undefined}
-          className={cn("transition-opacity duration-200", state.loading && "opacity-60")}
+          className={cn("animate-panel-in transition-opacity duration-200", state.loading && "opacity-60")}
         >
           {report.wisps.length === 0 ? (
             <EmptyUsage

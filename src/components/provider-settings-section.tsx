@@ -153,7 +153,7 @@ function ProviderSettingsSection() {
       {!view && !error ? <p className="text-dim text-sm">Loading providers…</p> : null}
       {!view && error ? <p className="text-sm text-destructive">{error}</p> : null}
       {view ? (
-        <div>
+        <div className="animate-panel-in">
           {!view.secureStorageAvailable ? (
             <p role="alert" className="mb-3 text-xs leading-relaxed text-destructive">
               Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
