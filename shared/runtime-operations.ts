@@ -91,6 +91,8 @@ export const RUNTIME_OPERATIONS = [
   "getWispExecution",
   "saveWispExecution",
   "getWispSetup",
+  "getCircleExecution",
+  "saveCircleExecution",
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",

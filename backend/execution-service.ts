@@ -13,9 +13,11 @@ import {
   isGitToken,
   isGitUpstream,
   MAX_COMMAND_DESCRIPTION_LENGTH,
+  type CircleExecutionView,
   type CommandResultDetails,
   type ContainerRuntimeStatus,
   type ExecutionMode,
+  type SaveCircleExecutionRequest,
   type SaveWispExecutionRequest,
   type WispExecutionView,
 } from "../shared/execution.js";
@@ -24,6 +26,7 @@ import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ContainerCli } from "./container-cli.js";
 import {
+  circleContainerKey,
   MAX_BACKGROUND_PROCESSES,
   SANDBOX_IMAGE,
   type ContainerManager,
@@ -45,10 +48,17 @@ export const RUN_COMMAND_TOOL = "run_command";
 export const PROCESS_TOOL = "process";
 /** File inside a Wisp's config directory that holds where its commands run. */
 export const EXECUTION_SETTINGS_FILE = "execution-settings.json";
+/** File inside a circle's config directory, out of its members' reach, that says whether they may run commands. */
+export const CIRCLE_EXECUTION_FILE = "circle-execution.json";
 
-function runCommandDescription(localNetwork: boolean): string {
+function runCommandDescription(localNetwork: boolean, shared: boolean): string {
   return [
     ...RUN_COMMAND_DESCRIPTION,
+    ...(shared
+      ? [
+          "This workspace is the circle's: other members who run commands see the same files, each from a container of its own, so they cannot reach this container's processes.",
+        ]
+      : []),
     localNetwork
       ? "The internet and the local network are reachable."
       : "The internet is reachable through an HTTP proxy that tools find in HTTP_PROXY and HTTPS_PROXY (curl, git over HTTPS, npm, pip). Local and private network addresses are blocked, and connections that do not use the proxy, such as git over SSH, cannot leave the container.",
@@ -95,16 +105,39 @@ export interface ExecutionWisp {
   configDirectory: string;
 }
 
+/** A circle as commands need it: its workspace, the folder keeping its settings, and who is in it (ADR 041). */
+export interface CircleExecutionTarget {
+  conversationId: string;
+  storageId: string;
+  workspaceDirectory: string;
+  settingsDirectory: string;
+  members: ReadonlyArray<{ wispId: string; storageId: string }>;
+}
+
+/** Whose commands run, and where: the Wisp's settings and git access, in this workspace. */
+interface ExecutionTarget {
+  wispId: string;
+  containerKey: string;
+  workspaceDirectory: string;
+  /** Keeps the workspace's size. */
+  settingsDirectory: string;
+  /** Set in a circle: the settings that say whether its members may run commands, and this member. */
+  circle?: { settingsDirectory: string; memberStorageId: string };
+}
+
 export interface ExecutionServiceOptions {
   dataDirectory: string;
   /** A Wisp's own conversation; throws for circles and unknown conversations. */
   resolveWisp: (conversationId: string) => ExecutionWisp;
   listWispStorageIds: () => ReadonlySet<string>;
+  /** A circle; throws for anything else. Unset, no circle runs commands. */
+  resolveCircle?: (conversationId: string) => CircleExecutionTarget;
+  listCircles?: () => ReadonlyArray<CircleExecutionTarget>;
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   manager: ContainerManager;
   runtime: { status(): Promise<ContainerRuntimeStatus>; cli(): Promise<ContainerCli | null> };
   /** The forges git can use through the gateway, with the tokens of the plugins the Wisp has access to. */
-  gitForges?: (conversationId: string) => Promise<GitForges>;
+  gitForges?: (wispId: string) => Promise<GitForges>;
   /** Closes a Wisp's browser, when it is turned off. */
   browser?: { close(storageId: string): Promise<void> };
   /** Free space on the disk holding a folder; defaults to asking the operating system. */
@@ -164,23 +197,98 @@ export class ExecutionService implements IntegrationToolSource {
       );
     }
     // Containers from the old settings must not keep running, the browser's included: each is created again when next used.
-    if (containerChanged) await this.options.manager.remove(wisp.storageId);
-    else if (previous.browser && !next.browser) await this.options.browser?.close(wisp.storageId);
+    if (containerChanged) {
+      await this.options.manager.remove(wisp.storageId);
+      for (const circle of this.options.listCircles?.() ?? []) {
+        if (!circle.members.some(({ storageId }) => storageId === wisp.storageId)) continue;
+        await this.options.manager.remove(circleContainerKey(circle.storageId, wisp.storageId));
+      }
+    } else if (previous.browser && !next.browser) await this.options.browser?.close(wisp.storageId);
     return this.getView(request.conversationId);
   }
 
+  async getCircleView(conversationId: string): Promise<CircleExecutionView> {
+    const circle = this.requireCircle(conversationId);
+    const [commands, runtime, memberIdsWithCommands] = await Promise.all([
+      readCircleCommands(circle.settingsDirectory),
+      this.options.runtime.status(),
+      this.membersWithCommands(circle),
+    ]);
+    return { commands, memberIdsWithCommands, runtime };
+  }
+
+  /** Lets a circle's members run commands, or takes that back, with the containers they have there. */
+  async saveCircle(request: SaveCircleExecutionRequest): Promise<CircleExecutionView> {
+    const circle = this.requireCircle(request.conversationId);
+    await writeFileAtomically(
+      path.join(circle.settingsDirectory, CIRCLE_EXECUTION_FILE),
+      `${JSON.stringify({ commands: request.commands }, null, 2)}\n`,
+    );
+    if (!request.commands) await this.reconcile();
+    return this.getCircleView(request.conversationId);
+  }
+
+  private requireCircle(conversationId: string): CircleExecutionTarget {
+    if (!this.options.resolveCircle) throw invalid();
+    return this.options.resolveCircle(conversationId);
+  }
+
+  private async membersWithCommands(circle: CircleExecutionTarget): Promise<string[]> {
+    const members = await Promise.all(
+      circle.members.map(async ({ wispId }) => {
+        try {
+          const { configDirectory } = this.options.resolveWisp(wispId);
+          return (await readExecutionSettings(configDirectory)).mode === "container" ? [wispId] : [];
+        } catch {
+          return [];
+        }
+      }),
+    );
+    return members.flat();
+  }
+
   /**
-   * Commands run only in a Wisp's own conversation: its container mounts its
-   * own workspace, not a circle's (ADR 011).
+   * Where a Wisp's commands run in a conversation: its own workspace, or a
+   * circle's when the circle allows them; null when they do not run there. A
+   * Wisp's own container serves only its own conversation, so a circle's
+   * member has another, which never sees the Wisp's own workspace (ADR 041).
    */
-  async getSnapshot({ conversationId, wispId }: AgentScope): Promise<IntegrationToolSnapshot> {
-    if (conversationId !== wispId) return emptySnapshot();
+  private async targetOf({ conversationId, wispId }: AgentScope, wisp: ExecutionWisp): Promise<ExecutionTarget | null> {
+    if (conversationId === wispId) {
+      return {
+        wispId,
+        containerKey: wisp.storageId,
+        workspaceDirectory: wisp.workspaceDirectory,
+        settingsDirectory: wisp.configDirectory,
+      };
+    }
+    let circle: CircleExecutionTarget;
+    try {
+      circle = this.requireCircle(conversationId);
+    } catch {
+      return null;
+    }
+    if (!circle.members.some((member) => member.wispId === wispId)) return null;
+    if (!(await readCircleCommands(circle.settingsDirectory))) return null;
+    return {
+      wispId,
+      containerKey: circleContainerKey(circle.storageId, wisp.storageId),
+      workspaceDirectory: circle.workspaceDirectory,
+      settingsDirectory: circle.settingsDirectory,
+      circle: { settingsDirectory: circle.settingsDirectory, memberStorageId: wisp.storageId },
+    };
+  }
+
+  async getSnapshot(scope: AgentScope): Promise<IntegrationToolSnapshot> {
+    const { conversationId, wispId } = scope;
     let wisp: ExecutionWisp;
     try {
-      wisp = this.options.resolveWisp(conversationId);
+      wisp = this.options.resolveWisp(wispId);
     } catch {
       return emptySnapshot();
     }
+    const target = await this.targetOf(scope, wisp);
+    if (!target) return emptySnapshot();
     // Unreadable settings leave commands off rather than preventing the Wisp from starting.
     const settings = await readExecutionSettings(wisp.configDirectory).catch(() => DEFAULT_SETTINGS);
     if (settings.mode !== "container") return emptySnapshot();
@@ -188,8 +296,8 @@ export class ExecutionService implements IntegrationToolSource {
     if (!runtime.available) return emptySnapshot();
     return {
       definitions: [
-        await this.createRunCommandTool(conversationId, wisp, settings),
-        this.createProcessTool(conversationId, wisp, settings),
+        await this.createRunCommandTool(conversationId, target, settings),
+        this.createProcessTool(conversationId, target, settings),
       ],
       metadata: [],
       activeNames: [RUN_COMMAND_TOOL, PROCESS_TOOL],
@@ -202,14 +310,19 @@ export class ExecutionService implements IntegrationToolSource {
     };
   }
 
-  /** Removes containers whose Wisp was deleted. */
+  /** Removes containers whose Wisp was deleted, or whose member left a circle or may no longer run commands there. */
   async reconcile(): Promise<void> {
-    await this.options.manager.reconcile(this.options.listWispStorageIds());
+    const keys = new Set(this.options.listWispStorageIds());
+    for (const circle of this.options.listCircles?.() ?? []) {
+      if (!(await readCircleCommands(circle.settingsDirectory))) continue;
+      for (const { storageId } of circle.members) keys.add(circleContainerKey(circle.storageId, storageId));
+    }
+    await this.options.manager.reconcile(keys);
   }
 
   /** The plugins' tokens, which the git gateway adds for this Wisp; a forge without a usable token is left out. */
-  private async gitForges(conversationId: string): Promise<GitForges> {
-    const forges = await this.options.gitForges?.(conversationId).catch(() => undefined);
+  private async gitForges(wispId: string): Promise<GitForges> {
+    const forges = await this.options.gitForges?.(wispId).catch(() => undefined);
     const { github, gitlab } = forges ?? {};
     return {
       ...(github && isGitToken(github.token) ? { github: { token: github.token } } : {}),
@@ -221,31 +334,38 @@ export class ExecutionService implements IntegrationToolSource {
 
   private async createRunCommandTool(
     conversationId: string,
-    wisp: ExecutionWisp,
+    target: ExecutionTarget,
     settings: ExecutionSettings,
   ): Promise<ToolDefinition> {
     const { createBashToolDefinition } = await import("@earendil-works/pi-coding-agent");
     const operations: BashOperations = {
       // The environment Pi offers is the server's own; none of it is passed to the container.
       exec: async (command, cwd, { onData, signal, timeout }) =>
-        this.options.manager.exec(containerSpec(wisp, settings), command, containerPath(wisp.workspaceDirectory, cwd), {
-          onData,
-          ...(signal ? { signal } : {}),
-          ...(timeout === undefined ? {} : { timeout }),
-          git: await this.gitForges(conversationId),
-        }),
+        this.options.manager.exec(
+          containerSpec(target, settings),
+          command,
+          containerPath(target.workspaceDirectory, cwd),
+          {
+            onData,
+            ...(signal ? { signal } : {}),
+            ...(timeout === undefined ? {} : { timeout }),
+            git: await this.gitForges(target.wispId),
+          },
+        ),
     };
-    const base = createBashToolDefinition(wisp.workspaceDirectory, { operations, exposeSessionEnvironment: false });
+    const base = createBashToolDefinition(target.workspaceDirectory, { operations, exposeSessionEnvironment: false });
     const execute: typeof base.execute = async (toolCallId, params, signal, onUpdate, ctx) => {
       assertAllowedCommand(params.command);
+      await assertCircleAllows(target);
       await this.authorize(
         conversationId,
+        target.wispId,
         toolCallId,
         RUN_COMMAND_TOOL,
         "Run a command in the Wisp's container",
         signal,
       );
-      await assertRoomToRun(wisp, this.options.freeDiskBytes);
+      await assertRoomToRun(target, this.options.freeDiskBytes);
       const startedAt = performance.now();
       const result = await base.execute(toolCallId, params, signal, onUpdate, ctx);
       const exitCode = (result.structuredContent as { exit_code?: unknown } | undefined)?.exit_code;
@@ -268,7 +388,7 @@ export class ExecutionService implements IntegrationToolSource {
       ...base,
       name: RUN_COMMAND_TOOL,
       label: "Run command",
-      description: runCommandDescription(settings.localNetwork),
+      description: runCommandDescription(settings.localNetwork, Boolean(target.circle)),
       parameters,
       promptSnippet: "Run bash commands in this Wisp's Linux container",
       promptGuidelines: undefined,
@@ -278,6 +398,7 @@ export class ExecutionService implements IntegrationToolSource {
 
   private authorize(
     conversationId: string,
+    wispId: string,
     toolCallId: string,
     toolName: string,
     summary: string,
@@ -285,9 +406,8 @@ export class ExecutionService implements IntegrationToolSource {
   ): Promise<void> {
     return this.options.authorizationBroker.authorize(
       {
-        // Commands run only in the Wisp's own conversation, which shares its ID.
         conversationId,
-        wispId: conversationId,
+        wispId,
         toolCallId,
         toolName,
         category: "container_command",
@@ -298,10 +418,14 @@ export class ExecutionService implements IntegrationToolSource {
     );
   }
 
-  private createProcessTool(conversationId: string, wisp: ExecutionWisp, settings: ExecutionSettings): ToolDefinition {
-    const spec = containerSpec(wisp, settings);
+  private createProcessTool(
+    conversationId: string,
+    target: ExecutionTarget,
+    settings: ExecutionSettings,
+  ): ToolDefinition {
+    const spec = containerSpec(target, settings);
     const run = async (action: ProcessAction, args: ReadonlyArray<string>, signal: AbortSignal | undefined) => {
-      const git = action === "start" ? await this.gitForges(conversationId) : undefined;
+      const git = action === "start" ? await this.gitForges(target.wispId) : undefined;
       return this.options.manager.processScript(spec, action, args, {
         ...(signal ? { signal } : {}),
         ...(git ? { git } : {}),
@@ -314,10 +438,18 @@ export class ExecutionService implements IntegrationToolSource {
       parameters: PROCESS_PARAMETERS,
       execute: async (toolCallId, params, signal) => {
         const request = parseProcessParams(params);
-        await this.authorize(conversationId, toolCallId, PROCESS_TOOL, PROCESS_SUMMARIES[request.action], signal);
+        await assertCircleAllows(target);
+        await this.authorize(
+          conversationId,
+          target.wispId,
+          toolCallId,
+          PROCESS_TOOL,
+          PROCESS_SUMMARIES[request.action],
+          signal,
+        );
         return {
           content: [
-            { type: "text", text: await processResult(request, run, signal, wisp, this.options.freeDiskBytes) },
+            { type: "text", text: await processResult(request, run, signal, target, this.options.freeDiskBytes) },
           ],
           details: {},
         };
@@ -412,13 +544,13 @@ async function processResult(
   request: ProcessRequest,
   run: ProcessRunner,
   signal: AbortSignal | undefined,
-  wisp: ExecutionWisp,
+  target: ExecutionTarget,
   measureFreeDisk: ((directory: string) => Promise<number>) | undefined,
 ): Promise<string> {
   const unknown = (id: string) => `There is no process ${id}. Use action=list to see the processes.`;
   switch (request.action) {
     case "start": {
-      await assertRoomToRun(wisp, measureFreeDisk);
+      await assertRoomToRun(target, measureFreeDisk);
       const id = randomUUID().replace(/-/g, "").slice(0, 8);
       const result = (await run("start", [id, request.command, String(MAX_BACKGROUND_PROCESSES)], signal))!;
       if (result.exitCode === 3) {
@@ -473,12 +605,20 @@ function assertAllowedCommand(command: string): void {
   if (refused) throw new Error(`This command was not run because it ${refused.reason}.`);
 }
 
-function containerSpec(wisp: ExecutionWisp, settings: ExecutionSettings): ContainerSpec {
+/** A turn holds its tools until it ends, so a circle's choice is read again for each call. */
+async function assertCircleAllows(target: ExecutionTarget): Promise<void> {
+  if (target.circle && !(await readCircleCommands(target.circle.settingsDirectory))) {
+    throw new Error("Commands were turned off in this circle.");
+  }
+}
+
+function containerSpec(target: ExecutionTarget, settings: ExecutionSettings): ContainerSpec {
   return {
-    storageId: wisp.storageId,
+    storageId: target.containerKey,
     image: settings.image ?? SANDBOX_IMAGE,
-    workspaceDirectory: wisp.workspaceDirectory,
+    workspaceDirectory: target.workspaceDirectory,
     localNetwork: settings.localNetwork,
+    ...(target.circle ? { circleMember: target.circle.memberStorageId } : {}),
   };
 }
 
@@ -488,19 +628,19 @@ function containerSpec(wisp: ExecutionWisp, settings: ExecutionSettings): Contai
  * stopped from writing past either mid-command, so this is checked between commands.
  */
 async function assertRoomToRun(
-  wisp: ExecutionWisp,
+  target: ExecutionTarget,
   measureFreeDisk: (directory: string) => Promise<number> = freeDiskBytes,
 ): Promise<void> {
-  const quota = await readWorkspaceQuota(wisp.configDirectory);
+  const quota = await readWorkspaceQuota(target.settingsDirectory);
   if (quota === null) {
-    await assertDiskReserve(wisp.workspaceDirectory, 0, "before running more commands", measureFreeDisk);
+    await assertDiskReserve(target.workspaceDirectory, 0, "before running more commands", measureFreeDisk);
     return;
   }
-  const tree = await measureTree(wisp.workspaceDirectory);
+  const tree = await measureTree(target.workspaceDirectory);
   if (tree.bytes >= quota) {
     throw new WispBackendError(
       "invalid_request",
-      `This Wisp's workspace is full (${formatBytes(tree.bytes)} of ${formatBytes(quota)} used). Free some space or give the workspace a larger size before running more commands.`,
+      `This workspace is full (${formatBytes(tree.bytes)} of ${formatBytes(quota)} used). Free some space or give the workspace a larger size before running more commands.`,
     );
   }
 }
@@ -542,6 +682,18 @@ export async function readExecutionSettings(configDirectory: string): Promise<Ex
     // Falls through: a damaged file is reported like an unreadable one.
   }
   throw new WispBackendError("internal_error", "The command settings could not be read.", true);
+}
+
+/** Whether a circle lets its members run commands; off until the person says so, and whenever it cannot be read. */
+async function readCircleCommands(settingsDirectory: string): Promise<boolean> {
+  try {
+    const { commands } = JSON.parse(await readFile(path.join(settingsDirectory, CIRCLE_EXECUTION_FILE), "utf8")) as {
+      commands?: unknown;
+    };
+    return commands === true;
+  } catch {
+    return false;
+  }
 }
 
 function emptySnapshot(): IntegrationToolSnapshot {

@@ -35,6 +35,36 @@ function newWisp(id: string): Wisp {
   return { id, name: id, role: "Test", soul: "Test", appearance: DEFAULT_WISP_APPEARANCE };
 }
 
+describe("ConversationService with a circle's members", () => {
+  it("says when members left, so their containers there can go, and only then", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-left-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const members: ConversationAgentFactory = {
+      create: (context) => new FakeConversationAgent(context.conversationId, { responseFor: () => "Hi" }),
+    };
+    let service!: ConversationService;
+    const registry = new AgentRegistry(
+      new CircleAgentFactory(members, {
+        readTranscript: (conversationId) => service.getMessagePage({ conversationId, page: "latest" }),
+      }),
+      (event) => service.handleAgentEvent(event),
+    );
+    const onCircleMembersLeft = vi.fn();
+    service = new ConversationService(repository, registry, () => [], { onCircleMembersLeft });
+    await service.start({ providerId: "test", modelId: "test" });
+    await seedConversations(repository, { atlas: chat("atlas"), nova: chat("nova") }).then(() => service.initialize());
+    await service.create({ ...(chat("crew", true) as CircleChat), memberIds: ["atlas", "nova"] });
+
+    await service.update("crew", { kind: "circle", responder: "auto" });
+    await service.update("crew", { kind: "circle", memberIds: ["nova", "atlas"] });
+    expect(onCircleMembersLeft).not.toHaveBeenCalled();
+
+    await service.update("crew", { kind: "circle", memberIds: ["nova"] });
+    expect(onCircleMembersLeft).toHaveBeenCalledTimes(1);
+    await service.dispose();
+  });
+});
+
 describe("ConversationService with a decision model", () => {
   it("stores that the chosen member's reply was chosen, and tells the circle when the choice changes", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-chosen-"));

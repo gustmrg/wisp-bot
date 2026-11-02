@@ -12,7 +12,12 @@ import type {
 } from "../backend/container-cli.js";
 import { ContainerRuntimeDetector } from "../backend/container-cli.js";
 import { BROWSER_DOCKERFILE, BROWSER_DRIVER_SCRIPT, BROWSER_IMAGE } from "../backend/browser-driver.js";
-import { ContainerManager, SANDBOX_DOCKERFILE, SANDBOX_IMAGE } from "../backend/container-manager.js";
+import {
+  circleContainerKey,
+  ContainerManager,
+  SANDBOX_DOCKERFILE,
+  SANDBOX_IMAGE,
+} from "../backend/container-manager.js";
 import { EGRESS_PROXY_SCRIPT, type GitForges } from "../backend/egress-proxy.js";
 
 const directories: string[] = [];
@@ -401,6 +406,115 @@ describe("ContainerManager", () => {
 
     await vi.waitFor(() => expect(cli.calls.some(({ args }) => args[0] === "stop" && args.includes(name))).toBe(true));
     expect(await manager.state("s1")).toBe("stopped");
+  });
+
+  describe("a circle's member", () => {
+    const key = circleContainerKey("c1", "s1");
+
+    async function circleSetup(idleMs?: number) {
+      const context = await setup(idleMs === undefined ? {} : { idleMs });
+      const spec = { ...context.spec, storageId: key, circleMember: "s1" };
+      const run = async () => {
+        const started = context.cli.streams.length;
+        const running = context.manager.exec(spec, "true", "/workspace", { onData: () => undefined });
+        await vi.waitFor(() => expect(context.cli.streams.length).toBeGreaterThan(started));
+        await finishNext(context.cli);
+        await running;
+      };
+      return {
+        ...context,
+        spec,
+        run,
+        name: context.manager.containerName(key),
+        network: context.manager.networkName(key),
+      };
+    }
+
+    it("has its own home folder in the shared workspace, and shares the package cache", async () => {
+      const { cli, run, spec } = await circleSetup();
+      await run();
+
+      const created = cli.calls.find(({ args }) => args[0] === "run" && args.includes("sleep"))!.args;
+      expect(created).toContain("HOME=/workspace/.home/s1");
+      expect(created).toContain("NPM_CONFIG_PREFIX=/workspace/.home/s1/.npm-global");
+      expect(created).toContain("XDG_CACHE_HOME=/workspace/.cache");
+      expect(created).toContain("NPM_CONFIG_CACHE=/workspace/.cache/npm");
+      expect(created.find((arg) => arg.startsWith("PATH="))).toContain("/workspace/.home/s1/.local/bin");
+      expect(created).toContain(`type=bind,source=${spec.workspaceDirectory},target=/workspace`);
+      await expect(stat(path.join(spec.workspaceDirectory, ".home", "s1"))).resolves.toMatchObject({});
+    });
+
+    it("keeps a Wisp's own container as it was, without a cache of the circle's", async () => {
+      const { cli, manager, spec } = await setup();
+      const running = manager.exec(spec, "true", "/workspace", { onData: () => undefined });
+      await finishNext(cli);
+      await running;
+
+      const created = cli.calls.find(({ args }) => args[0] === "run" && args.includes("sleep"))!.args;
+      expect(created).toContain("HOME=/workspace/.home");
+      expect(created.some((arg) => arg.startsWith("XDG_CACHE_HOME="))).toBe(false);
+    });
+
+    it("loses its container and network when idle, rather than stopping", async () => {
+      const { cli, run, manager, name, network } = await circleSetup(30);
+      await run();
+      expect(cli.networks.has(network)).toBe(true);
+
+      await vi.waitFor(() => expect(cli.networks.has(network)).toBe(false));
+
+      expect(cli.calls.some(({ args }) => args[0] === "stop" && args.includes(name))).toBe(false);
+      await expect(manager.state(key)).resolves.toBe("absent");
+    });
+
+    it("gets a new container and network on the next command", async () => {
+      const { cli, run, name, network } = await circleSetup(30);
+      await run();
+      await vi.waitFor(() => expect(cli.networks.has(network)).toBe(false));
+
+      await run();
+
+      expect(cli.networks.has(network)).toBe(true);
+      expect(cli.containers.get(name)?.running).toBe(true);
+    });
+
+    it("keeps what is running through a reconcile, and removes what a stopped server left behind", async () => {
+      const { cli, run, manager, name, network } = await circleSetup();
+      await run();
+
+      await manager.reconcile(new Set(["s1", key]));
+      expect(cli.containers.get(name)?.running).toBe(true);
+      expect(cli.networks.has(network)).toBe(true);
+
+      cli.containers.get(name)!.running = false;
+      await manager.reconcile(new Set(["s1", key]));
+      expect(cli.containers.has(name)).toBe(false);
+      expect(cli.networks.has(network)).toBe(false);
+    });
+
+    it("removes the container and network of a member who may no longer run commands there", async () => {
+      const { cli, run, manager, name, network } = await circleSetup();
+      await run();
+
+      await manager.reconcile(new Set(["s1"]));
+
+      expect(cli.containers.has(name)).toBe(false);
+      expect(cli.networks.has(network)).toBe(false);
+    });
+
+    it("leaves everything alone when the container program cannot list what is running", async () => {
+      const { cli, run, manager, name, network } = await circleSetup();
+      await run();
+      const original = cli.run.bind(cli);
+      cli.run = (async (args: ReadonlyArray<string>, options?: { input?: string }) =>
+        args[0] === "ps"
+          ? { exitCode: 1, stdout: "", stderr: "daemon busy" }
+          : original(args, options)) as typeof cli.run;
+
+      await manager.reconcile(new Set(["s1", key]));
+
+      expect(cli.containers.has(name)).toBe(true);
+      expect(cli.networks.has(network)).toBe(true);
+    });
   });
 
   it("explains a container that cannot be created", async () => {
