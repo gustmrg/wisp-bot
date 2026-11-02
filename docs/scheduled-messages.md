@@ -12,6 +12,9 @@ Some runtimes can read a message during the running turn: it is then marked
 next step instead of after it finishes. A follow-up still waiting when the
 turn ends is sent like any other message.
 
+In a [circle](circles.md#who-answers), a message waits only for the Wisp it goes
+to, so it can pass a message that waits for a busy Wisp.
+
 ## Scheduled messages
 
 A scheduled message is your own message, sent to a Wisp later as if you typed

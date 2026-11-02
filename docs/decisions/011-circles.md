@@ -87,6 +87,10 @@ longest name wins when names share a prefix.
 
 ### 2. Turn order
 
+> Superseded in part by [ADR 042](042-wisps-working-at-the-same-time.md):
+> this still holds within one of the person's messages, but different members
+> can now work at the same time.
+
 **One Wisp at a time.** Each reply finishes before the next Wisp starts, and
 each Wisp sees the replies before its own. Turns in a circle never run in
 parallel, which also keeps two Wisps from editing the shared workspace at

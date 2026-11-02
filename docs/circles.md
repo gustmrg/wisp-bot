@@ -42,20 +42,29 @@ A circle with one member offers only what fits one Wisp.
   it is not sure, takes over 3 seconds, or fails, the lead answers, so a
   message is never lost or held up by it. Mentions and handoffs never go through
   the model.
-- Wisps answer one at a time. Each reply finishes before the next Wisp
-  starts, and each Wisp sees the replies before its own, labeled with their
-  authors. Every reply shows its author's avatar and name, in its color, and
-  the activity line names the Wisp working.
+- The Wisps a message goes to answer it one after another. Each reply finishes
+  before the next Wisp starts, and each Wisp sees the replies before its own,
+  labeled with their authors. Every reply shows its author's avatar and name,
+  in its color, and the activity line names the Wisps working.
+- Different Wisps can work at the same time
+  ([ADR 042](decisions/042-wisps-working-at-the-same-time.md)). While one works,
+  a message to another that is free is answered right away, and a Wisp that
+  hands its task over is free for the next message. Each Wisp answers one
+  message at a time, so a message to a busy Wisp waits above the composer, and
+  a message that mentions no one waits for the lead. When a
+  [decision model](models.md#decision-model) chooses, it chooses among the
+  Wisps that are free, and one free Wisp simply answers, marked **Chosen
+  automatically**. A Wisp that finishes says so in its own reply.
 - A Wisp can hand the task to another member by mentioning it in its reply.
   Wisps are told to do this only when the task is another member's role and
   they cannot do it well themselves.
   One message from you allows at most three handoffs; then the circle waits
   for you. A Wisp cannot hand off to itself or to a Wisp outside the circle,
   and a Wisp whose turn already failed for your message is skipped.
-- **Stop** stops the current turn and drops the remaining ones. A message
-  sent while the circle works waits for the round to end, and queued and
-  [scheduled messages](scheduled-messages.md) are routed the same way when
-  the circle takes them.
+- **Stop** stops every Wisp working and drops the turns still to come. Messages
+  waiting above the composer are not dropped: they start once their Wisp is
+  free. Queued and [scheduled messages](scheduled-messages.md) are routed the
+  same way when the circle takes them.
 - A member that fails, or has no usable model, gets a failed reply with the
   reason, and the next Wisp still answers.
 
@@ -65,8 +74,9 @@ Each member uses its own plugin and MCP grants and its own permissions, so
 approval cards say which Wisp is asking. Its context policy and memory apply
 as in its own conversation.
 
-The circle has one **shared workspace** that every member reads and writes;
-attached files go to its `inbox/` folder. Its size limit belongs to the
+The circle has one **shared workspace** that every member reads and writes,
+possibly at the same time, so a file can change while a Wisp works; attached
+files go to its `inbox/` folder. Its size limit belongs to the
 circle and is changed in its **Workspace** tab or in **Settings → Storage**.
 Deleting the circle archives that workspace.
 

@@ -509,14 +509,19 @@ export function useConversations(): ConversationsController {
   );
 
   const views = useMemo(() => chatViews(chats, wisps), [chats, wisps]);
-  // In a circle the activity names the member whose turn it is (ADR 011).
+  // In a circle the activity names the members whose turns are running (ADR 042).
   const activity = useMemo(() => {
-    const turns = Object.entries(runtime.turns).filter(([, wispId]) => wispId);
+    const turns = Object.entries(runtime.turns).filter(([, wispIds]) => wispIds?.length);
     if (!turns.length) return runtime.activity;
     const result = { ...runtime.activity };
-    for (const [conversationId, wispId] of turns) {
-      const name = wisps[wispId!]?.name;
+    for (const [conversationId, wispIds] of turns) {
+      const names = wispIds!.flatMap((wispId) => wisps[wispId]?.name ?? []);
+      const [name] = names;
       if (!name) continue;
+      if (names.length > 1) {
+        result[conversationId] = `${names.slice(0, -1).join(", ")} and ${names.at(-1)} are working…`;
+        continue;
+      }
       const label = runtime.activity[conversationId];
       result[conversationId] = label ? `${name} · ${label}` : `${name} is working…`;
     }

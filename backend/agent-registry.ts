@@ -30,7 +30,8 @@ interface AgentEntry {
   pendingApprovals: Set<string>;
   /** A request whose turn went on to answer a follow-up, mapped to that follow-up. */
   followedBy: Map<string, string>;
-  deadline?: { pause(): void; resume(): void; restart(): void };
+  /** The running requests' deadlines; more than one only for an agent that takes requests side by side. */
+  deadlines: Map<string, { pause(): void; resume(): void; restart(): void }>;
   disposed: boolean;
   override: ModelSelection | null;
   effective: ModelSelection | null;
@@ -129,8 +130,19 @@ export class AgentRegistry {
       suppressedCancellationIds: new Set(),
       pendingApprovals: new Set(),
       followedBy: new Map(),
+      deadlines: new Map(),
       disposed: false,
     };
+    agent.onWaiting?.((requestId, waiting) => {
+      const deadline = entry.deadlines.get(requestId);
+      if (waiting) deadline?.pause();
+      else if (!entry.pendingApprovals.size) deadline?.resume();
+    });
+    agent.onCapacity?.(() => {
+      if (this.entries.get(conversationId) === entry && this.isAvailable(conversationId)) {
+        this.onAvailable(conversationId);
+      }
+    });
     entry.unsubscribe = agent.subscribe((event) => {
       if (event.type === "assistant_message_cancelled" && entry.suppressedCancellationIds.delete(event.requestId)) {
         return;
@@ -146,13 +158,13 @@ export class AgentRegistry {
       }
       if (event.type === "circle_turn_started") {
         // Each member's turn in a circle gets the time a request of its own would.
-        entry.deadline?.restart();
+        entry.deadlines.get(event.requestId)?.restart();
       }
       if (event.type === "follow_up_taken") {
         entry.followedBy.set(event.requestId, event.followUpId);
         rememberRequestId(entry.acceptedRequestIds, event.followUpId);
         // The follow-up gets the time a request of its own would.
-        entry.deadline?.restart();
+        for (const deadline of entry.deadlines.values()) deadline.restart();
       }
       if (event.type === "conversation_model_changed") {
         entry.applied = event.applied;
@@ -179,12 +191,27 @@ export class AgentRegistry {
     return this.entries.has(conversationId);
   }
 
-  /** Whether the conversation is configured, has no request running or queued, and its workspace is not locked. */
+  /**
+   * Whether the conversation is configured, its workspace is not locked, and it
+   * has no request running or queued; a circle takes requests side by side, up
+   * to the limit, and `canTake` says which.
+   */
   isAvailable(conversationId: string): boolean {
     const entry = this.entries.get(conversationId);
-    return Boolean(
-      entry && entry.ready && !entry.disposed && entry.pendingCommands === 0 && !this.isWorkspaceLocked(conversationId),
-    );
+    if (!entry || !entry.ready || entry.disposed || this.isWorkspaceLocked(conversationId)) return false;
+    return entry.agent.canTake
+      ? entry.pendingCommands < MAX_PENDING_COMMANDS_PER_CONVERSATION
+      : entry.pendingCommands === 0;
+  }
+
+  /** Whether a request with this text could start now, as opposed to waiting for what it needs. */
+  canTake(conversationId: string, text: string): boolean {
+    return this.entries.get(conversationId)?.agent.canTake?.(text) ?? true;
+  }
+
+  /** Whether the conversation takes requests side by side rather than one at a time. */
+  takesSideBySide(conversationId: string): boolean {
+    return Boolean(this.entries.get(conversationId)?.agent.canTake);
   }
 
   /** Whether a request is running or queued for the conversation. */
@@ -215,9 +242,9 @@ export class AgentRegistry {
     // Time spent waiting for the person does not count toward the request deadline.
     if (event.type === "tool_approval_requested") {
       entry.pendingApprovals.add(event.request.approvalId);
-      entry.deadline?.pause();
+      for (const deadline of entry.deadlines.values()) deadline.pause();
     } else if (event.type === "tool_approval_resolved" && entry.pendingApprovals.delete(event.approvalId)) {
-      if (!entry.pendingApprovals.size) entry.deadline?.resume();
+      if (!entry.pendingApprovals.size) for (const deadline of entry.deadlines.values()) deadline.resume();
     }
     this.publishEvent(event);
   }
@@ -235,19 +262,22 @@ export class AgentRegistry {
     }
     rememberRequestId(entry.acceptedRequestIds, request.requestId);
     entry.pendingCommands += 1;
-    const operation = entry.commandQueue
-      .then(async () => {
-        await this.acquireActiveSlot();
-        try {
-          if (entry.disposed) {
-            throw new WispBackendError("disposed", "The conversation was deleted before this request could run.");
-          }
-          await this.sendWithDeadline(entry, request);
-        } finally {
-          this.releaseActiveSlot();
+    const run = async () => {
+      await this.acquireActiveSlot();
+      try {
+        if (entry.disposed) {
+          throw new WispBackendError("disposed", "The conversation was deleted before this request could run.");
         }
-      })
-      .finally(() => this.settleCommand(request.conversationId, entry));
+        await this.sendWithDeadline(entry, request);
+      } finally {
+        this.releaseActiveSlot();
+      }
+    };
+    if (entry.agent.canTake) {
+      entry.agent.reserve?.(request);
+      return run().finally(() => this.settleCommand(request.conversationId, entry));
+    }
+    const operation = entry.commandQueue.then(run).finally(() => this.settleCommand(request.conversationId, entry));
     entry.commandQueue = operation.catch(() => undefined);
     return operation;
   }
@@ -281,8 +311,7 @@ export class AgentRegistry {
         const answering = answeringRequestId(entry, request.requestId);
         entry.suppressedCancellationIds.add(answering);
         reject(new WispBackendError("aborted", "The model request timed out.", true));
-        void entry.agent
-          .abort()
+        void (entry.agent.abortRequest ? entry.agent.abortRequest(request.requestId) : entry.agent.abort())
           .catch(() => undefined)
           .finally(() => entry.suppressedCancellationIds.delete(answering));
       };
@@ -291,7 +320,7 @@ export class AgentRegistry {
       armedAt = Date.now();
       timeout = setTimeout(expire, remaining);
     };
-    entry.deadline = {
+    entry.deadlines.set(request.requestId, {
       pause: () => {
         if (timeout === undefined) return;
         clearTimeout(timeout);
@@ -309,12 +338,12 @@ export class AgentRegistry {
         remaining = this.executionTimeoutMs;
         if (!paused) arm();
       },
-    };
+    });
     if (!entry.pendingApprovals.size) arm();
     try {
       await Promise.race([entry.agent.send(request), deadline]);
     } finally {
-      entry.deadline = undefined;
+      entry.deadlines.delete(request.requestId);
       if (timeout !== undefined) clearTimeout(timeout);
       if (!timedOut) entry.suppressedCancellationIds.delete(answeringRequestId(entry, request.requestId));
     }

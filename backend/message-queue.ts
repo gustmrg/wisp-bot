@@ -11,6 +11,8 @@ export interface MessageQueueOptions {
   repository: Pick<ConversationRepository, "listQueuedMessages" | "addQueuedMessage" | "changeQueuedMessage">;
   /** Whether the Wisp can take a message now; see `AgentRegistry.isAvailable`. */
   isAvailable: (conversationId: string) => boolean;
+  /** Whether the next message can start before the one before it ends, as in a circle (ADR 042). */
+  takesSideBySide?: (conversationId: string) => boolean;
   /**
    * Hands the Wisp its oldest waiting message; see
    * `ConversationService.deliverNextQueued`. Calls `onTaken` once the message
@@ -40,6 +42,7 @@ export interface MessageQueueOptions {
 export class MessageQueue {
   private readonly repository: MessageQueueOptions["repository"];
   private readonly isAvailable: MessageQueueOptions["isAvailable"];
+  private readonly takesSideBySide: NonNullable<MessageQueueOptions["takesSideBySide"]>;
   private readonly deliverNext: MessageQueueOptions["deliverNext"];
   private readonly steer: NonNullable<MessageQueueOptions["steer"]>;
   private readonly withdrawFollowUps: NonNullable<MessageQueueOptions["withdrawFollowUps"]>;
@@ -47,7 +50,7 @@ export class MessageQueue {
   private readonly logger: MessageQueueOptions["logger"];
   private readonly now: () => Date;
   private readonly createId: () => string;
-  /** Wisps answering a message from the queue; each takes one at a time. */
+  /** Wisps answering a message from the queue; each takes one at a time. A circle's is only taking one. */
   private readonly delivering = new Set<string>();
   /** Messages handed to their Wisp's running turn and not read yet. */
   private readonly followUps = new Set<string>();
@@ -58,6 +61,7 @@ export class MessageQueue {
   constructor(options: MessageQueueOptions) {
     this.repository = options.repository;
     this.isAvailable = options.isAvailable;
+    this.takesSideBySide = options.takesSideBySide ?? (() => false);
     this.deliverNext = options.deliverNext;
     this.steer = options.steer ?? (async () => false);
     this.withdrawFollowUps = options.withdrawFollowUps ?? (() => []);
@@ -204,17 +208,29 @@ export class MessageQueue {
     // The turn that held follow-ups has ended and gave back those it did not read; they are sent like the rest.
     void this.forgetFollowUps(conversationId);
     this.delivering.add(conversationId);
+    const sideBySide = this.takesSideBySide(conversationId);
     void (async () => {
       let delivered = false;
+      // A circle may already be taking its next message by the time this one is answered.
+      let moved = false;
       try {
-        delivered = Boolean(await this.deliverNext(conversationId, () => this.refresh()));
+        delivered = Boolean(
+          await this.deliverNext(conversationId, () => {
+            this.refresh();
+            if (!sideBySide) return;
+            moved = true;
+            this.delivering.delete(conversationId);
+            // Once the message's request holds what it needs, which it does before this runs.
+            queueMicrotask(() => this.pump(conversationId));
+          }),
+        );
       } catch (error) {
         this.logger?.warn("queued_message_delivery_failed", {
           conversationId,
           code: sanitizeBackendError(error).code,
         });
       } finally {
-        this.delivering.delete(conversationId);
+        if (!moved) this.delivering.delete(conversationId);
       }
       // The Wisp is free again only after its reply, so look for the next message then.
       if (delivered) this.pump(conversationId);
