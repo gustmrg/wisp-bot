@@ -110,6 +110,39 @@ function ChatStarters({
   );
 }
 
+const NO_WORKERS: ReadonlyArray<string> = [];
+
+/**
+ * The member whose reply is the last message on screen, if any. A reply that
+ * has only started has nothing to show yet, so it does not count.
+ */
+function lastShownAuthor(messages: ReadonlyArray<Message>): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.type === "incoming" && !message.text.trim() && !message.steps?.length) continue;
+    return message.type === "incoming" ? message.authorId : undefined;
+  }
+  return undefined;
+}
+
+/** Three dots in a reply bubble while a Wisp works; a circle's member tints it with its color. */
+function ActivityBubble() {
+  return (
+    <span
+      aria-hidden="true"
+      className="chat-activity-bubble flex items-center gap-1 rounded-[16px] rounded-bl-[5px] border border-border bg-bubble-in px-3.5 py-3"
+    >
+      {[0, 200, 400].map((delay) => (
+        <span
+          key={delay}
+          className="chat-activity-dot size-1.5 rounded-full bg-dim animate-typing-dot motion-reduce:animate-none"
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
 interface ChatPanelProps {
   hidden?: boolean;
   onBack?: () => void;
@@ -120,6 +153,8 @@ interface ChatPanelProps {
   transcript: MessageWindow | undefined;
   status: ManagedConversationStatus;
   activity?: string;
+  /** In a circle, the members whose turns are running, each shown working under its name. */
+  workingMembers?: ReadonlyArray<string>;
   error?: string;
   acknowledging: boolean;
   approvals: ReadonlyArray<ToolApprovalRequest>;
@@ -156,6 +191,7 @@ function ChatPanel({
   transcript,
   status,
   activity,
+  workingMembers = NO_WORKERS,
   error,
   acknowledging,
   approvals,
@@ -261,14 +297,26 @@ function ChatPanel({
   const startersReady = status === "idle" && !acknowledging;
   // A complete reply part followed by more work is text the Wisp wrote before
   // using a tool, so the activity indicator stays visible below it.
-  const responding =
-    (lastMessage?.type === "incoming" && lastMessage.status !== "complete" && Boolean(lastMessage.text.trim())) ||
-    messages.some(
-      (message) => message.type === "incoming" && message.status === "streaming" && Boolean(message.text.trim()),
-    );
-  const reportActivity = attached && working && !responding;
+  const writing = messages.filter(
+    (message) =>
+      message.type === "incoming" &&
+      Boolean(message.text.trim()) &&
+      (message.status === "streaming" || (message === lastMessage && message.status !== "complete")),
+  );
+  const responding = writing.length > 0;
+  // In a circle each working member types under its name and in its color, as its reply will appear, until
+  // its reply shows; members work side by side (ADR 042). Until a member's turn starts, the bubble belongs to no one.
+  const workers =
+    chat.kind === "circle"
+      ? workingMembers.flatMap((wispId) => participants.find((member) => member.id === wispId) ?? [])
+      : [];
+  const typing = workers.filter(
+    (worker) => !writing.some((message) => message.type === "incoming" && message.authorId === worker.id),
+  );
+  const reportActivity = attached && working && (workers.length ? typing.length > 0 : !responding);
   // While an approval waits, the Wisp is doing nothing until the person answers.
   const showActivity = reportActivity && !approvals.length;
+  const lastAuthorId = lastShownAuthor(messages);
   const openKey = transcript && !hidden ? `${chat.id}:${transcript.epoch}` : null;
   // Steps arrive in a message of their own, so a new one moves the end as text does.
   const lastSteps = lastMessage?.type === "incoming" ? (lastMessage.steps?.length ?? 0) : 0;
@@ -600,19 +648,28 @@ function ChatPanel({
               ))
             )}
             {showActivity ? (
-              <div role="status" className="chat-activity mt-3 flex items-center gap-2 text-dim text-sm">
-                <span
-                  aria-hidden="true"
-                  className="chat-activity-bubble flex items-center gap-1 rounded-[16px] rounded-bl-[5px] border border-border bg-bubble-in px-3.5 py-3"
-                >
-                  {[0, 200, 400].map((delay) => (
-                    <span
-                      key={delay}
-                      className="chat-activity-dot size-1.5 rounded-full bg-dim animate-typing-dot motion-reduce:animate-none"
-                      style={{ animationDelay: `${delay}ms` }}
-                    />
-                  ))}
-                </span>
+              <div role="status" className="chat-activity mt-3 flex flex-col items-start gap-3 text-dim text-sm">
+                {typing.length ? (
+                  typing.map((worker) => (
+                    <div
+                      key={worker.id}
+                      className="chat-activity-entry flex flex-col items-start"
+                      style={wispAccentStyle(wispColor(worker.name, worker.color))}
+                      data-authored
+                    >
+                      {/* Named like its replies: not again right below its own message. */}
+                      {lastAuthorId === worker.id ? null : (
+                        <span className="message-author" aria-hidden="true">
+                          <WispAvatar wisp={worker} size="sm" />
+                          {worker.name}
+                        </span>
+                      )}
+                      <ActivityBubble />
+                    </div>
+                  ))
+                ) : (
+                  <ActivityBubble />
+                )}
                 {/* The header and the running step say it on screen. */}
                 <span className="sr-only">{activity ?? `${name} is working…`}</span>
               </div>

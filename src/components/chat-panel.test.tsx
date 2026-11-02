@@ -648,6 +648,91 @@ describe("ChatPanel circles", () => {
     expect(screen.getAllByText("Forge")).toHaveLength(1);
   });
 
+  it("names the working member above its typing bubble, in its color", () => {
+    const crew = circleChatView("crew", [
+      testWisp("quill", { name: "Quill", color: "#d94f8a" }),
+      testWisp("forge", { name: "Forge", color: "#3a7bd5" }),
+    ]);
+    renderPanelIn(crew, [{ id: "1", type: "outgoing", text: "What's left?" }], {
+      status: "working",
+      activity: "Quill is working…",
+      workingMembers: ["quill"],
+    });
+
+    const entry = document.querySelector<HTMLElement>(".chat-activity-entry");
+    expect(entry).toHaveAttribute("data-authored");
+    expect(entry?.style.getPropertyValue("--wisp")).not.toBe("");
+    expect(within(entry!).getByText("Quill")).toHaveClass("message-author");
+    expect(entry?.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    expect(screen.queryByText("Forge")).not.toBeInTheDocument();
+    // The name is drawn for the eye; the status already says who works.
+    expect(document.querySelector(".chat-activity")).toHaveTextContent("Quill is working…");
+  });
+
+  it("gives each working member a bubble of its own", () => {
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })]);
+    renderPanelIn(crew, [{ id: "1", type: "outgoing", text: "Both of you, please." }], {
+      status: "working",
+      workingMembers: ["quill", "forge"],
+    });
+
+    const entries = [...document.querySelectorAll(".chat-activity-entry")];
+    expect(entries.map((entry) => entry.querySelector(".message-author")?.textContent)).toEqual(["Quill", "Forge"]);
+  });
+
+  it("keeps a member's bubble while another member writes its reply", () => {
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })]);
+    renderPanelIn(
+      crew,
+      [
+        { id: "1", type: "outgoing", text: "Both of you, please." },
+        { id: "2", type: "incoming", text: "Drafting the notes", status: "streaming", authorId: "quill" },
+      ],
+      { status: "working", workingMembers: ["quill", "forge"] },
+    );
+
+    const entries = [...document.querySelectorAll(".chat-activity-entry")];
+    expect(entries.map((entry) => entry.querySelector(".message-author")?.textContent)).toEqual(["Forge"]);
+  });
+
+  it("does not name the working member again right below its own message", () => {
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })]);
+    renderPanelIn(
+      crew,
+      [{ id: "1", type: "incoming", text: "Let me check the tests.", status: "complete", authorId: "quill" }],
+      {
+        status: "working",
+        workingMembers: ["quill"],
+      },
+    );
+
+    expect(screen.getAllByText("Quill")).toHaveLength(1);
+    expect(document.querySelector(".chat-activity-entry")).toHaveAttribute("data-authored");
+  });
+
+  it("names the working member while its reply has only started", () => {
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })]);
+    renderPanelIn(
+      crew,
+      [
+        { id: "1", type: "outgoing", text: "Draft the notes." },
+        { id: "2", type: "incoming", text: "", status: "streaming", authorId: "quill" },
+      ],
+      { status: "working", workingMembers: ["quill"] },
+    );
+
+    expect(document.querySelector(".chat-activity-entry .message-author")).toHaveTextContent("Quill");
+  });
+
+  it("keeps a plain typing bubble until a member's turn starts", () => {
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })]);
+    renderPanelIn(crew, [{ id: "1", type: "outgoing", text: "Who takes this?" }], { status: "working" });
+
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    expect(document.querySelector(".chat-activity-entry")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quill")).not.toBeInTheDocument();
+  });
+
   it("sets apart the members messages and replies mention, each opening its Wisp, and keeps only the settings button", async () => {
     const user = userEvent.setup();
     const onOpenWisp = vi.fn();

@@ -258,6 +258,74 @@ describe("UsageSettingsSection", () => {
     expect(names).toEqual(["Busy1 session", "Cheap1 session", "Unpriced1 session", "All Wisps"]);
   });
 
+  it("sets the decision model apart from the Wisps, after them, with the decisions it made", async () => {
+    const decider = {
+      ...modelRow("openrouter:google/gemini-flash", "google/gemini-flash", 6_860, 0.004),
+      turns: 0,
+      decisionCalls: 7,
+    };
+    const getUsageReport = vi.fn(async () => ({
+      ok: true,
+      value: {
+        ...report,
+        wisps: [
+          {
+            conversationId: "one",
+            name: "Research Wisp",
+            sessions: 1,
+            totals: usage(500, 0.001),
+            models: [modelRow("openrouter:x", "x", 500, 0.001)],
+          },
+          {
+            conversationId: "decision-model",
+            name: "Decision model",
+            sessions: 0,
+            totals: usage(6_860, 0.004),
+            models: [decider],
+            decisionModel: true,
+          },
+        ],
+        totals: usage(7_360, 0.005),
+      },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    render(<UsageSettingsSection />);
+
+    expect(await screen.findByText("Decision model")).toBeVisible();
+    // It cost more than the Wisp, yet comes after it, and the footer no longer calls everything Wisps.
+    const names = screen.getAllByRole("rowheader").map((cell) => cell.textContent);
+    expect(names).toEqual(["Research Wisp1 session", "Decision model7 decisions", "Total"]);
+    expect(screen.getByText(/1 Wisp with usage/)).toBeVisible();
+  });
+
+  it("names the decision model apart when its cost is unknown", async () => {
+    const getUsageReport = vi.fn(async () => ({
+      ok: true,
+      value: {
+        ...report,
+        wisps: [
+          { conversationId: "one", name: "Research Wisp", sessions: 1, totals: usage(500, 0.25) },
+          {
+            conversationId: "decision-model",
+            name: "Decision model",
+            sessions: 0,
+            totals: usage(100, null),
+            decisionModel: true,
+          },
+        ],
+        totals: usage(600, null),
+      },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    render(<UsageSettingsSection />);
+
+    expect(
+      await screen.findByText("Cost covers priced usage only. The decision model has an unknown cost."),
+    ).toBeVisible();
+    // A server that does not split usage by model still says what the row is for.
+    expect(screen.getByText("Chooses who answers")).toBeVisible();
+  });
+
   it("splits input into cached and uncached, with the cache hit rate and savings", async () => {
     const totals = {
       inputTokens: 1_000,

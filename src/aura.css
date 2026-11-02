@@ -353,12 +353,17 @@
   width: 18px;
   height: 18px;
 }
-.message-row[data-authored] .message-bubble {
+.message-row[data-authored] .message-bubble,
+.chat-activity-entry[data-authored] .chat-activity-bubble {
   border-color: color-mix(in srgb, var(--wisp) 24%, transparent);
   background: color-mix(in srgb, var(--wisp) 9%, var(--background));
 }
-.dark .message-row[data-authored] .message-bubble {
+.dark .message-row[data-authored] .message-bubble,
+.dark .chat-activity-entry[data-authored] .chat-activity-bubble {
   background: color-mix(in srgb, var(--wisp) 11%, #141418);
+}
+.chat-activity-entry[data-authored] .chat-activity-dot {
+  background: var(--wisp);
 }
 
 /* A step that is still running. */

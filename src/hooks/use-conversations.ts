@@ -88,6 +88,8 @@ export interface ConversationsController {
   windows: Record<string, MessageWindow>;
   statuses: Record<string, ManagedConversationStatus>;
   activity: Record<string, string | undefined>;
+  /** In a circle, the members whose turns are running (ADR 042). */
+  workingMembers: Record<string, ReadonlyArray<string> | undefined>;
   conversationErrors: Record<string, BackendError | undefined>;
   acknowledging: Record<string, boolean | undefined>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
@@ -534,6 +536,7 @@ export function useConversations(): ConversationsController {
     windows: visibleWindows,
     statuses: runtime.statuses,
     activity,
+    workingMembers: runtime.turns,
     conversationErrors: runtime.errors,
     acknowledging,
     approvals: runtime.approvals,
