@@ -88,6 +88,14 @@ and approving each `npm test` makes development impractical.
 - **Cancellation:** each command runs in its own process group; Stop, the
   request deadline or a timeout kills the group. Whatever a command leaves in
   the background is killed when it ends.
+- **Long output:** the result shows the last 2,000 lines or 50 KB, as Pi's
+  shell tool does. Pi saves the full output to a temporary file on the
+  server, which the Wisp cannot read, so that file moves to `command-output/`
+  in the home folder, and the result names it there (`/workspace/.home/command-output/…`),
+  where file tools and commands both reach it. Past 1 MiB only its first and
+  last 512 KiB are kept. The folder keeps the five newest and counts toward
+  the workspace size. The temporary file is deleted even when the output
+  cannot be kept, as when the home folder links out of the workspace.
 - **Background processes:** a second tool, `process`, starts long-running
   commands (dev servers, watchers, long builds) in their own session and lets
   the Wisp list them, read their output, wait for them and stop them. At most

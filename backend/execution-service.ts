@@ -24,9 +24,18 @@ import {
 import { formatBytes } from "../shared/workspace.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
+import {
+  keepFullOutput,
+  pointToKeptOutput,
+  temporaryOutputFile,
+  withKeptOutput,
+  withoutTemporaryOutputFile,
+  type MovedOutput,
+} from "./command-output.js";
 import type { ContainerCli } from "./container-cli.js";
 import {
   circleContainerKey,
+  containerHome,
   MAX_BACKGROUND_PROCESSES,
   SANDBOX_IMAGE,
   type ContainerManager,
@@ -71,7 +80,7 @@ const RUN_COMMAND_DESCRIPTION: ReadonlyArray<string> = [
   "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
   "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
   "git over HTTPS to github.com, and to the GitLab plugin's instance when this Wisp has access to it, goes through a gateway on the server, which adds the plugin's token; the token is not in the container, and the gateway carries only git, so use the GitHub and GitLab tools for issues, pull and merge requests and other API calls.",
-  "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends; start servers, watchers and other long-running commands with the process tool instead. Output is truncated to the last lines; optionally give a timeout in seconds.",
+  "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends; start servers, watchers and other long-running commands with the process tool instead. Output is truncated to the last lines; the result then names a file in the home folder with the full output (up to 1 MiB), which read and grep can open. Optionally give a timeout in seconds.",
 ];
 
 /**
@@ -367,7 +376,26 @@ export class ExecutionService implements IntegrationToolSource {
       );
       await assertRoomToRun(target, this.options.freeDiskBytes);
       const startedAt = performance.now();
-      const result = await base.execute(toolCallId, params, signal, onUpdate, ctx);
+      let temporaryFile: string | undefined;
+      const moveOutput = async (): Promise<MovedOutput | undefined> =>
+        temporaryFile === undefined
+          ? undefined
+          : keepFullOutput(temporaryFile, target.workspaceDirectory, containerHome(containerSpec(target, settings)));
+      // A command that is stopped or times out names the file holding its full output only in its progress updates.
+      const watch: NonNullable<typeof onUpdate> = (update) => {
+        temporaryFile = temporaryOutputFile(update.details) ?? temporaryFile;
+        onUpdate?.({ ...update, details: withoutTemporaryOutputFile(update.details) });
+      };
+      let result: Awaited<ReturnType<typeof base.execute>>;
+      try {
+        result = await base.execute(toolCallId, params, signal, watch, ctx);
+      } catch (error) {
+        const moved = await moveOutput();
+        throw moved && error instanceof Error ? new Error(pointToKeptOutput(error.message, moved)) : error;
+      }
+      temporaryFile = temporaryOutputFile(result.details) ?? temporaryFile;
+      const moved = await moveOutput();
+      if (moved) result = withKeptOutput(result, moved);
       const exitCode = (result.structuredContent as { exit_code?: unknown } | undefined)?.exit_code;
       // Kept with the session so its report can tell how each command ended.
       const commandResult: CommandResultDetails = {
