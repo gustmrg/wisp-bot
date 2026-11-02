@@ -1419,6 +1419,18 @@ describe("McpService workspace files", () => {
     expect(action).not.toHaveProperty("rememberApproval");
   });
 
+  it("reads a reference to the container's /workspace as the same workspace file", async () => {
+    const { definition, created } = await setup();
+    await definition.execute("call-1", {
+      fileName: "boleto.pdf",
+      base64Content: "wisp-file:/workspace/inbox/boleto.pdf",
+    });
+
+    expect(created.at(-1)!.calls).toEqual([
+      { name: "upload_bill_document", args: { fileName: "boleto.pdf", base64Content: PDF.toString("base64") } },
+    ]);
+  });
+
   it("encodes data URL fields inside arrays with the file's media type", async () => {
     const { definition, created } = await setup();
     await definition.execute("call-1", {

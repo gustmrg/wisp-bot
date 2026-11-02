@@ -57,7 +57,7 @@ function runCommandDescription(localNetwork: boolean): string {
 
 const RUN_COMMAND_DESCRIPTION: ReadonlyArray<string> = [
   "Run a bash command in this Wisp's own Linux container (Debian) and return its output.",
-  `The working directory is ${CONTAINER_WORKSPACE}, which holds the same files as the workspace file tools; paths in commands use ${CONTAINER_WORKSPACE}.`,
+  `The working directory is ${CONTAINER_WORKSPACE}, which holds the same files as the workspace file tools; paths in commands use ${CONTAINER_WORKSPACE}, and the file tools take paths relative to the workspace root, such as repo/src/index.ts.`,
   "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
   "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
   "git over HTTPS to github.com, and to the GitLab plugin's instance when this Wisp has access to it, goes through a gateway on the server, which adds the plugin's token; the token is not in the container, and the gateway carries only git, so use the GitHub and GitLab tools for issues, pull and merge requests and other API calls.",
