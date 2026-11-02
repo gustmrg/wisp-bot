@@ -163,8 +163,10 @@ endpoint does.
 - Access, enablement, and configuration are rechecked after the approval wait
   and immediately before dispatch; dispatch is never replayed automatically
   after an interruption, and uncertain outcomes are reported as such.
-- MCP results are bounded; `isError` results surface as failed tool calls, and
-  images, audio, and resources are reported as unsupported rather than fetched.
+- MCP results are bounded; `isError` results surface as failed tool calls.
+  The text of an embedded resource, such as a file from GitHub's
+  `get_file_contents`, reaches the Wisp; images, audio, binary resources, and
+  resource links are reported as unsupported rather than fetched.
 - Safe tool identity is persisted with session history, so usage reports keep
   identifying past calls after a server is removed.
 

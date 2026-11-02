@@ -269,7 +269,11 @@ export function convertMcpToolResult(result: unknown): ConvertedToolResult {
         parts.push((block as { text: string }).text);
       } else if (type === "image" || type === "audio") {
         unsupported += 1;
-      } else if (type === "resource_link" || type === "resource") {
+      } else if (type === "resource") {
+        const text = embeddedResourceText(block);
+        if (text === undefined) unsupported += 1;
+        else parts.push(text);
+      } else if (type === "resource_link") {
         // Resource links are never fetched automatically.
         unsupported += 1;
       }
@@ -292,6 +296,20 @@ export function convertMcpToolResult(result: unknown): ConvertedToolResult {
   }
   const text = truncateUtf8(parts.join("\n").trim() || "[The tool returned no content.]", MAX_RESULT_TEXT_CHARACTERS);
   return { text, isError: record.isError === true };
+}
+
+/**
+ * The text of a resource embedded in a result, headed by its URI, or nothing
+ * for a binary one. Servers such as GitHub's return a file's contents this
+ * way, beside a text block that only names the file; the contents already
+ * came with the result, so nothing is fetched.
+ */
+function embeddedResourceText(block: object): string | undefined {
+  const resource = (block as { resource?: unknown }).resource;
+  if (!resource || typeof resource !== "object") return undefined;
+  const { text, uri } = resource as { text?: unknown; uri?: unknown };
+  if (typeof text !== "string") return undefined;
+  return typeof uri === "string" && uri.length > 0 ? `[Resource ${uri}]\n${text}` : text;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, action: string): Promise<T> {
