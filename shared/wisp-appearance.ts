@@ -64,6 +64,7 @@ export const WISP_COLORS = [
   { id: "violet", value: "#885cf5" },
   { id: "magenta", value: "#e5498f" },
   { id: "gray", value: "#8e8e8e" },
+  { id: "white", value: "#f2f2f2" },
 ] as const;
 
 export type WispColorId = (typeof WISP_COLORS)[number]["id"];
