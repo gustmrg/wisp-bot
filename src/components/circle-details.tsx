@@ -4,6 +4,7 @@ import { circleLeadId, withCircleLead, type CircleResponder } from "../../shared
 import type { CircleChatChanges, CircleChatView, WispCollection, WispId } from "@/chat-data";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { ChatAvatar } from "@/components/chat-avatar";
+import { CircleExecutionSettings } from "@/components/circle-execution-settings";
 import { CircleLeadPicker } from "@/components/circle-lead-picker";
 import { CircleResponderPicker } from "@/components/circle-responder-picker";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
@@ -193,7 +194,12 @@ export function CircleDetails({
       {/* The workspace saves its own changes. */}
       <TabsContent value="workspace" keepMounted className="min-h-0 overflow-y-auto p-3.5">
         {visited.has("workspace") ? (
-          <WispWorkspaceSettings conversationId={chat.id} kind="circle" onOpenSettings={onOpenSettings} />
+          <>
+            <WispWorkspaceSettings conversationId={chat.id} kind="circle" onOpenSettings={onOpenSettings} />
+            <div className="mt-[15px] border-t border-border pt-[15px]">
+              <CircleExecutionSettings key={chat.id} conversationId={chat.id} members={chat.members} />
+            </div>
+          </>
         ) : null}
       </TabsContent>
       <TabsContent value="usage" keepMounted className="min-h-0 overflow-y-auto p-3.5">

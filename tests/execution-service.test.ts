@@ -7,7 +7,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ContainerManager } from "../backend/container-manager.js";
 import { SANDBOX_IMAGE } from "../backend/container-manager.js";
 import type { GitForges } from "../backend/egress-proxy.js";
-import { containerPath, ExecutionService, PROCESS_TOOL, RUN_COMMAND_TOOL } from "../backend/execution-service.js";
+import {
+  CIRCLE_EXECUTION_FILE,
+  containerPath,
+  ExecutionService,
+  PROCESS_TOOL,
+  RUN_COMMAND_TOOL,
+} from "../backend/execution-service.js";
+import { circleContainerKey } from "../backend/container-manager.js";
 import { WORKSPACE_SETTINGS_FILE } from "../backend/workspace-service.js";
 import { WORKSPACE_DISK_RESERVE_BYTES } from "../shared/workspace.js";
 import type { ContainerRuntimeStatus } from "../shared/execution.js";
@@ -53,7 +60,15 @@ async function setup(
     ),
     reconcile: vi.fn(async () => undefined),
   };
-  const authorize = vi.fn(async () => undefined);
+  const authorize = vi.fn(async (_action: Record<string, unknown>) => undefined);
+  const circle = {
+    conversationId: "crew",
+    storageId: "c1",
+    workspaceDirectory: path.join(root, "workspaces", "c1"),
+    settingsDirectory: path.join(root, "circle-config", "c1"),
+    members: [{ wispId: "atlas", storageId: "s1" }],
+  };
+  await mkdir(circle.workspaceDirectory, { recursive: true });
   const browser = { close: vi.fn(async () => undefined) };
   const service = new ExecutionService({
     dataDirectory: root,
@@ -62,6 +77,11 @@ async function setup(
       return wisp;
     },
     listWispStorageIds: () => new Set(["s1"]),
+    resolveCircle: (id) => {
+      if (id !== "crew") throw new Error("not a circle");
+      return circle;
+    },
+    listCircles: () => [circle],
     authorizationBroker: { authorize },
     manager: manager as unknown as ContainerManager,
     runtime: {
@@ -72,7 +92,7 @@ async function setup(
     ...(options.freeDiskBytes ? { freeDiskBytes: options.freeDiskBytes } : {}),
     browser,
   });
-  return { root, wisp, manager, authorize, browser, service };
+  return { root, wisp, circle, manager, authorize, browser, service };
 }
 
 type RunCommand = {
@@ -89,6 +109,147 @@ async function runCommandTool(service: ExecutionService): Promise<RunCommand> {
   const snapshot = await service.getSnapshot(ownConversation("atlas"));
   return snapshot.definitions.find(({ name }) => name === RUN_COMMAND_TOOL) as unknown as RunCommand;
 }
+
+describe("ExecutionService in a circle", () => {
+  const scope = { conversationId: "crew", wispId: "atlas" };
+  const key = circleContainerKey("c1", "s1");
+
+  async function turnedOn(options: Parameters<typeof setup>[0] = {}) {
+    const context = await setup(options);
+    await context.service.save({ conversationId: "atlas", mode: "container", image: "node:22", localNetwork: true });
+    await context.service.saveCircle({ conversationId: "crew", commands: true });
+    context.manager.remove.mockClear();
+    context.manager.reconcile.mockClear();
+    const snapshot = await context.service.getSnapshot(scope);
+    const tool = snapshot.definitions.find(({ name }) => name === RUN_COMMAND_TOOL) as unknown as RunCommand;
+    return { ...context, snapshot, tool };
+  }
+
+  it("offers commands only when both the circle and the member allow them", async () => {
+    const { service } = await setup();
+    await expect(service.getCircleView("crew")).resolves.toMatchObject({ commands: false, memberIdsWithCommands: [] });
+
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    expect((await service.getSnapshot(scope)).activeNames).toEqual([]);
+
+    await service.saveCircle({ conversationId: "crew", commands: true });
+    expect((await service.getSnapshot(scope)).activeNames).toEqual([RUN_COMMAND_TOOL, PROCESS_TOOL]);
+    await expect(service.getCircleView("crew")).resolves.toMatchObject({
+      commands: true,
+      memberIdsWithCommands: ["atlas"],
+    });
+
+    await service.save({ conversationId: "atlas", mode: "off", image: null, localNetwork: false });
+    expect((await service.getSnapshot(scope)).activeNames).toEqual([]);
+  });
+
+  it("offers nothing to a Wisp outside the circle, or for a conversation that is not one", async () => {
+    const { service } = await turnedOn();
+    await expect(service.getSnapshot({ conversationId: "crew", wispId: "stranger" })).resolves.toMatchObject({
+      activeNames: [],
+    });
+    await expect(service.getSnapshot({ conversationId: "other", wispId: "atlas" })).resolves.toMatchObject({
+      activeNames: [],
+    });
+    await expect(service.getCircleView("atlas")).rejects.toThrow();
+  });
+
+  it("treats an unreadable circle setting as off", async () => {
+    const { service, circle } = await turnedOn();
+    await writeFile(path.join(circle.settingsDirectory, CIRCLE_EXECUTION_FILE), "not json");
+    expect((await service.getSnapshot(scope)).activeNames).toEqual([]);
+  });
+
+  it("runs in the member's container for this circle, with its settings, in the circle's workspace", async () => {
+    const seen: string[] = [];
+    const { tool, manager, authorize } = await turnedOn({
+      gitForges: async (id) => {
+        seen.push(id);
+        return { github: { token: "member-token" } };
+      },
+    });
+
+    await tool.execute("call", { command: "git status" });
+
+    const [spec, , cwd, options] = manager.exec.mock.calls[0]! as unknown as [
+      Record<string, unknown>,
+      string,
+      string,
+      { git: unknown },
+    ];
+    expect(spec).toEqual({
+      storageId: key,
+      image: "node:22",
+      workspaceDirectory: expect.stringContaining(path.join("workspaces", "c1")),
+      localNetwork: true,
+      circleMember: "s1",
+    });
+    expect(cwd).toBe("/workspace");
+    // Git follows the Wisp that runs the command, not the conversation.
+    expect(new Set(seen)).toEqual(new Set(["atlas"]));
+    expect(options.git).toEqual({ github: { token: "member-token" } });
+    expect(authorize).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "crew", wispId: "atlas", toolName: RUN_COMMAND_TOOL }),
+      undefined,
+    );
+  });
+
+  it("gives its background processes the same container", async () => {
+    const { snapshot, manager, authorize } = await turnedOn();
+    const process = snapshot.definitions.find(({ name }) => name === PROCESS_TOOL) as unknown as {
+      execute: (id: string, params: unknown) => Promise<unknown>;
+    };
+
+    await process.execute("call", { action: "start", command: "npm run dev" });
+
+    expect(manager.processScript.mock.calls[0]![0]).toMatchObject({ storageId: key, circleMember: "s1" });
+    expect(authorize).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "crew", wispId: "atlas", toolName: PROCESS_TOOL }),
+      undefined,
+    );
+  });
+
+  it("holds commands to the circle's workspace size, not the Wisp's", async () => {
+    const { tool, manager, circle, wisp } = await turnedOn();
+    await writeFile(path.join(wisp.configDirectory, WORKSPACE_SETTINGS_FILE), JSON.stringify({ quotaBytes: 1 }));
+    await writeFile(path.join(wisp.workspaceDirectory, "big.txt"), "12345");
+
+    await tool.execute("first", { command: "ls" });
+    expect(manager.exec).toHaveBeenCalledTimes(1);
+
+    await writeFile(path.join(circle.settingsDirectory, WORKSPACE_SETTINGS_FILE), JSON.stringify({ quotaBytes: 4 }));
+    await writeFile(path.join(circle.workspaceDirectory, "big.txt"), "12345");
+    await expect(tool.execute("second", { command: "ls" })).rejects.toMatchObject({
+      message: expect.stringContaining("workspace is full"),
+    });
+    expect(manager.exec).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a tool the running turn still holds once the circle turns commands off, and removes the containers", async () => {
+    const { service, tool, manager } = await turnedOn();
+
+    await service.saveCircle({ conversationId: "crew", commands: false });
+
+    expect(manager.reconcile).toHaveBeenCalledWith(new Set(["s1"]));
+    await expect(tool.execute("call", { command: "ls" })).rejects.toThrow("turned off in this circle");
+    expect(manager.exec).not.toHaveBeenCalled();
+  });
+
+  it("keeps the container of a member of a circle that allows commands", async () => {
+    const { service, manager } = await turnedOn();
+    await service.reconcile();
+    expect(manager.reconcile).toHaveBeenCalledWith(new Set(["s1", key]));
+  });
+
+  it("removes the Wisp's containers in its circles when its container settings change", async () => {
+    const { service, manager } = await turnedOn();
+
+    await service.save({ conversationId: "atlas", mode: "container", image: "node:24", localNetwork: true });
+
+    expect(manager.remove).toHaveBeenCalledWith("s1");
+    expect(manager.remove).toHaveBeenCalledWith(key);
+  });
+});
 
 describe("ExecutionService", () => {
   it("starts with commands off and offers no tool", async () => {

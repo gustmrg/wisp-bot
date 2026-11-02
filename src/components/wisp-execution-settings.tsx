@@ -107,7 +107,8 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
     <FieldGroup className="gap-3">
       <FieldDescription>
         Lets this Wisp run commands such as git, builds and tests in its own container on the server. The container sees
-        only this Wisp's workspace, can reach the internet, and stops after 30 minutes without a command.
+        only this Wisp's workspace, can reach the internet, and stops after 30 minutes without a command. A circle that
+        allows commands gives it another container, which sees only the circle's workspace.
       </FieldDescription>
       {view.runtime.available ? null : <FieldError>{view.runtime.message}</FieldError>}
       <Field orientation="horizontal">

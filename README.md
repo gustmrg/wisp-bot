@@ -62,8 +62,10 @@ preset.
   writes and the files you attach. See
   [security](docs/security.md).
 - **Commands** — a Wisp can be allowed to run commands (git, builds, tests) in
-  its own Docker or Podman container that sees only its workspace. See
-  [ADR 017](docs/decisions/017-container-execution.md).
+  its own Docker or Podman container that sees only its workspace, and in a
+  circle that allows it, in another that sees the circle's workspace. See
+  [ADR 017](docs/decisions/017-container-execution.md) and
+  [ADR 041](docs/decisions/041-commands-in-circles.md).
 - **Browser** — a Wisp can be given a headless browser, in a container of its
   own, to open pages, follow links and fill in forms; it asks before clicking
   buttons, sending forms or typing passwords. See

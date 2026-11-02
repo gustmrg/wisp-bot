@@ -13,7 +13,7 @@ a Wisp first.
 
 A circle's gear (or "…" on a phone) opens its settings in **General** (name,
 label, description, notifications), **Members** (members and lead),
-**Workspace**, and **Usage** tabs.
+**Workspace** (size, folder, and commands), and **Usage** tabs.
 
 ## An empty circle
 
@@ -70,9 +70,45 @@ attached files go to its `inbox/` folder. Its size limit belongs to the
 circle and is changed in its **Workspace** tab or in **Settings → Storage**.
 Deleting the circle archives that workspace.
 
-In a circle, Wisps cannot run commands (their containers mount only their
-own workspaces) and cannot manage [jobs](jobs.md), which deliver to a Wisp's
+In a circle, Wisps cannot manage [jobs](jobs.md), which deliver to a Wisp's
 own conversation.
+
+## Commands in a circle
+
+A member can run commands such as git, builds, and tests in the shared
+workspace when both of these are on
+([ADR 041](decisions/041-commands-in-circles.md)):
+
+- **Run commands** in the circle's **Workspace** tab, off by default; and
+- **Run commands** in the member's **Wisp settings → General → Commands &
+  browser**.
+
+The tab names the members who can run commands. This needs Docker or Podman
+on the server.
+
+Each member gets a container of its own for this circle. It sees only the
+circle's workspace, not the Wisp's own, so a repository cloned in a Wisp's
+own conversation is not here: clone it once in the circle, and every member
+uses that clone. The container uses the member's own **Image**, **Allow local
+network**, access to the GitHub and GitLab plugins, and Block rules, so a
+member without access to the GitHub plugin cannot push. Its home folder is
+`.home/<member>` in the workspace, and members share a package cache in
+`.cache`. Both count toward the circle's size.
+
+After 30 minutes without a command, the container and its network are
+removed. The files stay, but background processes end, and the next command
+takes a little longer. Members cannot reach each other's background
+processes, such as a dev server.
+
+Turn this on only for Wisps you trust together. The containers keep members'
+limits apart in normal use, but they share files:
+
+- A script or git hook one member leaves runs with the git and network access
+  of whichever member runs it.
+- Commands are not reviewed like file changes, so a member can change or
+  delete another's work without an approval card. Keep work in git.
+- A background process keeps running during other members' turns and can
+  change files, even though only one Wisp answers at a time.
 
 ## Members and usage
 

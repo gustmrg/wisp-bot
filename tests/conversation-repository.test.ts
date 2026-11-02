@@ -438,6 +438,16 @@ describe("ConversationRepository", () => {
       settingsDirectory: repository.getAgentContext("atlas").configDirectory,
     });
     expect(nova!.workspaceDirectory).not.toBe(repository.getAgentContext("nova").workspaceDirectory);
+    // Commands in the circle use its folders, and know each member by its own storage ID (ADR 041).
+    const target = repository.getCircleExecutionTarget("crew");
+    expect(target).toMatchObject({ conversationId: "crew", ...circleFolders });
+    expect(target.members).toEqual([
+      { wispId: "atlas", storageId: repository.getWispStorageId("atlas") },
+      { wispId: "nova", storageId: repository.getWispStorageId("nova") },
+    ]);
+    expect(path.basename(target.workspaceDirectory)).toBe(target.storageId);
+    expect(repository.listCircleExecutionTargets()).toEqual([target]);
+    expect(() => repository.getCircleExecutionTarget("atlas")).toThrow("not a circle");
     expect(nova!.sessionDirectory).not.toBe(atlas!.sessionDirectory);
     await expect(readdir(atlas!.sessionDirectory)).resolves.toEqual([]);
     expect(repository.listCirclesOf("nova")).toEqual(["crew"]);

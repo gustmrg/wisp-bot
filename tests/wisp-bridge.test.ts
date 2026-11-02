@@ -257,6 +257,14 @@ function completeBridge(): WispApi {
       },
     }),
     setWorkspaceQuota: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } }),
+    getCircleExecution: async () => ({
+      ok: true,
+      value: { commands: false, memberIdsWithCommands: [], runtime: { available: false, message: "None" } },
+    }),
+    saveCircleExecution: async () => ({
+      ok: true,
+      value: { commands: false, memberIdsWithCommands: [], runtime: { available: false, message: "None" } },
+    }),
     getWispSetup: async () => ({
       ok: true,
       value: { maxQuotaBytes: 1024, runtime: { available: false, message: "none" } },

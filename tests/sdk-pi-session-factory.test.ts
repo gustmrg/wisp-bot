@@ -1005,6 +1005,48 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("must not execute shell commands");
   });
 
+  it("tells a circle's member what it shares when it runs commands there, and that it cannot when it does not", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-circle-commands-"));
+    const context = {
+      conversationId: "crew",
+      sessionId: "builder",
+      name: "Builder",
+      wispId: "builder",
+      role: "Developer",
+      soul: "Build things.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      circle: { name: "Crew", description: "", members: [{ id: "builder", name: "Builder", role: "Developer" }] },
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const promptWith = async (tools: string[]) => {
+      const pluginTools: PluginToolSource = {
+        getTools: vi.fn(() => tools.map(toolDefinition)) as PluginToolSource["getTools"],
+        getActiveToolNames: vi.fn(async () => tools),
+      };
+      await new SdkPiSessionFactory(runtime, undefined, toToolSource(pluginTools)).create(context, {
+        providerId: "provider",
+        modelId: "model",
+      });
+      return (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    };
+
+    const running = await promptWith(["run_command"]);
+    expect(running).toContain("Run commands only with run_command");
+    expect(running).toContain("look for a clone before cloning a repository");
+    expect(running).toContain("Scheduled jobs are not available in a circle");
+    expect(running).not.toContain("Commands and scheduled jobs are not available");
+
+    const notRunning = await promptWith([]);
+    expect(notRunning).toContain("must not execute shell commands");
+    expect(notRunning).toContain("Commands and scheduled jobs are not available to you in this circle");
+    expect(notRunning).not.toContain("look for a clone");
+  });
+
   it("opens a job run apart from the conversation, with only the job's tools and skills", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-job-"));
     const configDirectory = path.join(directory, "config");

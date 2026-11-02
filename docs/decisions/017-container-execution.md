@@ -184,6 +184,13 @@ network works for git even when the Wisp's local network is blocked: the user
 chose that instance, and only git reaches it. Not covered: instances with a
 certificate from a private authority.
 
+## Amendment: containers in circles (2026-11-01)
+
+[ADR 041](041-commands-in-circles.md) lets a circle's members run commands. A
+member's own container still mounts only its own workspace; it has another for
+each circle that allows commands, with the same confinement, removed with its
+network when idle rather than stopped.
+
 ## Deferred: SSH mode
 
 A third mode would run a Wisp's commands over SSH on a machine the user
