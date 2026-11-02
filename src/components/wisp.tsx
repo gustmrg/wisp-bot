@@ -3,15 +3,7 @@ import { createElement, useId, useRef, type CSSProperties, type ComponentProps, 
 import { DEFAULT_WISP_APPEARANCE, type WispAppearance } from "../../shared/wisp-appearance";
 import { useWispBlink } from "@/hooks/use-wisp-blink";
 import { cn } from "@/lib/utils";
-import {
-  BODY_GEOMETRY,
-  NO_TRAIL_OFFSET,
-  TRAIL_GEOMETRY,
-  luminance,
-  mixColors,
-  wispColor,
-  wispPalette,
-} from "@/lib/wisp-appearance";
+import { BODY_GEOMETRY, NO_TRAIL_OFFSET, TRAIL_GEOMETRY, wispColor, wispPalette } from "@/lib/wisp-appearance";
 
 type WispSize = "default" | "sm" | "lg" | "xl";
 
@@ -146,15 +138,7 @@ function Wisp({
   const [faceX, faceY] = BODY_GEOMETRY[appearance.body].face;
   const hasTrail = appearance.trail !== "none";
 
-  const autoInk = luminance(palette.base) > 0.4 ? palette.darkInk : palette.lightInk;
-  const ink =
-    finish === "line"
-      ? lineColor
-      : appearance.eyeInk === "dark"
-        ? palette.darkInk
-        : appearance.eyeInk === "light"
-          ? palette.lightInk
-          : autoInk;
+  const ink = finish === "line" ? lineColor : palette.eyes[appearance.eyeInk];
   // Eyes grow a little where they would otherwise be a pixel or two, and while waiting for approval.
   const eyeScale = (small ? 1.22 : 1) * (state === "approval" ? 1.15 : 1);
   const paint = finish === "glow" ? `url(#${id}-glow)` : palette.base;
@@ -174,7 +158,7 @@ function Wisp({
     >
       <defs>
         {finish === "line" ? <OutlineMask id={`${id}-line`} appearance={appearance} width={lineWidth} /> : null}
-        {finish !== "line" && palette.needsRing ? (
+        {finish !== "line" && palette.ring ? (
           <OutlineMask id={`${id}-ring`} appearance={appearance} width={Math.max(2.5, 1.2 * unit)} />
         ) : null}
         {finish === "glow" ? (
@@ -201,14 +185,14 @@ function Wisp({
                   <WispShapes appearance={appearance} extra={0} />
                 </g>
               ) : null}
-              {palette.needsRing ? (
-                // Only the dark theme needs it: a near-black body on a near-black background.
+              {palette.ring ? (
+                // Only one theme needs it: a near-black body on the dark background, a near-white one on the light.
                 <rect
                   x="-20"
                   y="-20"
                   width="140"
                   height="140"
-                  style={{ fill: `light-dark(transparent, ${mixColors(palette.base, "#ffffff", 0.32)})` }}
+                  style={{ fill: palette.ring }}
                   mask={`url(#${id}-ring)`}
                 />
               ) : null}
@@ -236,13 +220,13 @@ function Wisp({
           </g>
           {!small && appearance.mark === "spark" ? (
             <path
-              style={{ fill: finish === "line" ? lineColor : palette.light }}
+              style={{ fill: finish === "line" ? lineColor : palette.marks.spark }}
               transform={`translate(${hasTrail ? 22 : 78} 22) scale(.9)`}
               d="M0-10L2.6-2.6L10 0L2.6 2.6L0 10L-2.6 2.6L-10 0L-2.6-2.6Z"
             />
           ) : null}
           {!small && appearance.mark === "motes" ? (
-            <g style={{ fill: finish === "line" ? lineColor : palette.base }}>
+            <g style={{ fill: finish === "line" ? lineColor : palette.marks.motes }}>
               <circle cx="16" cy="28" r="3.2" />
               <circle cx="24" cy="20" r="2" />
               <circle cx="92" cy="46" r="3" />

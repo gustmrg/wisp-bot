@@ -102,7 +102,7 @@ function AvatarEditor({ wisp, onChange }: AvatarEditorProps) {
                 <button
                   type="button"
                   data-selected={selected}
-                  className="aspect-square w-[calc((100%-70px)/6)] max-w-8 flex-none rounded-full border-0 p-0 transition-opacity duration-100 hover:opacity-80 data-[selected=true]:ring-2 data-[selected=true]:ring-ring data-[selected=true]:ring-offset-2 data-[selected=true]:ring-offset-card"
+                  className="aspect-square w-[calc((100%-70px)/6)] max-w-8 flex-none rounded-full border border-black/10 p-0 transition-opacity dark:border-white/15 duration-100 hover:opacity-80 data-[selected=true]:ring-2 data-[selected=true]:ring-ring data-[selected=true]:ring-offset-2 data-[selected=true]:ring-offset-card"
                   aria-pressed={selected}
                   aria-label={color.label}
                   title={color.label}

@@ -6,6 +6,7 @@ import {
   type WispAppearance,
   type WispBody,
   type WispColorId,
+  type WispEyeInk,
   type WispTrail,
 } from "../../shared/wisp-appearance";
 
@@ -39,6 +40,7 @@ const COLOR_LABELS: Readonly<Record<WispColorId, string>> = {
   violet: "Violet",
   magenta: "Magenta",
   gray: "Gray",
+  white: "White",
 };
 
 export const AVATAR_COLORS = WISP_COLORS.map((color) => ({ ...color, label: COLOR_LABELS[color.id] }));
@@ -92,11 +94,17 @@ export function hashSeed(seed: string) {
   return hash >>> 0;
 }
 
+/**
+ * The colors a name can derive. White came later and stays out, so a Wisp without a color of its own keeps the
+ * one it has always had.
+ */
+const DERIVED_COLORS = WISP_COLORS.filter((color) => color.id !== "white");
+
 /** A Wisp's color: the one it was given, or one derived from its name. */
 export function wispColor(name: string, color?: string): string {
   if (color) return color;
   const hash = hashSeed(name || "agent");
-  return WISP_COLORS[hash % WISP_COLORS.length]?.value ?? WISP_COLORS[0].value;
+  return DERIVED_COLORS[hash % DERIVED_COLORS.length]?.value ?? WISP_COLORS[0].value;
 }
 
 /** Text or icon color that reads on a fill of `color`. */
@@ -105,13 +113,20 @@ export function inkOn(color: string): string {
 }
 
 /**
- * The color a Wisp tints the interface with: its own, except that in the dark theme a near-black one is lifted
- * to silver, as its glow would otherwise vanish into the background.
+ * The color a Wisp tints the interface with: its own, except where it would vanish into the background. In the
+ * dark theme a near-black one is lifted to silver, and in the light theme a near-white one is deepened to gray.
  */
 export function wispAccent(color: string): { accent: string; ink: string } {
-  if (luminance(color) >= 0.04) return { accent: color, ink: inkOn(color) };
-  const lifted = mixColors(color, "#ffffff", 0.6);
-  return { accent: `light-dark(${color}, ${lifted})`, ink: `light-dark(${inkOn(color)}, ${inkOn(lifted)})` };
+  const value = luminance(color);
+  if (value < 0.04) {
+    const lifted = mixColors(color, "#ffffff", 0.6);
+    return { accent: `light-dark(${color}, ${lifted})`, ink: `light-dark(${inkOn(color)}, ${inkOn(lifted)})` };
+  }
+  if (value > 0.8) {
+    const deepened = mixColors(color, "#000000", 0.45);
+    return { accent: `light-dark(${deepened}, ${color})`, ink: `light-dark(${inkOn(deepened)}, ${inkOn(color)})` };
+  }
+  return { accent: color, ink: inkOn(color) };
 }
 
 /** WCAG contrast ratio between two colors, from 1 (none) to 21 (black on white). */
@@ -151,15 +166,25 @@ export interface WispPalette {
   base: string;
   light: string;
   deep: string;
-  /** Eye color on a light body. */
-  darkInk: string;
-  /** Eye color on a dark body. */
-  lightInk: string;
+  /** Eye color for each eye color choice. */
+  eyes: Readonly<Record<WispEyeInk, string>>;
   /** Outline color on light and dark backgrounds. */
   line: { light: string; dark: string };
-  /** True when the body is too dark to tell apart from a dark background. */
-  needsRing: boolean;
+  /**
+   * The fill of a thin ring around a body that would vanish into the background: a near-black one in the dark
+   * theme, a near-white one in the light theme. Null when the body stands out in both.
+   */
+  ring: string | null;
+  /** The spark and the motes, which a near-white Wisp draws darker in the light theme so they show. */
+  marks: { spark: string; motes: string };
 }
+
+/** Bodies darker than this disappear into the dark theme's background. */
+const NEAR_BLACK = 0.04;
+/** Bodies lighter than this disappear into the light theme's background. */
+const NEAR_WHITE = 0.8;
+/** An eye color with less contrast than this against the body would leave the Wisp without a face. */
+const EYE_CONTRAST = 1.2;
 
 /** The tones a Wisp is drawn with, from its palette color. A soft tone is the same color, lighter. */
 export function wispPalette(color: string, tone: WispAppearance["tone"]): WispPalette {
@@ -167,14 +192,27 @@ export function wispPalette(color: string, tone: WispAppearance["tone"]): WispPa
   const light = mixColors(base, "#ffffff", 0.45);
   const deep = mixColors(base, "#000000", tone === "soft" ? 0.3 : 0.32);
   const baseLuminance = luminance(base);
+  const nearWhite = baseLuminance > NEAR_WHITE;
+  const darkInk = mixColors(color, "#000000", 0.74);
+  const lightInk = "#f7fbff";
+  const auto = baseLuminance > 0.4 ? darkInk : lightInk;
+  // A chosen eye color the body would swallow, such as light eyes on a white Wisp, gives way to the other one.
+  const readable = (ink: string) => (contrastRatio(ink, base) < EYE_CONTRAST ? auto : ink);
+  const ring =
+    baseLuminance < NEAR_BLACK
+      ? `light-dark(transparent, ${mixColors(base, "#ffffff", 0.32)})`
+      : nearWhite
+        ? `light-dark(${mixColors(base, "#000000", 0.28)}, transparent)`
+        : null;
+  const onBackground = (fill: string) => (nearWhite ? `light-dark(${deep}, ${fill})` : fill);
   return {
     base,
     light,
     deep,
-    darkInk: mixColors(color, "#000000", 0.74),
-    lightInk: "#f7fbff",
-    line: { light: baseLuminance > 0.45 ? deep : base, dark: baseLuminance < 0.04 ? light : base },
-    needsRing: baseLuminance < 0.04,
+    eyes: { auto, dark: readable(darkInk), light: readable(lightInk) },
+    line: { light: baseLuminance > 0.45 ? deep : base, dark: baseLuminance < NEAR_BLACK ? light : base },
+    ring,
+    marks: { spark: onBackground(light), motes: onBackground(base) },
   };
 }
 
