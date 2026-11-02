@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  CalendarClockIcon,
-  CheckIcon,
-  CircleAlertIcon,
-  CircleStopIcon,
-  CopyIcon,
-  LifeBuoyIcon,
-  RepeatIcon,
-} from "lucide-react";
+import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon, LifeBuoyIcon } from "lucide-react";
 
 import type { Message, Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
@@ -357,7 +349,7 @@ function JobBadge({ title }: { title: string }) {
   return (
     <Tooltip>
       <TooltipTrigger render={<span />} className="inline-flex min-w-0 items-center gap-1" delay={300}>
-        <RepeatIcon aria-hidden="true" className="size-3 flex-none" />
+        <CalendarClockIcon aria-hidden="true" className="size-3 flex-none" />
         <span className="truncate">{`Job · ${title}`}</span>
       </TooltipTrigger>
       <TooltipContent>{`Sent by the job "${title}", which ran in the background`}</TooltipContent>

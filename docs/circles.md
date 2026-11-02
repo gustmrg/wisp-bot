@@ -128,4 +128,6 @@ Removing a member forgets that Wisp's history in the circle; adding it again
 starts a new session. A circle's **Usage** tab counts only what each member
 used in that circle, while each Wisp's own usage and the
 [token usage](token-usage.md) dashboard keep counting per Wisp. What the
-decision model used is a **Decision model** row of its own in both.
+decision model used is a **Decision model** row of its own in both: it comes
+after the Wisps, shows how many times it chose who answers, and the last row
+is then called **Total** rather than **All Wisps**.

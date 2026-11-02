@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { ChartColumnIcon, CircleAlertIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { ChartColumnIcon, CircleAlertIcon, RefreshCwIcon, SignpostIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Wisp } from "@/components/wisp";
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
@@ -240,7 +240,8 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
 
 function UsageSummary({ report, model }: { report: UsageReport; model?: ModelUsageRow }) {
   const { totals } = report;
-  const unpriced = report.wisps.filter((wisp) => wisp.totals.costUsd === null).length;
+  const unpriced = report.wisps.filter((wisp) => wisp.totals.costUsd === null && !wisp.decisionModel).length;
+  const decisionsUnpriced = report.wisps.some((wisp) => wisp.decisionModel && wisp.totals.costUsd === null);
   // With a Wisp missing prices the total is unknown; the priced part is still a floor worth showing.
   const pricedCost = report.wisps.reduce((sum, wisp) => sum + (wisp.totals.costUsd ?? 0), 0);
   const pricedSavings = report.wisps.reduce((sum, wisp) => sum + (wisp.totals.cacheSavingsUsd ?? 0), 0);
@@ -272,14 +273,20 @@ function UsageSummary({ report, model }: { report: UsageReport; model?: ModelUsa
         </div>
         <TokenMix totals={totals} />
         <CacheStats totals={totals} pricedSavings={pricedSavings} />
-        {totals.costUsd === null && unpriced > 0 && pricedCost > 0 ? (
-          <p className="m-0 text-xs text-dim">
-            Cost covers priced usage only. {plural(unpriced, "Wisp")} {unpriced === 1 ? "has" : "have"} an unknown cost.
-          </p>
+        {totals.costUsd === null && (unpriced > 0 || decisionsUnpriced) && pricedCost > 0 ? (
+          <p className="m-0 text-xs text-dim">{unknownCostNote(unpriced, decisionsUnpriced)}</p>
         ) : null}
       </SettingsCard>
     </SettingsGroup>
   );
+}
+
+/** Who has usage without a price, the decision model named apart from the Wisps. */
+function unknownCostNote(wisps: number, decisionModel: boolean): string {
+  const subject =
+    wisps === 0 ? "The decision model" : `${plural(wisps, "Wisp")}${decisionModel ? " and the decision model" : ""}`;
+  const verb = wisps > 1 || (wisps > 0 && decisionModel) ? "have" : "has";
+  return `Cost covers priced usage only. ${subject} ${verb} an unknown cost.`;
 }
 
 function UsageTable({
@@ -292,10 +299,15 @@ function UsageTable({
   /** The model the report is narrowed to: rows then count its turns rather than every session. */
   model?: ModelUsageRow;
 }) {
+  // The decision model is no Wisp: it comes after them, whatever it cost.
   const rows = [...report.wisps].sort(
-    (a, b) => (b.totals.costUsd ?? -1) - (a.totals.costUsd ?? -1) || b.totals.totalTokens - a.totals.totalTokens,
+    (a, b) =>
+      Number(Boolean(a.decisionModel)) - Number(Boolean(b.decisionModel)) ||
+      (b.totals.costUsd ?? -1) - (a.totals.costUsd ?? -1) ||
+      b.totals.totalTokens - a.totals.totalTokens,
   );
   const topCost = Math.max(0, ...rows.map((row) => row.totals.costUsd ?? 0));
+  const decides = rows.some((row) => row.decisionModel);
   return (
     <SettingsCard className="overflow-x-auto">
       {/* Below 35rem the rows stack into labelled cells; see .usage-table in styles.css. */}
@@ -323,18 +335,31 @@ function UsageTable({
               <tr key={wisp.conversationId}>
                 <th scope="row" className="max-w-44 px-3 py-2.5 text-left text-sm font-medium">
                   <span className="flex items-center gap-2">
-                    <Wisp
-                      aria-hidden="true"
-                      className="flex-none"
-                      appearance={option?.appearance}
-                      color={option?.color}
-                      name={wisp.name}
-                      size="sm"
-                    />
+                    {wisp.decisionModel ? (
+                      <span
+                        aria-hidden="true"
+                        className="flex size-6 flex-none items-center justify-center rounded-full bg-muted text-dim"
+                      >
+                        <SignpostIcon className="size-3.5" />
+                      </span>
+                    ) : (
+                      <Wisp
+                        aria-hidden="true"
+                        className="flex-none"
+                        appearance={option?.appearance}
+                        color={option?.color}
+                        name={wisp.name}
+                        size="sm"
+                      />
+                    )}
                     <span className="min-w-0 break-words">
                       {wisp.name}
                       <span className="block text-xs font-normal text-dim">
-                        {model ? modelActivity(wispModel(wisp, model) ?? model) : plural(wisp.sessions, "session")}
+                        {model
+                          ? modelActivity(wispModel(wisp, model) ?? model)
+                          : wisp.decisionModel
+                            ? decisionActivity(wisp)
+                            : plural(wisp.sessions, "session")}
                       </span>
                     </span>
                   </span>
@@ -348,7 +373,7 @@ function UsageTable({
           <tfoot className="font-semibold">
             <tr className="[&>*]:border-t [&>*]:border-border">
               <th scope="row" className="px-3 py-2.5 text-left text-sm">
-                All Wisps
+                {decides ? "Total" : "All Wisps"}
               </th>
               <UsageCells totals={report.totals} />
             </tr>
@@ -357,6 +382,12 @@ function UsageTable({
       </table>
     </SettingsCard>
   );
+}
+
+/** What the decision model did: how many times it chose who answers, when the server splits usage by model. */
+function decisionActivity(row: WispUsageRow): string {
+  const decisions = (row.models ?? []).reduce((sum, model) => sum + (model.decisionCalls ?? 0), 0);
+  return decisions > 0 ? plural(decisions, "decision") : "Chooses who answers";
 }
 
 /** The report narrowed to one model: each Wisp's usage of it, and Wisps that never used it left out. */
