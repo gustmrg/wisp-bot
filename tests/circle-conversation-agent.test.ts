@@ -107,6 +107,198 @@ async function setup(
   return { agent, agents, received, events, messages, say };
 }
 
+/** A circle whose members answer only when told to, so a test decides what overlaps. */
+async function heldSetup(options: Parameters<typeof setup>[1] = {}) {
+  const context = await setup(undefined, options);
+  const holds = new Map<string, Array<() => void>>();
+  /** What each turn was told, as soon as it starts. */
+  const told: Array<{ wispId: string; text: string }> = [];
+  for (const [wispId, agent] of context.agents) {
+    const send = agent.send.bind(agent);
+    agent.send = async (request) => {
+      told.push({ wispId, text: request.text });
+      await new Promise<void>((resolve) => holds.set(wispId, [...(holds.get(wispId) ?? []), resolve]));
+      return send(request);
+    };
+  }
+  const finish = async (wispId: string) => {
+    await vi.waitFor(() => expect(holds.get(wispId)?.length).toBeGreaterThan(0));
+    holds.get(wispId)!.shift()!();
+  };
+  const started = (wispId: string) =>
+    context.events.filter((event) => event.type === "circle_turn_started" && event.wispId === wispId).length;
+  /** `start` reports idle once; this counts only what a message caused. */
+  const idled = () =>
+    context.events.filter((event) => event.type === "conversation_status" && event.status === "idle").length - 1;
+  return { ...context, finish, started, told, idled };
+}
+
+describe("CircleConversationAgent with members working at the same time", () => {
+  it("lets another member answer while one works, and is idle only once both finish", async () => {
+    const { agent, say, finish, started, events, idled } = await heldSetup();
+
+    const nova = say("m1", "@Nova push the branch");
+    await vi.waitFor(() => expect(started("nova")).toBe(1));
+    expect(agent.canTake("@Nova another thing")).toBe(false);
+    expect(agent.canTake("@Atlas are you there?")).toBe(true);
+    expect(agent.canTake("Hello")).toBe(true);
+
+    const atlas = say("m2", "Hello");
+    await vi.waitFor(() => expect(started("atlas")).toBe(1));
+    await finish("atlas");
+    await atlas;
+    expect(events.at(-1)).toMatchObject({ type: "circle_turn_ended", wispId: "atlas" });
+    expect(idled()).toBe(0);
+    expect(events.filter((event) => event.type === "conversation_status" && event.status === "working")).toHaveLength(
+      1,
+    );
+
+    await finish("nova");
+    await nova;
+    expect(events.at(-1)).toMatchObject({ type: "conversation_status", status: "idle" });
+    expect(events).toContainEqual(expect.objectContaining({ type: "assistant_message_completed", wispId: "nova" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "assistant_message_completed", wispId: "atlas" }));
+  });
+
+  it("frees a member once it hands the task over", async () => {
+    const { agent, say, finish, started } = await heldSetup({
+      reply: (wispId) => (wispId === "atlas" ? "@Nova your turn" : "Done"),
+    });
+    const capacity = vi.fn();
+    agent.onCapacity(capacity);
+
+    const round = say("m1", "@Atlas ship it");
+    await vi.waitFor(() => expect(started("atlas")).toBe(1));
+    expect(agent.canTake("@Atlas again")).toBe(false);
+    await finish("atlas");
+
+    await vi.waitFor(() => expect(started("nova")).toBe(1));
+    expect(agent.canTake("@Atlas again")).toBe(true);
+    expect(agent.canTake("@Nova again")).toBe(false);
+    expect(capacity).toHaveBeenCalled();
+    await finish("nova");
+    await round;
+  });
+
+  it("makes a handoff wait for a member who is busy, not counting toward the deadline", async () => {
+    const { agent, say, finish, started, received } = await heldSetup({
+      reply: (wispId) => (wispId === "atlas" ? "@Nova your turn" : "Done"),
+    });
+    const waiting = vi.fn();
+    agent.onWaiting(waiting);
+
+    const nova = say("m1", "@Nova first");
+    await vi.waitFor(() => expect(started("nova")).toBe(1));
+    const atlas = say("m2", "@Atlas second");
+    await vi.waitFor(() => expect(started("atlas")).toBe(1));
+    await finish("atlas");
+
+    await vi.waitFor(() => expect(waiting).toHaveBeenCalledWith("m2", true));
+    expect(started("nova")).toBe(1);
+
+    await finish("nova");
+    await nova;
+    await vi.waitFor(() => expect(started("nova")).toBe(2));
+    expect(waiting).toHaveBeenCalledWith("m2", false);
+    await finish("nova");
+    await atlas;
+    expect(received.filter(({ wispId }) => wispId === "nova").map(({ request }) => request.requestId)).toEqual([
+      "m1:nova",
+      "m2:nova",
+    ]);
+  });
+
+  it("holds a message's members from when it is accepted, before it runs", async () => {
+    const { agent } = await setup();
+    agent.reserve({ conversationId: "crew", requestId: "m1", text: "@Atlas @Nova both" });
+    expect(agent.canTake("@Atlas hello")).toBe(false);
+    expect(agent.canTake("@Nova hello")).toBe(false);
+  });
+
+  it("stops everything on Stop, including a turn waiting for a member", async () => {
+    const { agent, say, finish, started, events } = await heldSetup({
+      reply: (wispId) => (wispId === "atlas" ? "@Nova your turn" : "Done"),
+    });
+    const nova = say("m1", "@Nova first");
+    await vi.waitFor(() => expect(started("nova")).toBe(1));
+    const atlas = say("m2", "@Atlas second");
+    await vi.waitFor(() => expect(started("atlas")).toBe(1));
+    await finish("atlas");
+    await vi.waitFor(() => expect(agent.canTake("@Atlas free")).toBe(true));
+
+    const stopping = agent.abort();
+    await finish("nova");
+    await Promise.all([stopping, nova, atlas]);
+
+    expect(started("nova")).toBe(1);
+    expect(events.at(-1)).toMatchObject({ type: "conversation_status", status: "idle" });
+    expect(agent.canTake("@Nova hello")).toBe(true);
+    expect(agent.canTake("@Atlas hello")).toBe(true);
+  });
+
+  it("stops only the message a deadline passed for", async () => {
+    const { agent, say, finish, started, events, idled } = await heldSetup();
+    const nova = say("m1", "@Nova first");
+    const atlas = say("m2", "@Atlas second");
+    await vi.waitFor(() => expect(started("nova") + started("atlas")).toBe(2));
+
+    const stopping = agent.abortRequest("m1");
+    await finish("nova");
+    await Promise.all([stopping, nova]);
+    expect(idled()).toBe(0);
+
+    await finish("atlas");
+    await atlas;
+    expect(events).toContainEqual(expect.objectContaining({ type: "assistant_message_completed", wispId: "atlas" }));
+    expect(events.at(-1)).toMatchObject({ type: "conversation_status", status: "idle" });
+  });
+
+  it("tells a member who else is working, in a message alone or with others", async () => {
+    const { say, finish, started, told, messages } = await heldSetup();
+    const nova = say("m1", "@Nova push it");
+    await vi.waitFor(() => expect(started("nova")).toBe(1));
+    // Atlas reads what was said before it, which is Nova's request here, and is told Nova is on it.
+    const atlas = say("m2", "@Atlas hi");
+    await vi.waitFor(() => expect(told.at(-1)?.wispId).toBe("atlas"));
+    expect(told.at(-1)!.text).toContain("will reply when finished: Nova");
+    expect(told.find(({ wispId }) => wispId === "nova")!.text).toBe("@Nova push it");
+    await finish("atlas");
+    await atlas;
+    await finish("nova");
+    await nova;
+    expect(messages.some(({ id }) => id === "m1:nova:assistant")).toBe(true);
+  });
+
+  it("does not trouble the model when only one member is free, and says who was chosen", async () => {
+    const chooseResponder = vi.fn(async () => "atlas");
+    const { say, finish, started, events } = await heldSetup({ responder: "auto", chooseResponder });
+    const atlas = say("m1", "@Atlas first");
+    await vi.waitFor(() => expect(started("atlas")).toBe(1));
+
+    const nova = say("m2", "Anyone?");
+    await vi.waitFor(() => expect(started("nova")).toBe(1));
+
+    expect(chooseResponder).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "circle_turn_started", wispId: "nova", chosenAutomatically: true }),
+    );
+    await finish("atlas");
+    await finish("nova");
+    await Promise.all([atlas, nova]);
+  });
+
+  it("refuses the same request twice", async () => {
+    const { say, agent, finish, started } = await heldSetup();
+    const first = say("m1", "@Nova hi");
+    await vi.waitFor(() => expect(started("nova")).toBe(1));
+    await expect(agent.send({ conversationId: "crew", requestId: "m1", text: "@Nova hi" })).rejects.toThrow(
+      "already being answered",
+    );
+    await finish("nova");
+    await first;
+  });
+});
+
 describe("circle mentions", () => {
   const members = [
     { id: "ada", name: "Ada" },
@@ -249,18 +441,20 @@ describe("CircleConversationAgent with a decision model", () => {
     expect(events.at(-1)).toMatchObject({ type: "conversation_status", status: "idle" });
   });
 
-  it("refuses a second message while the model decides", async () => {
+  it("keeps answering other messages while the model decides, and offers it only who is free", async () => {
     let decide: (wispId: string | null) => void = () => undefined;
     const chooseResponder = vi.fn(() => new Promise<string | null>((resolve) => (decide = resolve)));
-    const { agent, say } = await setup(undefined, { responder: "auto", chooseResponder });
+    const { agent, say, received } = await setup(undefined, { responder: "auto", chooseResponder });
 
     const sending = say("m1", "Who can help?");
     await vi.waitFor(() => expect(chooseResponder).toHaveBeenCalled());
-    await expect(agent.send({ conversationId: "crew", requestId: "m2", text: "Hello?" })).rejects.toThrow(
-      "already processing",
-    );
+    expect(agent.canTake("@Nova hello")).toBe(true);
+    expect(agent.canTake("@Atlas hello")).toBe(false);
+    await say("m2", "@Nova hello");
+    expect(received.map(({ wispId }) => wispId)).toEqual(["nova"]);
     decide(null);
     await sending;
+    expect(received.map(({ wispId }) => wispId)).toEqual(["nova", "atlas"]);
   });
 });
 

@@ -114,7 +114,8 @@ export class ConversationService {
   }
 
   /** The member the decision model chose for each circle's current turn. */
-  private readonly chosenMembers = new Map<string, string>();
+  /** The members the decision model chose, for the turns each circle has running. */
+  private readonly chosenMembers = new Map<string, Set<string>>();
 
   async start(model: ModelSelection | null): Promise<void> {
     this.model = model;
@@ -214,8 +215,10 @@ export class ConversationService {
       return;
     }
     if (event.type === "circle_turn_started") {
-      if (event.chosenAutomatically) this.chosenMembers.set(event.conversationId, event.wispId);
-      else this.chosenMembers.delete(event.conversationId);
+      const chosen = this.chosenMembers.get(event.conversationId) ?? new Set<string>();
+      if (event.chosenAutomatically) chosen.add(event.wispId);
+      else chosen.delete(event.wispId);
+      this.chosenMembers.set(event.conversationId, chosen);
     }
     if (event.type === "assistant_message_started") {
       this.persistOutgoingStatus(event.conversationId, event.requestId, "complete");
@@ -403,7 +406,7 @@ export class ConversationService {
   /** Replies in a Wisp's own conversation are the Wisp's; in a circle, the member's the event names. */
   /** Marks the reply of the member the decision model chose; a member it hands the task to was not chosen. */
   private chosenMark(conversationId: string, wispId?: string): { chosenAutomatically?: true } {
-    return wispId && this.chosenMembers.get(conversationId) === wispId ? { chosenAutomatically: true } : {};
+    return wispId && this.chosenMembers.get(conversationId)?.has(wispId) ? { chosenAutomatically: true } : {};
   }
 
   private authorOf(conversationId: string, wispId?: string): { authorId?: string; authorName?: string } {
@@ -569,21 +572,30 @@ export class ConversationService {
   }
 
   /**
-   * Hands a Wisp its oldest queued message: moved into the transcript (with
+   * Hands a Wisp its oldest queued message that can start: moved into the transcript (with
    * status queued until the reply starts), then sent. Calls `onTaken` once it
    * has left the queue, and resolves with it after the request has finished,
    * or with undefined when nothing was waiting. A Wisp that cannot take it
    * marks it failed, so it can be retried from the transcript.
    */
   async deliverNextQueued(conversationId: string, onTaken: () => void): Promise<QueuedMessage | undefined> {
-    const taken = await this.repository.takeQueuedMessage(conversationId, (queued) => ({
-      id: queued.id,
-      type: "outgoing",
-      text: queued.text,
-      createdAt: new Date().toISOString(),
-      status: "queued",
-      ...(queued.scheduled ? { scheduled: queued.scheduled } : {}),
-    }));
+    // In a circle, a message can pass one that waits for a member who is busy (ADR 042).
+    const next = (await this.repository.listQueuedMessages()).find(
+      (queued) => queued.conversationId === conversationId && this.registry.canTake(conversationId, queued.text),
+    );
+    if (!next) return undefined;
+    const taken = await this.repository.takeQueuedMessage(
+      conversationId,
+      (queued) => ({
+        id: queued.id,
+        type: "outgoing",
+        text: queued.text,
+        createdAt: new Date().toISOString(),
+        status: "queued",
+        ...(queued.scheduled ? { scheduled: queued.scheduled } : {}),
+      }),
+      next.id,
+    );
     if (!taken) return undefined;
     const { queued } = taken;
     this.publish(conversationId, changesOf(taken.change));

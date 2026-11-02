@@ -674,6 +674,13 @@ type ConversationAgentEventBody =
       wispId: string;
       /** The decision model chose this member to answer. */
       chosenAutomatically?: true;
+    }
+  | {
+      /** That member's turn ended, however it went; others may still be working (ADR 042). */
+      type: "circle_turn_ended";
+      conversationId: string;
+      requestId: string;
+      wispId: string;
     };
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };

@@ -16,10 +16,10 @@ export interface ConversationRuntimeState {
   messages: Record<string, ReadonlyArray<Message>>;
   errors: Record<string, BackendError | undefined>;
   activity: Record<string, string | undefined>;
-  /** In a circle, the member whose turn is running (ADR 011). */
-  turns: Record<string, string | undefined>;
-  /** The member the decision model chose for each circle's current turn. */
-  chosen: Record<string, string | undefined>;
+  /** In a circle, the members whose turns are running (ADR 042). */
+  turns: Record<string, ReadonlyArray<string> | undefined>;
+  /** The members the decision model chose, among each circle's running turns. */
+  chosen: Record<string, ReadonlyArray<string> | undefined>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
 
@@ -141,7 +141,7 @@ export function reduceConversationAgentEvent(
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...authorOf(event),
-        ...(event.wispId && next.chosen[event.conversationId] === event.wispId
+        ...(event.wispId && next.chosen[event.conversationId]?.includes(event.wispId)
           ? { chosenAutomatically: true as const }
           : {}),
       });
@@ -169,8 +169,23 @@ export function reduceConversationAgentEvent(
     case "circle_turn_started":
       return {
         ...next,
-        turns: { ...next.turns, [event.conversationId]: event.wispId },
-        chosen: { ...next.chosen, [event.conversationId]: event.chosenAutomatically ? event.wispId : undefined },
+        turns: {
+          ...next.turns,
+          [event.conversationId]: [...without(next.turns[event.conversationId], event.wispId), event.wispId],
+        },
+        chosen: {
+          ...next.chosen,
+          [event.conversationId]: [
+            ...without(next.chosen[event.conversationId], event.wispId),
+            ...(event.chosenAutomatically ? [event.wispId] : []),
+          ],
+        },
+        activity: { ...next.activity, [event.conversationId]: undefined },
+      };
+    case "circle_turn_ended":
+      return {
+        ...next,
+        turns: { ...next.turns, [event.conversationId]: without(next.turns[event.conversationId], event.wispId) },
         activity: { ...next.activity, [event.conversationId]: undefined },
       };
     case "conversation_error": {
@@ -417,6 +432,10 @@ function finalizeAssistant(
     ...(current?.type === "incoming" && current.chosenAutomatically ? { chosenAutomatically: true as const } : {}),
     ...authorOf({ wispId }),
   });
+}
+
+function without(list: ReadonlyArray<string> | undefined, value: string): ReadonlyArray<string> {
+  return (list ?? []).filter((item) => item !== value);
 }
 
 /** A circle's reply names its member; in a Wisp's own conversation it is the Wisp's. */

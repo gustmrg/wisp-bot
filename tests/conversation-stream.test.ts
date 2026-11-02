@@ -59,7 +59,7 @@ describe("conversation stream reducer", () => {
     };
     apply({ type: "conversation_status", conversationId: "crew", status: "working" });
     apply({ type: "circle_turn_started", conversationId: "crew", requestId: "m1", wispId: "nova" });
-    expect(state.turns.crew).toBe("nova");
+    expect(state.turns.crew).toEqual(["nova"]);
     apply({
       type: "conversation_error",
       conversationId: "crew",
@@ -69,6 +69,7 @@ describe("conversation stream reducer", () => {
       createdAt: "2026-10-20T10:00:00.000Z",
       error: { code: "configuration_required", message: "Choose a model.", retryable: true },
     });
+    apply({ type: "circle_turn_ended", conversationId: "crew", requestId: "m1", wispId: "nova" });
     apply({ type: "circle_turn_started", conversationId: "crew", requestId: "m1", wispId: "atlas" });
     apply({
       type: "assistant_message_started",
@@ -88,7 +89,7 @@ describe("conversation stream reducer", () => {
     });
 
     expect(state.errors.crew).toBeUndefined();
-    expect(state.turns.crew).toBe("atlas");
+    expect(state.turns.crew).toEqual(["atlas"]);
     expect(state.messages.crew).toEqual([
       expect.objectContaining({ id: "m1", status: "complete" }),
       expect.objectContaining({
@@ -103,6 +104,50 @@ describe("conversation stream reducer", () => {
 
     apply({ type: "conversation_status", conversationId: "crew", status: "idle" });
     expect(state.turns.crew).toBeUndefined();
+  });
+
+  it("keeps every member working at once, and marks only the one the model chose", () => {
+    const chats = stored(["crew"]);
+    let state = createConversationRuntime(0, { crew: "idle" });
+    let sequence = 0;
+    const apply = (event: Omit<SequencedConversationAgentEvent, "sequence">) => {
+      sequence += 1;
+      state = reduceConversationAgentEvent(state, { ...event, sequence } as SequencedConversationAgentEvent, chats);
+    };
+    apply({
+      type: "circle_turn_started",
+      conversationId: "crew",
+      requestId: "m1",
+      wispId: "nova",
+      chosenAutomatically: true,
+    });
+    apply({ type: "circle_turn_started", conversationId: "crew", requestId: "m2", wispId: "atlas" });
+    expect(state.turns.crew).toEqual(["nova", "atlas"]);
+    expect(state.chosen.crew).toEqual(["nova"]);
+
+    apply({
+      type: "assistant_text_delta",
+      conversationId: "crew",
+      requestId: "m2",
+      messageId: "m2:atlas:assistant",
+      wispId: "atlas",
+      delta: "Here.",
+    });
+    apply({
+      type: "assistant_text_delta",
+      conversationId: "crew",
+      requestId: "m1",
+      messageId: "m1:nova:assistant",
+      wispId: "nova",
+      delta: "Pushing.",
+    });
+    expect(state.messages.crew).toEqual([
+      expect.not.objectContaining({ chosenAutomatically: true }),
+      expect.objectContaining({ id: "m1:nova:assistant", authorId: "nova", chosenAutomatically: true }),
+    ]);
+
+    apply({ type: "circle_turn_ended", conversationId: "crew", requestId: "m2", wispId: "atlas" });
+    expect(state.turns.crew).toEqual(["nova"]);
   });
 
   it("reconciles queued and streaming messages by stable IDs and ignores event replay", () => {
