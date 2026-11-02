@@ -56,7 +56,7 @@ function ServerSession({ view }: { view: ConnectionsView }) {
     }
   }
   return (
-    <div>
+    <div className="animate-panel-in">
       <p className="mb-4 text-xs leading-relaxed text-dim">
         This browser uses the Wisps on {server?.name ?? "this server"}. Settings, credentials, and approvals belong to
         the server.

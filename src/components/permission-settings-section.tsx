@@ -65,7 +65,7 @@ export function PermissionSettingsSection({
       <p className="mb-4 text-xs leading-relaxed text-dim">
         What Wisps can do without asking. A Wisp's Access tab can override this.
       </p>
-      <div>
+      <div className="animate-panel-in">
         <SettingsGroup label="File changes">
           <SettingsCard variant="stacked">
             <SettingsRow>

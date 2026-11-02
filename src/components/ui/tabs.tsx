@@ -45,7 +45,7 @@ function TabsList({
       {variant === "default" ? (
         <TabsPrimitive.Indicator
           data-slot="tabs-indicator"
-          className="absolute inset-y-[3px] left-0 w-[var(--active-tab-width)] translate-x-[var(--active-tab-left)] rounded-md bg-background shadow-sm dark:bg-input/30"
+          className="absolute inset-y-[3px] left-0 w-[var(--active-tab-width)] translate-x-[var(--active-tab-left)] rounded-md bg-background shadow-sm transition-[translate,width] duration-200 ease-out dark:bg-input/30"
         />
       ) : null}
       {children}
@@ -73,7 +73,7 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
-      className={cn("flex-1 text-base outline-none data-hidden:hidden", className)}
+      className={cn("flex-1 animate-panel-in text-base outline-none data-hidden:hidden", className)}
       {...props}
     />
   );
