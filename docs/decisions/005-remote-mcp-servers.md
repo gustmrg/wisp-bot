@@ -147,7 +147,8 @@ events, reports, or model context. Safe tool identity is persisted with session
 history (`wisp:mcp-tools` entries) so reports keep identifying past calls after
 a server is removed. MCP results are bounded, `isError` results surface as
 failed tool calls, and images, audio, and resources are reported as unsupported
-instead of fetched.
+instead of fetched. The text of a resource embedded in a result reaches the
+model (see the amendment below).
 
 ### Amendment (2026-10-16): OAuth sign-in with a server on another computer
 
@@ -178,6 +179,19 @@ listener as well as the flow: the server closes it, pending host requests fail
 when their device's last event stream closes, the app closes its listeners when
 it leaves the server, and every listener closes on its own after 10 minutes.
 Device code flow is not added; it waits for a provider that needs it.
+
+### Amendment (2026-11-02): text of embedded resources
+
+Some servers return content as an embedded resource instead of a text block.
+GitHub's `get_file_contents` sends a text block that only names the file and
+its SHA, and the file's contents in a `resource` block. Reported as
+unsupported, the contents never reached the model, and a Wisp could not read
+a file it had downloaded.
+
+- An embedded resource with `text` is passed to the model, headed by its URI,
+  within the same bounds as the rest of the result.
+- A binary embedded resource (`blob`), images, audio, and `resource_link`
+  blocks are still reported as unsupported. Links are never fetched.
 
 ## Lifecycle
 

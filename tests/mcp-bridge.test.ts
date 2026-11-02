@@ -336,6 +336,50 @@ describe("convertMcpToolResult", () => {
     expect(converted.text).not.toContain("etc/passwd");
   });
 
+  it("shows the text of embedded resources, such as a GitHub file's contents", () => {
+    const converted = convertMcpToolResult({
+      content: [
+        { type: "text", text: "successfully downloaded text file (SHA: 1a2b3c)" },
+        {
+          type: "resource",
+          resource: {
+            uri: "repo://octo/app/refs/heads/main/contents/src/client.ts",
+            mimeType: "text/plain; charset=utf-8",
+            text: "export const client = createClient();",
+          },
+        },
+      ],
+    });
+    expect(converted.text).toBe(
+      "successfully downloaded text file (SHA: 1a2b3c)\n" +
+        "[Resource repo://octo/app/refs/heads/main/contents/src/client.ts]\n" +
+        "export const client = createClient();",
+    );
+    expect(converted.text).not.toContain("unsupported content block");
+  });
+
+  it("reports binary and malformed embedded resources as unsupported", () => {
+    const converted = convertMcpToolResult({
+      content: [
+        { type: "resource", resource: { uri: "repo://octo/app/contents/logo.png", blob: "iVBORw0KGgo=" } },
+        { type: "resource", resource: "not an object" },
+        { type: "resource", resource: { text: "no uri" } },
+      ],
+    });
+    expect(converted.text).toBe(
+      "no uri\n[This result included 2 unsupported content blocks (images, audio, or resources), which this app does not display.]",
+    );
+    expect(converted.text).not.toContain("iVBORw0KGgo=");
+  });
+
+  it("bounds embedded resource text with the rest of the result", () => {
+    const converted = convertMcpToolResult({
+      content: [{ type: "resource", resource: { uri: "repo://octo/app/big.txt", text: "y".repeat(70_000) } }],
+    });
+    expect(converted.text.length).toBeLessThanOrEqual(64_000 + "[…[truncated]".length);
+    expect(converted.text.endsWith("[truncated]")).toBe(true);
+  });
+
   it("appends bounded structured results and truncates oversized text", () => {
     const structured = convertMcpToolResult({
       content: [],
