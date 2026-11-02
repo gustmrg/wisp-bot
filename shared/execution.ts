@@ -12,6 +12,8 @@ export const CONTAINER_IDLE_MS = 30 * 60 * 1000;
 export const CONTAINER_WORKSPACE = "/workspace";
 /** Home folder inside the workspace, so what the Wisp installs persists and counts toward its size. */
 export const CONTAINER_HOME = `${CONTAINER_WORKSPACE}/.home`;
+/** A circle's package cache, inside its workspace, so its members do not download the same packages (ADR 041). */
+export const CONTAINER_CIRCLE_CACHE = `${CONTAINER_WORKSPACE}/.cache`;
 export const MAX_CONTAINER_IMAGE_LENGTH = 255;
 export const MAX_GIT_TOKEN_LENGTH = 512;
 
@@ -53,6 +55,19 @@ export interface SaveWispExecutionRequest {
   localNetwork: boolean;
   /** Left out keeps the current setting. */
   browser?: boolean;
+}
+
+/** Whether a circle's members may run commands in its workspace (ADR 041). */
+export interface CircleExecutionView {
+  commands: boolean;
+  /** The members whose own **Run commands** setting is on; only they can run commands here. */
+  memberIdsWithCommands: ReadonlyArray<string>;
+  runtime: ContainerRuntimeStatus;
+}
+
+export interface SaveCircleExecutionRequest {
+  conversationId: string;
+  commands: boolean;
 }
 
 /**

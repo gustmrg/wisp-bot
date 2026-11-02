@@ -103,6 +103,8 @@ const REQUIRED_WISP_METHODS = [
   "getWispExecution",
   "saveWispExecution",
   "getWispSetup",
+  "getCircleExecution",
+  "saveCircleExecution",
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",

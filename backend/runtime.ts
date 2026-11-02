@@ -274,6 +274,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     dataDirectory,
     resolveWisp: resolveExecutionWisp,
     listWispStorageIds: () => conversationRepository.listWispStorageIds(),
+    resolveCircle: (id) => conversationRepository.getCircleExecutionTarget(id),
+    listCircles: () => conversationRepository.listCircleExecutionTargets(),
     authorizationBroker: toolAuthorizationBroker,
     manager: containerManager,
     runtime: containerRuntime,
@@ -399,6 +401,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         // And so do the runtime events it recorded.
         void runtimeEvents.reconcile(new Set(Object.keys(conversationRepository.readChats()))).catch(() => undefined);
       },
+      // A member that left a circle takes its container there with it.
+      onCircleMembersLeft: () => void executionService.reconcile().catch(() => undefined),
       onFollowUpTaken: (_conversationId, queuedMessageId) => messageQueue?.followUpTaken(queuedMessageId),
       // Claude Code keeps the transcripts of a Wisp that ran on it outside Wisp's data: a
       // deleted workspace's go with its project, a circle member's one session at a time.

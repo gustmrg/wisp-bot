@@ -87,6 +87,7 @@ import {
   EXECUTION_MODES,
   isContainerImage,
   type ExecutionMode,
+  type SaveCircleExecutionRequest,
   type SaveWispExecutionRequest,
 } from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
@@ -220,6 +221,12 @@ export function parseSaveWispExecutionRequest(value: unknown): SaveWispExecution
     localNetwork,
     ...(browser === undefined ? {} : { browser }),
   };
+}
+
+export function parseSaveCircleExecutionRequest(value: unknown): SaveCircleExecutionRequest {
+  const request = asRecord(value);
+  if (typeof request.commands !== "boolean") throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), commands: request.commands };
 }
 
 export function parseSendMessageRequest(value: unknown): SendMessageRequest {

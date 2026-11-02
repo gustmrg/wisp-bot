@@ -7,6 +7,7 @@ import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import type { ModelSelection, WispFallback } from "../shared/contracts.js";
+import type { CircleExecutionTarget } from "./execution-service.js";
 import { normalizeSelection, normalizeWispFallback } from "./ai-settings-store.js";
 import type {
   Chat,
@@ -407,6 +408,35 @@ export class ConversationRepository {
       })),
       ...(chat.responder ? { responder: chat.responder } : {}),
       ...(normalizeUserName(userName) ? { userName: normalizeUserName(userName) } : {}),
+    };
+  }
+
+  /** Where a circle's members run commands: its workspace, its settings, and who is in it (ADR 041). */
+  getCircleExecutionTarget(conversationId: string): CircleExecutionTarget {
+    const record = this.require(conversationId);
+    if (record.chat.kind !== "circle") {
+      throw new WispBackendError("invalid_request", "This conversation is not a circle.");
+    }
+    return this.circleExecutionTarget(record, record.chat.memberIds);
+  }
+
+  /** Every circle, as `getCircleExecutionTarget` describes it. */
+  listCircleExecutionTargets(): CircleExecutionTarget[] {
+    return Object.values(this.state.conversations).flatMap((record) =>
+      record.chat.kind === "circle" ? [this.circleExecutionTarget(record, record.chat.memberIds)] : [],
+    );
+  }
+
+  private circleExecutionTarget(record: ConversationRecord, memberIds: ReadonlyArray<string>): CircleExecutionTarget {
+    return {
+      conversationId: record.chat.id,
+      storageId: record.storageId,
+      workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
+      settingsDirectory: this.workspaceSettingsDirectory(record),
+      members: memberIds.flatMap((wispId) => {
+        const wispRecord = this.state.wisps[wispId];
+        return wispRecord ? [{ wispId, storageId: wispRecord.storageId }] : [];
+      }),
     };
   }
 

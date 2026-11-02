@@ -183,6 +183,16 @@ network is reached through the gateway even when the Wisp's local network is
 blocked, for git only. A misled Wisp can send its
 workspace contents over the network, so secrets do not belong in a workspace.
 
+A circle's members run commands only when the circle allows them and their own
+setting is on ([ADR 041](decisions/041-commands-in-circles.md)). The choice
+is kept in the circle's config directory, outside the workspace, so a Wisp
+cannot change it. Each member has a container of its own for the circle, with
+the same confinement, its own network, and its own git access, mounting only
+the circle's workspace. Those containers do not isolate members from each
+other, because they share files: a script one member leaves runs with the
+access of whichever member runs it. People in a circle with commands trust its
+members with each other's access, and the setting says so.
+
 ## Browser
 
 A Wisp has a browser only when **Use a browser** is on in its **Commands &

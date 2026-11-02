@@ -325,6 +325,22 @@ function createApi(initialState: ConversationStateView): WispApi {
         container: "absent" as const,
       },
     })),
+    getCircleExecution: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        commands: false,
+        memberIdsWithCommands: [],
+        runtime: { available: false as const, message: "none" },
+      },
+    })),
+    saveCircleExecution: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        commands: false,
+        memberIdsWithCommands: [],
+        runtime: { available: false as const, message: "none" },
+      },
+    })),
     setWorkspaceQuota: vi.fn(async () => ({
       ok: true as const,
       value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024, unlimited: false },

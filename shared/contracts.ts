@@ -81,7 +81,13 @@ import type {
   WorkspaceFileSearch,
   WorkspaceView,
 } from "./workspace.js";
-import type { SaveWispExecutionRequest, WispExecutionView, WispSetupView } from "./execution.js";
+import type {
+  CircleExecutionView,
+  SaveCircleExecutionRequest,
+  SaveWispExecutionRequest,
+  WispExecutionView,
+  WispSetupView,
+} from "./execution.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
 import type { DeleteWispTemplateRequest, SaveWispTemplateRequest, WispTemplateEntry } from "./wisp-template.js";
 import type {
@@ -210,6 +216,8 @@ export const WISP_IPC_CHANNELS = {
   getWispExecution: "wisp:execution:get",
   saveWispExecution: "wisp:execution:save",
   getWispSetup: "wisp:execution:setup",
+  getCircleExecution: "wisp:execution:circle:get",
+  saveCircleExecution: "wisp:execution:circle:save",
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
@@ -1006,6 +1014,9 @@ export interface WispApi {
   saveWispExecution(request: SaveWispExecutionRequest): Promise<BackendResult<WispExecutionView>>;
   /** Workspace room and command support for a Wisp that does not exist yet. */
   getWispSetup(): Promise<BackendResult<WispSetupView>>;
+  /** Whether a circle's members may run commands in its workspace. */
+  getCircleExecution(request: ConversationRequest): Promise<BackendResult<CircleExecutionView>>;
+  saveCircleExecution(request: SaveCircleExecutionRequest): Promise<BackendResult<CircleExecutionView>>;
   openWorkspaceFolder(request: ConversationRequest): Promise<EmptyResult>;
   /** Opens the Wisp's skills folder, creating it on first use. */
   openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;

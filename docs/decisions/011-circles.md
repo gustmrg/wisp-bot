@@ -226,7 +226,8 @@ members share one:
 - A person can bring several Wisps into one conversation and address them by
   name, paying for one turn per Wisp that answers.
 - A Wisp behaves the same in a circle as in its own conversation, except that
-  it cannot run commands or manage jobs there.
+  it cannot manage jobs there, and runs commands only when the circle allows
+  them ([ADR 041](041-commands-in-circles.md)).
 - Removing a member forgets that Wisp's history in the circle; adding it
   again starts a new session.
 

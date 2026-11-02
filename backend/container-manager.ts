@@ -3,7 +3,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { CONTAINER_HOME, CONTAINER_IDLE_MS, CONTAINER_WORKSPACE, type ContainerState } from "../shared/execution.js";
+import {
+  CONTAINER_CIRCLE_CACHE,
+  CONTAINER_HOME,
+  CONTAINER_IDLE_MS,
+  CONTAINER_WORKSPACE,
+  type ContainerState,
+} from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
 import { BROWSER_DOCKERFILE, BROWSER_DRIVER_SCRIPT, BROWSER_IMAGE } from "./browser-driver.js";
 import type { AttachedContainerProcess, ContainerCli } from "./container-cli.js";
@@ -62,16 +68,7 @@ const STOP_TIMEOUT_SECONDS = 5;
 const BROWSER_CLOSE_GRACE_MS = 5_000;
 /** How long a cancelled command gets to end after its processes are killed, before the client is killed too. */
 const KILL_GRACE_MS = 2_000;
-const PATH_IN_CONTAINER = [
-  `${CONTAINER_HOME}/.local/bin`,
-  `${CONTAINER_HOME}/.npm-global/bin`,
-  "/usr/local/sbin",
-  "/usr/local/bin",
-  "/usr/sbin",
-  "/usr/bin",
-  "/sbin",
-  "/bin",
-].join(":");
+const SYSTEM_PATH = ["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].join(":");
 /**
  * Runs the command in its own process group and records the group, so a
  * cancellation can kill everything it started. Whatever the command left
@@ -153,8 +150,24 @@ export type ProcessAction = keyof typeof PROCESS_SCRIPTS;
 
 const KILL_SCRIPT = 'pid=$(cat "/tmp/.wisp-exec/$1" 2>/dev/null) && kill -KILL -- "-$pid"';
 
+/** Marks a container that belongs to a circle's member rather than to a Wisp's own conversation. */
+const CIRCLE_KEY_PREFIX = "circle-";
+
+/**
+ * Names a member's container in a circle (ADR 041). Hashed so container and
+ * network names stay short, and so they cannot be read as a Wisp's.
+ */
+export function circleContainerKey(circleStorageId: string, wispStorageId: string): string {
+  const hash = createHash("sha256").update(`${circleStorageId}/${wispStorageId}`).digest("hex").slice(0, 24);
+  return `${CIRCLE_KEY_PREFIX}${hash}`;
+}
+
+function isCircleContainerKey(key: string): boolean {
+  return key.startsWith(CIRCLE_KEY_PREFIX);
+}
+
 export interface ContainerSpec {
-  /** Names the Wisp's container; stable for the Wisp's lifetime. */
+  /** Names the container: a Wisp's storage ID, or `circleContainerKey` for a circle's member. */
   storageId: string;
   image: string;
   workspaceDirectory: string;
@@ -164,6 +177,15 @@ export interface ContainerSpec {
    * internet only through the egress proxy, which refuses those addresses.
    */
   localNetwork: boolean;
+  /**
+   * In a circle, the member's storage ID: members share the workspace, so each
+   * has its own home folder in it, and they share a package cache.
+   */
+  circleMember?: string;
+}
+
+function containerHome(spec: Pick<ContainerSpec, "circleMember">): string {
+  return spec.circleMember ? path.posix.join(CONTAINER_HOME, spec.circleMember) : CONTAINER_HOME;
 }
 
 export interface ContainerExecOptions {
@@ -210,6 +232,9 @@ function gitEnvironment(git: GitForges | undefined): string[] {
 /**
  * Owns the containers Wisps run commands in: one per Wisp, created on its
  * first command, stopped after a while without one, and removed with the Wisp.
+ * A circle's member has one more for that circle, removed with its network
+ * after a while without a command, since each network held counts toward the
+ * container program's limit and nothing outside the workspace is kept anyway.
  */
 export class ContainerManager {
   private readonly installation: string;
@@ -426,14 +451,26 @@ export class ContainerManager {
     if (code === null) await cli.run(["rm", "-f", this.browserName(storageId)]);
   }
 
-  /** Removes this server's containers whose Wisp no longer exists. */
+  /**
+   * Removes this server's containers whose Wisp, or circle member, no longer
+   * exists. So too circle members' that are not running: their idle timers
+   * ended with the server that set them. One in use stays.
+   */
   async reconcile(storageIds: ReadonlySet<string>): Promise<void> {
     const cli = await this.options.cli();
     if (!cli) return;
+    const running = await this.listNamesIfKnown(cli, true);
+    const leftOver = (key: string) =>
+      isCircleContainerKey(key) &&
+      !this.active.has(key) &&
+      running !== null &&
+      !running.includes(this.containerName(key));
     const prefixes = [`wisp-${this.installation}-`, `wisp-browser-${this.installation}-`];
     for (const name of await this.listNames(cli, false)) {
       const prefix = prefixes.find((value) => name.startsWith(value));
-      if (prefix && !storageIds.has(name.slice(prefix.length))) {
+      if (!prefix) continue;
+      const key = name.slice(prefix.length);
+      if (!storageIds.has(key) || leftOver(key)) {
         await cli.run(["rm", "-f", name]);
       }
     }
@@ -448,9 +485,9 @@ export class ContainerManager {
     ]);
     if (networks.exitCode !== 0) return;
     for (const name of networks.stdout.split("\n").map((line) => line.trim())) {
-      if (name.startsWith(networkPrefix) && !storageIds.has(name.slice(networkPrefix.length))) {
-        await this.removeNetwork(cli, name);
-      }
+      if (!name.startsWith(networkPrefix)) continue;
+      const key = name.slice(networkPrefix.length);
+      if (!storageIds.has(key) || leftOver(key)) await this.removeNetwork(cli, name);
     }
   }
 
@@ -477,6 +514,11 @@ export class ContainerManager {
   }
 
   private async listNames(cli: ContainerCli, runningOnly: boolean): Promise<string[]> {
+    return (await this.listNamesIfKnown(cli, runningOnly)) ?? [];
+  }
+
+  /** null when the container program could not say, which is not the same as none. */
+  private async listNamesIfKnown(cli: ContainerCli, runningOnly: boolean): Promise<string[] | null> {
     const result = await cli.run([
       "ps",
       ...(runningOnly ? [] : ["-a"]),
@@ -485,7 +527,7 @@ export class ContainerManager {
       "--format",
       "{{.Names}}",
     ]);
-    if (result.exitCode !== 0) return [];
+    if (result.exitCode !== 0) return null;
     return result.stdout
       .split("\n")
       .map((line) => line.trim())
@@ -526,7 +568,7 @@ export class ContainerManager {
       }
       if (inspected.exitCode === 0) await cli.run(["rm", "-f", name]);
       await this.ensureImage(cli, spec.image, onData);
-      await mkdir(path.join(spec.workspaceDirectory, path.relative(CONTAINER_WORKSPACE, CONTAINER_HOME)), {
+      await mkdir(path.join(spec.workspaceDirectory, path.posix.relative(CONTAINER_WORKSPACE, containerHome(spec))), {
         recursive: true,
       });
       const created = await cli.run(this.createArgs(cli, spec, name, fingerprint));
@@ -548,6 +590,7 @@ export class ContainerManager {
     const gid = this.options.gid ?? process.getgid?.() ?? 1000;
     const cpus = Math.min(this.options.cpus ?? CPU_LIMIT, os.availableParallelism());
     const memory = Math.min(this.options.memoryBytes ?? MEMORY_LIMIT_BYTES, Math.floor(os.totalmem() / 2));
+    const home = containerHome(spec);
     return [
       "run",
       "-d",
@@ -594,13 +637,16 @@ export class ContainerManager {
       "-w",
       CONTAINER_WORKSPACE,
       "-e",
-      `HOME=${CONTAINER_HOME}`,
+      `HOME=${home}`,
       "-e",
       "USER=wisp",
       "-e",
-      `PATH=${PATH_IN_CONTAINER}`,
+      `PATH=${home}/.local/bin:${home}/.npm-global/bin:${SYSTEM_PATH}`,
       "-e",
-      `NPM_CONFIG_PREFIX=${CONTAINER_HOME}/.npm-global`,
+      `NPM_CONFIG_PREFIX=${home}/.npm-global`,
+      ...(spec.circleMember
+        ? ["-e", `XDG_CACHE_HOME=${CONTAINER_CIRCLE_CACHE}`, "-e", `NPM_CONFIG_CACHE=${CONTAINER_CIRCLE_CACHE}/npm`]
+        : []),
       "--entrypoint",
       "sleep",
       spec.image,
@@ -617,6 +663,8 @@ export class ContainerManager {
           spec.image,
           path.resolve(spec.workspaceDirectory),
           spec.localNetwork,
+          // Only in a circle, so a Wisp's own container is not recreated for this.
+          ...(spec.circleMember ? [spec.circleMember] : []),
         ]),
       )
       .digest("hex")
@@ -944,12 +992,27 @@ export class ContainerManager {
     const timer = setTimeout(() => {
       this.idleTimers.delete(storageId);
       if (this.active.has(storageId)) return;
+      if (isCircleContainerKey(storageId)) {
+        void this.removeIdle(storageId).catch(() => undefined);
+        return;
+      }
       void this.options
         .cli()
         .then((cli) => cli?.run(["stop", "-t", String(STOP_TIMEOUT_SECONDS), this.containerName(storageId)]));
     }, this.idleMs);
     timer.unref();
     this.idleTimers.set(storageId, timer);
+  }
+
+  /** Removes a circle member's idle container and network, unless a command arrived while waiting for its turn. */
+  private async removeIdle(storageId: string): Promise<void> {
+    const cli = await this.options.cli();
+    if (!cli) return;
+    await this.serialized(storageId, async () => {
+      if (this.active.has(storageId) || this.disposed) return;
+      await cli.run(["rm", "-f", this.containerName(storageId)]);
+      await this.removeNetwork(cli, this.networkName(storageId));
+    });
   }
 
   private clearIdle(storageId: string): void {

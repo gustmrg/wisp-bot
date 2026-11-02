@@ -379,7 +379,7 @@ function buildSystemPrompt(
           "",
         ]
       : []),
-    ...(context.circle ? [...circleInstructions(context), ""] : []),
+    ...(context.circle ? [...circleInstructions(context, options.runsCommands), ""] : []),
     "## Response style",
     "Decide tone, length, and format in this order of precedence, where each level overrides only the aspects it addresses and leaves the rest to the next level:",
     options.job ? "1. The job's instructions." : "1. Explicit instructions in the user's current message.",
@@ -438,7 +438,7 @@ function buildSystemPrompt(
 }
 
 /** Who else is in the circle the Wisp answers in, and how its turns work there (ADR 011). */
-function circleInstructions(context: ConversationAgentContext): string[] {
+function circleInstructions(context: ConversationAgentContext, runsCommands: boolean): string[] {
   const circle = context.circle!;
   return [
     "## Circle",
@@ -455,7 +455,14 @@ function circleInstructions(context: ConversationAgentContext): string[] {
     "Write only your own reply, in your own voice. Never write messages for the user or for other members, and do not repeat what another member already said.",
     "To hand the task to another member, mention it with @ and its name in your reply; it answers after you. Write @ before a member's name only to hand it the task, and refer to members by name alone otherwise.",
     "Answer what you can do well yourself, and mention no one. Hand a task over only when it is another member's role and you cannot do it well: then write one short line with the mention, without doing the work.",
-    "Commands and scheduled jobs are not available in a circle; offer to do that work in your own conversation with the user.",
+    ...(runsCommands
+      ? [
+          "Scheduled jobs are not available in a circle; offer to do that work in your own conversation with the user.",
+          "Your commands run in a container of your own, with the circle's shared workspace mounted. Other members who run commands see the same files and the same git repositories, but not your processes: look for a clone before cloning a repository, use a git worktree of your own when another member works in the same repository, and commit what another member will need. Do not change or delete another member's work unless the user asked for it.",
+        ]
+      : [
+          "Commands and scheduled jobs are not available to you in this circle; offer to do that work in your own conversation with the user.",
+        ]),
   ];
 }
 

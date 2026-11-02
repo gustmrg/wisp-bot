@@ -50,6 +50,8 @@ export interface ConversationServiceOptions {
   logger?: Pick<StructuredLogger, "warn">;
   /** Called after conversations were deleted or replaced, which also removes their scheduled messages. */
   onConversationsRemoved?: () => void;
+  /** Called once members have left a circle, so what they kept running there can go. */
+  onCircleMembersLeft?: () => void;
   /** Called once a follow-up the running turn read has left the queue for the transcript. */
   onFollowUpTaken?: (conversationId: string, queuedMessageId: string) => void;
   /** Receives the Wisps and conversation summaries after a Wisp was created, changed or deleted. */
@@ -92,6 +94,7 @@ export class ConversationService {
   private readonly onConversationChanged: (delta: ConversationDelta) => void;
   private readonly logger: Pick<StructuredLogger, "warn"> | undefined;
   private readonly onConversationsRemoved: () => void;
+  private readonly onCircleMembersLeft: () => void;
   private readonly onFollowUpTaken: (conversationId: string, queuedMessageId: string) => void;
   private readonly onWispsChanged: (view: WispsView) => void;
   private readonly onSessionsEnding: ConversationServiceOptions["onSessionsEnding"];
@@ -108,6 +111,7 @@ export class ConversationService {
     this.onConversationChanged = options.onConversationChanged ?? (() => undefined);
     this.logger = options.logger;
     this.onConversationsRemoved = options.onConversationsRemoved ?? (() => undefined);
+    this.onCircleMembersLeft = options.onCircleMembersLeft ?? (() => undefined);
     this.onFollowUpTaken = options.onFollowUpTaken ?? (() => undefined);
     this.onWispsChanged = options.onWispsChanged ?? (() => undefined);
     this.onSessionsEnding = options.onSessionsEnding;
@@ -559,6 +563,7 @@ export class ConversationService {
       }
     }
     afterLeft?.();
+    if (leaving.length) this.onCircleMembersLeft();
     return this.getState();
   }
 
