@@ -447,6 +447,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   const queue = new MessageQueue({
     repository: conversationRepository,
     isAvailable: (conversationId) => registry.isAvailable(conversationId),
+    takesSideBySide: (conversationId) => registry.takesSideBySide(conversationId),
     deliverNext: (conversationId, onTaken) => service.deliverNextQueued(conversationId, onTaken),
     steer: (message) =>
       registry.steer({ conversationId: message.conversationId, requestId: message.id, text: message.text }),

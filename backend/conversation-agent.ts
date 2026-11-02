@@ -33,6 +33,20 @@ export interface ConversationAgent {
    * for the next turn instead.
    */
   steer?(request: SendMessageRequest): Promise<boolean>;
+  /**
+   * Set by an agent that takes requests side by side (ADR 042): whether the one
+   * this text would become can start now. The registry then sends it without
+   * waiting for the requests before it.
+   */
+  canTake?(text: string): boolean;
+  /** Holds what a request will need from now on, before it waits for its turn to run; called by the registry. */
+  reserve?(request: SendMessageRequest): void;
+  /** Stops one request and leaves the others running. Without it, the deadline of a request stops the whole agent. */
+  abortRequest?(requestId: string): Promise<void>;
+  /** Hears when more requests may be able to start, though some are still running. */
+  onCapacity?(listener: () => void): void;
+  /** Hears when a request starts and stops waiting for something else to finish, which its deadline does not count. */
+  onWaiting?(listener: (requestId: string, waiting: boolean) => void): void;
   /** Takes back the follow-ups handed to the running turn that it has not read, oldest first. */
   withdrawFollowUps?(): string[];
   /**
