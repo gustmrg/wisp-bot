@@ -336,6 +336,7 @@ function Workspace({
                 transcript={workspace.activeTranscript}
                 status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
                 activity={workspace.activity[workspace.activeChat.id]}
+                workingMembers={workspace.workingMembers[workspace.activeChat.id]}
                 error={workspace.conversationErrors[workspace.activeChat.id]?.message}
                 acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
                 approvals={workspace.approvals[workspace.activeChat.id] ?? []}

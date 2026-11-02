@@ -32,6 +32,8 @@ export interface WorkspaceController {
   activeTranscript: MessageWindow | undefined;
   statuses: Record<string, ManagedConversationStatus>;
   activity: Record<string, string | undefined>;
+  /** In a circle, the members whose turns are running. */
+  workingMembers: Record<string, ReadonlyArray<string> | undefined>;
   conversationErrors: Record<string, BackendError | undefined>;
   /** Conversations whose last reply failed while they were not open; opening one clears it. */
   failedChats: Record<string, boolean>;
@@ -292,6 +294,7 @@ export function useWorkspaceController(): WorkspaceController {
     activeTranscript,
     statuses: conversations.statuses,
     activity: conversations.activity,
+    workingMembers: conversations.workingMembers,
     conversationErrors: conversations.conversationErrors,
     failedChats,
     acknowledging: conversations.acknowledging,

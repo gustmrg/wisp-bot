@@ -45,7 +45,9 @@ to reports back in its own reply.
   across the app.
 - **Who is working.** A turn is told which other members are working, since it
   cannot see a reply until that reply ends. `circle_turn_ended` joins
-  `circle_turn_started`, so the activity line names everyone working.
+  `circle_turn_started`, so the activity line names everyone working, and
+  each member working and not yet writing its reply has a typing bubble of
+  its own, under its name and in its color.
 - **The decision model** chooses among the members who are free, and is not asked
   when only one is. A message to the lead that went to someone else is marked as
   chosen.

@@ -45,7 +45,9 @@ A circle with one member offers only what fits one Wisp.
 - The Wisps a message goes to answer it one after another. Each reply finishes
   before the next Wisp starts, and each Wisp sees the replies before its own,
   labeled with their authors. Every reply shows its author's avatar and name,
-  in its color, and the activity line names the Wisps working.
+  in its color, and the activity line names the Wisps working. While a Wisp
+  works, its typing bubble also shows its avatar and name and takes its
+  color, so you can tell who is working before its reply starts.
 - Different Wisps can work at the same time
   ([ADR 042](decisions/042-wisps-working-at-the-same-time.md)). While one works,
   a message to another that is free is answered right away, and a Wisp that

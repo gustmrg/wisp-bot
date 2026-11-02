@@ -209,7 +209,9 @@ members share one:
 - Create a circle: name, description, members, lead.
 - Each incoming message shows its author's avatar and name.
 - The composer completes `@` mentions from the circle's members.
-- The activity line names the Wisp working ("Atlas is working…").
+- The activity line names the Wisp working ("Atlas is working…"), and its
+  typing bubble shows that Wisp's avatar and name above it, tinted with its
+  color like its replies.
 - Circle settings, in tabs: General (name, label, description,
   notifications), Members (members and lead), Workspace, and Usage.
 
