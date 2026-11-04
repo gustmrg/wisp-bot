@@ -34,7 +34,7 @@ each panel's title shows the server's name or **This device**. **General** and
 | Panel | Settings | Saved |
 | --- | --- | --- |
 | **General** | **Name**, **About you** | Environment |
-| **General** | **Theme**, **Wisp colors**, **Wisps row**, **Conversation order**, **Reply speed**, **Time format** | Device |
+| **General** | **Theme**, **Wisp colors**, **Wisps row**, **Conversation order**, **Reply speed**, **Tools in circles**, **Time format** | Device |
 | **General** | **Timezone** | Device, and reported to the environment |
 | **General** | **Launch at login** | This computer's system |
 | **Connections** | Saved servers and their pairing | Device |
@@ -89,6 +89,11 @@ saved key.
   Below it, **About you** lists what every Wisp knows about you: add, edit,
   remove, or export it as `USER.md`. See [memory](context-and-memory.md#memory).
 - **Application** — theme, Wisp colors, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
+- **Tools in circles** — under **Settings → General → Application**, choose **Show**
+  (the default) or **Hide** for tool steps in all circles on this device.
+  Approval requests, reply errors, and the working indicator stay visible.
+  Hidden steps remain in the saved transcript and return when **Show** is selected.
+  A Wisp's own conversation is unchanged.
 - **Date and time** — timezone and time format.
 
 **Timezone** defaults to auto-detect, which follows this device. Every date

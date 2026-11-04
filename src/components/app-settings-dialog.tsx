@@ -653,6 +653,23 @@ function AppSettingsDialog({
                     onChange={(replyPace) => onPreferencesChange({ ...preferences, replyPace })}
                   />
                 </SettingsRow>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SettingsRowTitle>Tools in circles</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      Show or hide tool steps in circles. Approval requests and reply errors stay visible.
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  <SegmentedControl
+                    label="Tools in circles"
+                    value={preferences.circleToolCalls}
+                    options={[
+                      { value: "show", label: "Show" },
+                      { value: "hide", label: "Hide" },
+                    ]}
+                    onChange={(circleToolCalls) => onPreferencesChange({ ...preferences, circleToolCalls })}
+                  />
+                </SettingsRow>
                 {browserApp ? null : <LaunchAtLoginSetting open={open} />}
               </SettingsCard>
             </SettingsGroup>

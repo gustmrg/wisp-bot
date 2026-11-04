@@ -181,6 +181,8 @@ interface ChatPanelProps {
   onNewTopic?: (conversationId: string) => Promise<string | null>;
   /** The person has no other Wisp, so an empty conversation suggests building the team first. */
   soleWisp?: boolean;
+  /** Hides tool steps in circles on this device, while keeping the transcript intact. */
+  circleToolCalls?: "show" | "hide";
 }
 
 function ChatPanel({
@@ -212,6 +214,7 @@ function ChatPanel({
   messageQueue,
   onNewTopic,
   soleWisp = false,
+  circleToolCalls = "show",
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -266,7 +269,11 @@ function ChatPanel({
   );
   const name = chatName(chat);
   const timeZone = useTimeZone();
-  const transcriptMessages = withDateDividers(messages, new Date(), timeZone);
+  const visibleMessages =
+    chat.kind === "circle" && circleToolCalls === "hide"
+      ? messages.filter((message) => !(message.type === "incoming" && message.steps?.length && !message.text))
+      : messages;
+  const transcriptMessages = withDateDividers(visibleMessages, new Date(), timeZone);
   const processStates = useMemo(() => processStatesOf(messages), [messages]);
   const working = status === "working";
   const attached = !transcript || isAttached(transcript);
@@ -316,7 +323,7 @@ function ChatPanel({
   const reportActivity = attached && working && (workers.length ? typing.length > 0 : !responding);
   // While an approval waits, the Wisp is doing nothing until the person answers.
   const showActivity = reportActivity && !approvals.length;
-  const lastAuthorId = lastShownAuthor(messages);
+  const lastAuthorId = lastShownAuthor(visibleMessages);
   const openKey = transcript && !hidden ? `${chat.id}:${transcript.epoch}` : null;
   // Steps arrive in a message of their own, so a new one moves the end as text does.
   const lastSteps = lastMessage?.type === "incoming" ? (lastMessage.steps?.length ?? 0) : 0;

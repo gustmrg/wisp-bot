@@ -319,6 +319,10 @@ describe("AppSettingsDialog metadata", () => {
 
     await user.click(screen.getByRole("radio", { name: "Natural" }));
     expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, replyPace: "natural" });
+    const circleTools = screen.getByRole("radiogroup", { name: "Tools in circles" });
+    expect(within(circleTools).getByRole("radio", { name: "Show" })).toBeChecked();
+    await user.click(within(circleTools).getByRole("radio", { name: "Hide" }));
+    expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, circleToolCalls: "hide" });
     // The row of Wisps only exists on the phone list.
     expect(screen.queryByRole("switch", { name: "Wisps row" })).not.toBeInTheDocument();
   });

@@ -45,6 +45,8 @@ export interface AppPreferences {
   wispColors: boolean;
   /** How a Wisp's reply appears as it arrives. */
   replyPace: ReplyPace;
+  /** Whether this device shows tool steps in circles. */
+  circleToolCalls: "show" | "hide";
   /** Legacy storage only; desktop autostart registration is the source of truth. */
   launchAtLogin: boolean;
   notificationSounds: boolean;
@@ -91,6 +93,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   theme: "system",
   wispColors: true,
   replyPace: "smooth",
+  circleToolCalls: "show",
   launchAtLogin: false,
   notificationSounds: true,
   notificationVolume: 100,
@@ -199,6 +202,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
     theme: normalizeTheme(saved?.theme),
     wispColors: typeof saved?.wispColors === "boolean" ? saved.wispColors : true,
     replyPace: REPLY_PACES.includes(saved?.replyPace as ReplyPace) ? (saved?.replyPace as ReplyPace) : "smooth",
+    circleToolCalls: saved?.circleToolCalls === "hide" ? "hide" : "show",
     launchAtLogin: typeof saved?.launchAtLogin === "boolean" ? saved.launchAtLogin : false,
     notificationSounds: typeof saved?.notificationSounds === "boolean" ? saved.notificationSounds : true,
     notificationVolume:
