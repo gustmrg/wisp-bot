@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -101,9 +102,40 @@ type RunCommand = {
     id: string,
     params: { command: string; timeout?: number; description?: string },
     signal?: AbortSignal,
-  ) => Promise<{ content: Array<{ type: string; text?: string }>; details?: Record<string, unknown> }>;
+    onUpdate?: (update: unknown) => void,
+  ) => Promise<{
+    content: Array<{ type: string; text?: string }>;
+    details?: Record<string, unknown>;
+    structuredContent?: unknown;
+  }>;
   parameters: { properties: Record<string, { type?: string }>; required?: string[] };
 };
+
+/** More lines than Pi's shell tool shows, each marked so the server's temporary files holding it can be found. */
+function longOutput(): string {
+  const marker = randomUUID();
+  return Array.from({ length: 3000 }, (_, line) => `${marker} line ${line + 1}\n`).join("");
+}
+
+/** Pi's temporary files on the server that still hold an output: its shell tool writes one for each long command. */
+async function piTemporaryFilesHolding(output: string): Promise<string[]> {
+  const marker = Buffer.from(output.slice(0, 36));
+  const names = (await readdir(os.tmpdir())).filter((name) => /^pi-bash-[0-9a-f]+\.log$/.test(name));
+  const holding = await Promise.all(
+    names.map(async (name) => {
+      const file = path.join(os.tmpdir(), name);
+      const handle = await open(file, "r").catch(() => null);
+      if (!handle) return [];
+      try {
+        const { buffer, bytesRead } = await handle.read(Buffer.alloc(marker.length), 0, marker.length, 0);
+        return buffer.subarray(0, bytesRead).equals(marker) ? [file] : [];
+      } finally {
+        await handle.close();
+      }
+    }),
+  );
+  return holding.flat();
+}
 
 async function runCommandTool(service: ExecutionService): Promise<RunCommand> {
   const snapshot = await service.getSnapshot(ownConversation("atlas"));
@@ -207,6 +239,25 @@ describe("ExecutionService in a circle", () => {
       expect.objectContaining({ conversationId: "crew", wispId: "atlas", toolName: PROCESS_TOOL }),
       undefined,
     );
+  });
+
+  it("keeps a long command's full output in the member's own home folder", async () => {
+    const { tool, manager, circle } = await turnedOn();
+    const output = longOutput();
+    manager.exec.mockImplementationOnce(async (_spec, _command, _cwd, exec) => {
+      exec.onData(Buffer.from(output));
+      return { exitCode: 0 };
+    });
+
+    const result = await tool.execute("call", { command: "npm test" });
+
+    const pointer = /Full output: (\/workspace\/\.home\/s1\/command-output\/[^\]]+\.log)\]/.exec(
+      result.content[0]?.text ?? "",
+    )?.[1];
+    expect(pointer).toBeDefined();
+    await expect(
+      readFile(path.join(circle.workspaceDirectory, pointer!.slice("/workspace/".length)), "utf8"),
+    ).resolves.toBe(output);
   });
 
   it("holds commands to the circle's workspace size, not the Wisp's", async () => {
@@ -394,6 +445,51 @@ describe("ExecutionService", () => {
 
     expect(manager.exec).toHaveBeenCalledWith(expect.anything(), "npm test", "/workspace", expect.anything());
     expect(result.details?.commandResult).toEqual({ exitCode: 2, durationMs: expect.any(Number) });
+  });
+
+  it("keeps a long command's full output in the home folder, and names it instead of the server's temporary file", async () => {
+    const { service, manager, wisp } = await setup();
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    const tool = await runCommandTool(service);
+    const output = longOutput();
+    manager.exec.mockImplementationOnce(async (_spec, _command, _cwd, exec) => {
+      exec.onData(Buffer.from(output));
+      return { exitCode: 1 };
+    });
+    const updates: unknown[] = [];
+
+    const result = await tool.execute("call-1", { command: "npm test" }, undefined, (update) => updates.push(update));
+
+    const text = result.content[0]?.text ?? "";
+    const pointer = /Full output: (\/workspace\/\.home\/command-output\/[^\]]+\.log)\]/.exec(text)?.[1];
+    expect(pointer).toBeDefined();
+    expect(text).toContain("Command exited with code 1");
+    expect(result.details).toMatchObject({ fullOutputPath: pointer, commandResult: { exitCode: 1 } });
+    await expect(
+      readFile(path.join(wisp.workspaceDirectory, pointer!.slice("/workspace/".length)), "utf8"),
+    ).resolves.toBe(output);
+    expect(updates.length).toBeGreaterThan(0);
+    expect(JSON.stringify([result, updates])).not.toMatch(/pi-bash-[0-9a-f]+\.log/);
+    await expect(piTemporaryFilesHolding(output)).resolves.toEqual([]);
+  });
+
+  it("names the kept output when a long command times out", async () => {
+    const { service, manager } = await setup();
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    const tool = await runCommandTool(service);
+    const output = longOutput();
+    manager.exec.mockImplementationOnce(async (_spec, _command, _cwd, exec) => {
+      exec.onData(Buffer.from(output));
+      throw new Error("timeout:5");
+    });
+
+    const error = await tool.execute("call-1", { command: "npm test", timeout: 5 }).catch((reason: Error) => reason);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/Full output: \/workspace\/\.home\/command-output\/[^\]]+\.log\]/);
+    expect((error as Error).message).toContain("Command timed out after 5 seconds");
+    expect((error as Error).message).not.toMatch(/pi-bash-[0-9a-f]+\.log/);
+    await expect(piTemporaryFilesHolding(output)).resolves.toEqual([]);
   });
 
   it("gives git the GitHub plugin's token when the Wisp has access to the plugin", async () => {

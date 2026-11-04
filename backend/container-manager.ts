@@ -184,7 +184,8 @@ export interface ContainerSpec {
   circleMember?: string;
 }
 
-function containerHome(spec: Pick<ContainerSpec, "circleMember">): string {
+/** The home folder of a container, inside the workspace: in a circle, one per member. */
+export function containerHome(spec: Pick<ContainerSpec, "circleMember">): string {
   return spec.circleMember ? path.posix.join(CONTAINER_HOME, spec.circleMember) : CONTAINER_HOME;
 }
 
