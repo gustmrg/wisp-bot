@@ -332,6 +332,7 @@ function Workspace({
                 hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
                 onBack={mobile ? showConversations : undefined}
                 chat={workspace.activeChat}
+                circleToolCalls={workspace.preferences.circleToolCalls}
                 wisps={workspace.wisps}
                 transcript={workspace.activeTranscript}
                 status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}

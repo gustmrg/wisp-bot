@@ -881,6 +881,89 @@ function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Par
 }
 
 describe("ChatPanel steps", () => {
+  const toolMessage: Message = {
+    id: "work",
+    type: "incoming",
+    text: "",
+    status: "complete",
+    authorId: "atlas",
+    steps: [
+      {
+        id: "read",
+        toolName: "read",
+        status: "completed",
+        startedAt: "2026-10-22T10:00:00Z",
+        type: "file_read",
+        paths: ["notes.txt"],
+      },
+    ],
+  };
+
+  it("hides circle steps without losing replies or their author, and restores them on Show", () => {
+    const held = transcript([
+      toolMessage,
+      { id: "reply", type: "incoming", text: "Here are the notes.", status: "complete", authorId: "atlas" },
+    ]);
+    const { show } = renderPanel(held, { chat: circleChatView("Atlas", [atlas.wisp]) });
+    expect(screen.getByRole("region", { name: "Steps" })).toBeInTheDocument();
+    show(held, { circleToolCalls: "hide" });
+    expect(screen.queryByRole("region", { name: "Steps" })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-message-id="work"]')).toBeNull();
+    expect(screen.getByText("Here are the notes.")).toBeInTheDocument();
+    expect(document.querySelector(".message-author")).toHaveTextContent("Atlas");
+    show(held, { circleToolCalls: "show" });
+    expect(screen.getByRole("region", { name: "Steps" })).toBeInTheDocument();
+  });
+
+  it("keeps direct conversation tools visible when circle tools are hidden", () => {
+    renderPanel(transcript([toolMessage]), { circleToolCalls: "hide" });
+    expect(screen.getByRole("region", { name: "Steps" })).toBeInTheDocument();
+  });
+
+  it("keeps circle approvals, activity, failure and retry available with hidden tool steps", () => {
+    const held = transcript([toolMessage]);
+    const { show } = renderPanel(held, {
+      chat: circleChatView("Atlas", [atlas.wisp]),
+      circleToolCalls: "hide",
+      status: "working",
+      workingMembers: ["atlas"],
+    });
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    show(held, {
+      approvals: [
+        {
+          approvalId: "approval",
+          conversationId: "Atlas",
+          wispId: "atlas",
+          toolCallId: "write",
+          toolName: "write",
+          category: "create_file",
+          scope: { kind: "workspace_path", display: "notes.txt" },
+          summary: "Create notes.txt",
+          expiresAt: "2099-10-22T10:30:00Z",
+        },
+      ],
+    });
+    expect(screen.getByText("Create notes.txt")).toBeInTheDocument();
+    show(
+      transcript([
+        toolMessage,
+        {
+          id: "failed-reply",
+          type: "incoming",
+          text: "",
+          status: "failed",
+          retryable: true,
+          error: { code: "provider_error", message: "The model could not reply." },
+          authorId: "atlas",
+        },
+      ]),
+      { status: "idle" },
+    );
+    expect(screen.getByText("Failed · The model could not reply.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
   it("folds the steps between two parts of a reply into one line, and opens them one per line", async () => {
     const user = userEvent.setup();
     const at = "2026-10-22T10:00:00.000Z";

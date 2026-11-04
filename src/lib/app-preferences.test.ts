@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_PREFERENCES, normalizePreferences, transcriptionFallbacks } from "@/lib/app-preferences";
 
 describe("normalizePreferences", () => {
+  it("keeps hidden circle tools and shows them for missing or invalid saved choices", () => {
+    expect(normalizePreferences({ circleToolCalls: "hide" }).circleToolCalls).toBe("hide");
+    for (const circleToolCalls of [undefined, "show", "compact", false, null]) {
+      expect(normalizePreferences({ circleToolCalls }).circleToolCalls).toBe("show");
+    }
+  });
+
   it("keeps a known conversation order and falls back to latest activity", () => {
     expect(normalizePreferences({ chatListOrder: "created" }).chatListOrder).toBe("created");
     expect(normalizePreferences({ chatListOrder: "alphabetical" }).chatListOrder).toBe("recent");
