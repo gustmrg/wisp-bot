@@ -85,7 +85,7 @@ only the base name, sanitizes it, writes to a hidden partial file, and links it
 into `inbox/` without overwriting once exactly the declared size arrived.
 
 An approval request waits 30 minutes and is then denied; the card shows the
-remaining time. While a card waits, the request's 10-minute deadline is paused.
+remaining time. While a card waits, the request's 10-minute deadline without progress is paused.
 For a workspace file change the card also offers **Always allow creating
 files** or **Always allow editing files**, and **Always block**. They apply to
 that Wisp and that category only, are kept in the Wisp's config directory, and

@@ -30,7 +30,10 @@ interface AgentEntry {
   pendingApprovals: Set<string>;
   /** A request whose turn went on to answer a follow-up, mapped to that follow-up. */
   followedBy: Map<string, string>;
-  /** The running requests' deadlines; more than one only for an agent that takes requests side by side. */
+  /**
+   * The running requests' deadlines, which expire after a stretch without progress; more than one only for an
+   * agent that takes requests side by side.
+   */
   deadlines: Map<string, { pause(): void; resume(): void; restart(): void }>;
   disposed: boolean;
   override: ModelSelection | null;
@@ -173,6 +176,12 @@ export class AgentRegistry {
       if (event.type === "conversation_error" && event.requestId) {
         entry.reportedRequestErrors.add(event.requestId);
       }
+      if (isProgressEvent(event)) {
+        // The deadline measures time without progress, so a long turn that keeps working is not cut off.
+        for (const [requestId, deadline] of entry.deadlines) {
+          if (answeringRequestId(entry, requestId) === event.requestId) deadline.restart();
+        }
+      }
       this.publishEvent(event);
     });
     this.entries.set(conversationId, entry);
@@ -310,7 +319,13 @@ export class AgentRegistry {
         timeout = undefined;
         const answering = answeringRequestId(entry, request.requestId);
         entry.suppressedCancellationIds.add(answering);
-        reject(new WispBackendError("aborted", "The model request timed out.", true));
+        reject(
+          new WispBackendError(
+            "aborted",
+            `The Wisp stopped after ${formatDuration(this.executionTimeoutMs)} without progress.`,
+            true,
+          ),
+        );
         void (entry.agent.abortRequest ? entry.agent.abortRequest(request.requestId) : entry.agent.abort())
           .catch(() => undefined)
           .finally(() => entry.suppressedCancellationIds.delete(answering));
@@ -583,6 +598,30 @@ export class AgentRegistry {
     this.activeAgents -= 1;
     this.activeWaiters.shift()?.();
   }
+}
+
+type ProgressEvent = Extract<
+  ConversationAgentEvent,
+  {
+    type: "assistant_message_started" | "assistant_text_delta" | "assistant_message_completed" | "turn_item";
+  }
+>;
+
+/** Events that show a running turn is still working: its reply streaming, or a tool call starting, updating, or ending. */
+function isProgressEvent(event: ConversationAgentEvent): event is ProgressEvent {
+  return (
+    event.type === "assistant_message_started" ||
+    event.type === "assistant_text_delta" ||
+    event.type === "assistant_message_completed" ||
+    event.type === "turn_item"
+  );
+}
+
+function formatDuration(milliseconds: number): string {
+  const minutes = Math.round(milliseconds / 60_000);
+  if (minutes >= 1) return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  const seconds = Math.max(1, Math.round(milliseconds / 1_000));
+  return seconds === 1 ? "1 second" : `${seconds} seconds`;
 }
 
 /** The request a turn started for `requestId` answers now, after the follow-ups it took. */

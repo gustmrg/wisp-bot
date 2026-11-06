@@ -346,6 +346,62 @@ describe("AgentRegistry", () => {
     await registry.disposeAll();
     vi.useRealTimers();
   });
+
+  it("lets a turn run past the deadline while it keeps making progress", async () => {
+    vi.useFakeTimers();
+    const events: SequencedConversationAgentEvent[] = [];
+    const agent = new FakeConversationAgent("one", { latencyMs: 60_000 });
+    const abort = vi.spyOn(agent, "abort");
+    const subscribe = vi.spyOn(agent, "subscribe");
+    const registry = new AgentRegistry(
+      { create: () => agent },
+      (event) => events.push(event),
+      () => undefined,
+      { executionTimeoutMs: 100 },
+    );
+    await registry.restore([context("one")], { providerId: "test", modelId: "test" });
+    const emit = subscribe.mock.calls[0]![0];
+    registry.dispatch({ conversationId: "one", requestId: "long", text: "Implement every issue" });
+    const step = () =>
+      emit({
+        type: "turn_item",
+        conversationId: "one",
+        requestId: "long",
+        groupId: "group-1",
+        item: {
+          id: "tool-1",
+          toolName: "run_command",
+          status: "running",
+          startedAt: "2026-11-06T20:40:00.000Z",
+          type: "command_execution",
+          command: "dotnet build",
+        },
+      });
+
+    for (let progress = 0; progress < 5; progress += 1) {
+      await vi.advanceTimersByTimeAsync(80);
+      step();
+    }
+    // Another request's progress does not keep this one alive.
+    emit({ type: "assistant_text_delta", conversationId: "one", requestId: "other", messageId: "m", delta: "x" });
+    expect(abort).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(99);
+    expect(abort).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        requestId: "long",
+        error: expect.objectContaining({
+          code: "aborted",
+          message: "The Wisp stopped after 1 second without progress.",
+        }),
+      }),
+    );
+    await registry.disposeAll();
+    vi.useRealTimers();
+  });
 });
 
 it("never publishes idle or accepts a message before configuration, then enables the new Wisp", async () => {
