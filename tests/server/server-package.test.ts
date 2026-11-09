@@ -39,8 +39,8 @@ describe("server package README", () => {
     const help = readFileSync(path.join(root, "server/cli.ts"), "utf8").split("Options of setup:")[1]!;
     const options = [...help.matchAll(/^ {2}(--[a-z-]+)/gm)].map((match) => match[1]!);
     expect(options.length).toBeGreaterThan(3);
-    // The desktop app's own option is not for people.
-    for (const option of options.filter((name) => name !== "--until-stdin-closes")) {
+    // The desktop app's own options are not for people.
+    for (const option of options.filter((name) => !["--until-stdin-closes", "--update-id"].includes(name))) {
       expect(readme, option).toContain(`\`${option}`);
     }
     expect(readFileSync(path.join(root, "scripts/package-server.mjs"), "utf8")).toContain('"README.md"');

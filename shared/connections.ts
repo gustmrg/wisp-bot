@@ -133,6 +133,8 @@ export interface ConnectionStatus {
   retry?: ConnectionRetry;
   /** The version of the server last reached; not set for this computer, which always matches the app. */
   serverVersion?: string;
+  /** The last update of this server's setup that this app started, while it matters (SWE-313). */
+  update?: ServerUpdateView;
   /** Set while Wisp sets the server up over SSH; the setup can then be cancelled. */
   installing?: boolean;
   /**
@@ -141,6 +143,23 @@ export interface ConnectionStatus {
    * reconnect cannot replay what was missed.
    */
   epoch: number;
+}
+
+/**
+ * What became of an update of a server this app started. A reconnect alone
+ * does not confirm it: the server must report the update finished and answer
+ * at the target version.
+ * - running: the setup still runs on the server, or its answer was lost and
+ *   the server could not be asked yet; nothing is started again by itself.
+ * - confirmed: the server answers at the target version.
+ * - failed: the setup failed, or the server still answers at another version.
+ * - interrupted: the setup's process ended before it finished.
+ */
+export interface ServerUpdateView {
+  id: string;
+  targetVersion: string;
+  state: "running" | "confirmed" | "failed" | "interrupted";
+  message?: string;
 }
 
 export interface ConnectionsView {

@@ -211,6 +211,35 @@ describe("ConnectionGate", () => {
     expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
   });
 
+  it("reports an update that did not finish and lets the person update again, never by itself", async () => {
+    const update = { id: "u1", targetVersion: __APP_VERSION__, state: "failed" as const, message: "npm failed." };
+    const { api, push } = bridge(view({ phase: "connected", serverVersion: __APP_VERSION__, update }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByRole("button", { name: "Dismiss" });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      `Updating Home server to ${__APP_VERSION__} failed: npm failed.`,
+    );
+    expect(api.installServer).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Update again" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("The last update of this server did not finish.");
+    await userEvent.click(screen.getByRole("button", { name: "Update and reconnect" }));
+    expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
+
+    // Still running: said, with nothing to start again.
+    await push(view({ phase: "connected", serverVersion: "0.0.1", update: { ...update, id: "u2", state: "running" } }));
+    expect(screen.getByRole("status")).toHaveTextContent(/still running on the server/);
+    expect(screen.queryByRole("button", { name: /Update/ })).toBeNull();
+
+    await push(
+      view({ phase: "connected", serverVersion: __APP_VERSION__, update: { ...update, id: "u3", state: "confirmed" } }),
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("offers no server update when the server is newer, or not reached over SSH", async () => {
     const { push } = bridge(view({ phase: "connected", serverVersion: "999.0.0" }));
     render(

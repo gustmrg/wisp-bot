@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import { renderUnicodeCompact } from "uqr";
 
 import { describeDevices, describePairing, runCli } from "../../server/cli.js";
 import { pairingLink } from "../../shared/pairing-link.js";
+import { environmentRestorer } from "../helpers/restore-environment.js";
 
 describe("wispctl output for people", () => {
   const now = new Date("2026-10-09T20:18:37.435Z");
@@ -81,5 +86,38 @@ describe("wispctl version", () => {
         { name: "pdf", ok: true },
       ],
     });
+  });
+});
+
+describe("wispctl update-status", () => {
+  const restoreEnvironment = environmentRestorer();
+  afterEach(() => restoreEnvironment());
+
+  it("shows the last setup's record, or unknown when asked about another one", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "wisp-update-status-"));
+    try {
+      process.env.HOME = home;
+      const record = {
+        id: "0b7f8a6e-2c1d-4e5f-9a8b-7c6d5e4f3a2b",
+        targetVersion: "1.3.0",
+        state: "failed",
+        error: "npm could not reach the registry.",
+        pid: 1,
+        startedAt: "2026-11-09T12:00:00.000Z",
+        updatedAt: "2026-11-09T12:01:00.000Z",
+      };
+      await mkdir(path.join(home, ".config/wisp"), { recursive: true });
+      await writeFile(path.join(home, ".config/wisp/update.json"), JSON.stringify(record));
+      const run = async (...args: string[]) => {
+        let output = "";
+        await runCli(["update-status", "--json", ...args], (text) => void (output += text));
+        return JSON.parse(output) as unknown;
+      };
+      expect(await run("--id", record.id)).toEqual(record);
+      expect(await run()).toEqual(record);
+      expect(await run("--id", "11111111-2222-4333-8444-555555555555")).toEqual({ state: "unknown" });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });

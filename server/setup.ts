@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { chmod, cp, mkdir, mkdtemp, readFile, readlink, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
@@ -12,8 +13,11 @@ import {
   WISP_SERVER_PACKAGE,
   type ServerArchiveManifest,
 } from "../shared/server-package.js";
+import { type ServerUpdateRecord, UNFINISHED_UPDATE_STATES, UPDATE_ID_PATTERN } from "../shared/server-update.js";
 import { adminRequest } from "./admin.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
+import { checkRuntime, type RuntimeCheck } from "./runtime-check.js";
+import { isProcessAlive, readUpdateRecord, writeUpdateRecord } from "./update-record.js";
 
 const HEALTH_TIMEOUT_MS = 30_000;
 const NPM_TIMEOUT_MS = 10 * 60_000;
@@ -36,6 +40,8 @@ export interface SetupOptions {
   pair: boolean;
   /** Stops the setup before it starts the service; what was installed stays. */
   signal?: AbortSignal;
+  /** Names this run in the update record, so whoever started it can ask how it ended. */
+  updateId?: string;
 }
 
 export interface SetupResult {
@@ -53,6 +59,10 @@ export interface SetupResult {
   /** The command that starts the server by hand, when no service was installed. */
   startCommand?: string;
   pairingCode?: string;
+  /** The ID of this run's record in `update.json`. */
+  updateId: string;
+  /** The version the server answered with after the setup, when the service runs. */
+  runningVersion?: string;
   warnings: string[];
 }
 
@@ -88,6 +98,13 @@ export interface SetupHost {
   /** Whether anything accepts connections on the port, Wisp or not. */
   isPortInUse(address: string, port: number): Promise<boolean>;
   pairingCode(dataDirectory: string): Promise<string>;
+  /** The version the running server reports, or undefined when it does not answer. */
+  serverVersion(dataDirectory: string): Promise<string | undefined>;
+  /** Whether this machine can run the code that runs setup. */
+  checkRuntime(): Promise<RuntimeCheck[]>;
+  pid: number;
+  isProcessAlive(pid: number): boolean;
+  now(): Date;
   sleep(ms: number): Promise<void>;
   progress(message: string): void;
 }
@@ -173,6 +190,18 @@ export function systemHost(version: string, progress: (message: string) => void)
       if (typeof value.code !== "string") throw new Error("The server did not return a pairing code.");
       return value.code;
     },
+    serverVersion: async (dataDirectory) => {
+      try {
+        const { version } = (await adminRequest(dataDirectory, { command: "status" })) as { version?: unknown };
+        return typeof version === "string" ? version : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    checkRuntime,
+    pid: process.pid,
+    isProcessAlive,
+    now: () => new Date(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     progress,
   };
@@ -196,6 +225,8 @@ export function setupPaths(home: string) {
     currentMainScript: path.join(current, "app/server/main.js"),
     currentWispctl: path.join(current, "bin/wispctl"),
     configDir,
+    /** The record of the last setup, which `wispctl update-status` reads. */
+    updateRecord: path.join(configDir, "update.json"),
     keyFile: path.join(configDir, "master.key"),
     envFile: path.join(configDir, "server.env"),
     wispctl: path.join(home, ".local/bin/wispctl"),
@@ -204,14 +235,66 @@ export function setupPaths(home: string) {
   };
 }
 
+type Track = (changes: Partial<ServerUpdateRecord>) => Promise<void>;
+
 /**
  * Installs and starts a Wisp server for the current account: the package under
  * `~/.local/lib/wisp-server`, a master key, `server.env`, the `wispctl`
  * command, and a systemd user service. Running it again keeps the key and
  * settings, and restarts the service only when something changed.
+ *
+ * Each run is recorded in `update.json` as it goes, so a client that lost the
+ * answer can ask how it ended (`wispctl update-status`). Only one setup runs
+ * at a time.
  */
 export async function runSetup(options: SetupOptions, host: SetupHost): Promise<SetupResult> {
   const paths = setupPaths(host.home);
+  if (options.updateId !== undefined && !UPDATE_ID_PATTERN.test(options.updateId)) {
+    throw new Error("The update ID must be a UUID.");
+  }
+  const previous = await readUpdateRecord(paths.updateRecord, host.isProcessAlive);
+  if (previous && UNFINISHED_UPDATE_STATES.has(previous.state) && previous.pid !== host.pid) {
+    throw new Error(
+      `Another Wisp server setup is running (process ${previous.pid}). Wait for it to finish, then run the setup again.`,
+    );
+  }
+  const startedAt = host.now().toISOString();
+  const record: ServerUpdateRecord = {
+    id: options.updateId ?? randomUUID(),
+    targetVersion: host.archive?.manifest.version ?? host.version,
+    state: "accepted",
+    pid: host.pid,
+    startedAt,
+    updatedAt: startedAt,
+  };
+  const track: Track = async (changes) => {
+    Object.assign(record, changes, { updatedAt: host.now().toISOString() });
+    await writeUpdateRecord(paths.updateRecord, record);
+  };
+  await mkdir(paths.configDir, { recursive: true, mode: 0o700 });
+  await track({});
+  try {
+    const result = await setUp(options, host, paths, track);
+    await track({
+      state: "completed",
+      targetVersion: result.version,
+      ...(result.runningVersion ? { runningVersion: result.runningVersion } : {}),
+    });
+    return { ...result, updateId: record.id };
+  } catch (error) {
+    await track({ state: "failed", error: error instanceof Error ? error.message : "The setup failed." }).catch(
+      () => undefined,
+    );
+    throw error;
+  }
+}
+
+async function setUp(
+  options: SetupOptions,
+  host: SetupHost,
+  paths: ReturnType<typeof setupPaths>,
+  track: Track,
+): Promise<Omit<SetupResult, "updateId">> {
   const warnings: string[] = [];
   let changed = false;
   const stopIfCancelled = (): void => {
@@ -227,7 +310,18 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   }
 
   // 1. The server, in a stable place: `npx` runs from a cache that may be cleared,
-  // and an extracted archive from wherever it was downloaded.
+  // and an extracted archive from wherever it was downloaded. Nothing the
+  // running server uses changes until the new version is in place and checked.
+  const linked = (await readlink(paths.current).catch(() => undefined))?.replace(/^versions\//, "");
+  const fromVersion = linked ?? (await installedVersion(paths.installDir));
+  await track({ state: "preparing", ...(fromVersion ? { fromVersion } : {}) });
+  const failedCheck = (await host.checkRuntime()).find(({ ok }) => !ok);
+  if (failedCheck) {
+    throw new Error(
+      `Wisp server ${host.archive?.manifest.version ?? host.version} cannot run on this machine: the ${failedCheck.name} check failed: ${failedCheck.error}`,
+    );
+  }
+  stopIfCancelled();
   let version: string;
   if (host.archive) {
     if (options.packageSpec !== undefined) {
@@ -238,22 +332,12 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     version = host.archive.manifest.version;
     changed = (await installArchive(paths, host.archive, host, stopIfCancelled)) || changed;
   } else {
-    const installed = await installedVersion(paths);
+    const installed = await installedVersion(paths.installDir);
     const spec = options.packageSpec ?? `${WISP_SERVER_PACKAGE}@${host.version}`;
     version = installed ?? host.version;
     if (options.packageSpec !== undefined || installed !== host.version) {
       host.progress(`Installing ${spec}…`);
-      await mkdir(paths.installDir, { recursive: true });
-      const result = await host.run(
-        "npm",
-        ["install", "--prefix", paths.installDir, "--no-audit", "--no-fund", "--loglevel=error", spec],
-        { ...host.env, PATH: `${path.dirname(host.nodePath)}${path.delimiter}${host.env.PATH ?? ""}` },
-        NPM_TIMEOUT_MS,
-        options.signal,
-      );
-      stopIfCancelled();
-      if (result.code !== 0) throw new Error(explainInstallFailure(spec, result));
-      version = (await installedVersion(paths)) ?? host.version;
+      version = await installPackage(paths.installDir, spec, host, options.signal, stopIfCancelled);
       changed = true;
     } else {
       host.progress(`${WISP_SERVER_PACKAGE} ${version} is already installed.`);
@@ -360,6 +444,8 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   const enable = await systemctl("enable", SERVICE_NAME);
   if (enable.code !== 0) throw new Error(explainSystemdFailure(enable));
   let service: SetupResult["service"] = "unchanged";
+  let runningVersion: string | undefined;
+  await track({ state: "activating", targetVersion: version });
   try {
     if (!wasActive || changed) {
       host.progress(wasActive ? "Restarting the service…" : "Starting the service…");
@@ -382,13 +468,18 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     if ((await systemctl("is-active", "--quiet", SERVICE_NAME)).code !== 0) {
       throw new Error(`The server stopped right after it started. ${journal}`);
     }
+    // Answering is not enough: it must be the version just installed.
+    runningVersion = await host.serverVersion(dataDirectory);
+    if (runningVersion !== undefined && runningVersion !== version) {
+      throw new Error(`The server answers as version ${runningVersion} instead of ${version}. ${journal}`);
+    }
   } catch (error) {
     // A server that never ran must not keep failing on every boot.
     if (!wasActive) await systemctl("disable", "--now", SERVICE_NAME);
     throw error;
   }
   const pairingCode = options.pair ? await host.pairingCode(dataDirectory) : undefined;
-  return { ...base, service, ...(pairingCode ? { pairingCode } : {}) };
+  return { ...base, service, ...(runningVersion ? { runningVersion } : {}), ...(pairingCode ? { pairingCode } : {}) };
 }
 
 /** What to tell the person once setup is done, including what to do next. */
@@ -471,9 +562,50 @@ async function installArchive(
   return true;
 }
 
-/** The installed version, only when the install is complete: an interrupted `npm install` must be repeated. */
-async function installedVersion(paths: ReturnType<typeof setupPaths>): Promise<string | undefined> {
-  const text = await readIfExists(path.join(paths.packageDir, "package.json"));
+/**
+ * Installs the npm package into a staging prefix inside `installDir`, then
+ * moves it into place, so a failed or interrupted `npm install` leaves the
+ * installed server as it was. Resolves with the version installed.
+ */
+async function installPackage(
+  installDir: string,
+  spec: string,
+  host: SetupHost,
+  signal: AbortSignal | undefined,
+  stopIfCancelled: () => void,
+): Promise<string> {
+  await mkdir(installDir, { recursive: true });
+  const staging = await mkdtemp(path.join(installDir, ".npm-staging-"));
+  try {
+    const result = await host.run(
+      "npm",
+      ["install", "--prefix", staging, "--no-audit", "--no-fund", "--loglevel=error", spec],
+      { ...host.env, PATH: `${path.dirname(host.nodePath)}${path.delimiter}${host.env.PATH ?? ""}` },
+      NPM_TIMEOUT_MS,
+      signal,
+    );
+    stopIfCancelled();
+    if (result.code !== 0) throw new Error(explainInstallFailure(spec, result));
+    const version = await installedVersion(staging);
+    if (!version) throw new Error(`Installing ${spec} left an incomplete package. Run the setup again.`);
+    for (const name of ["node_modules", "package.json", "package-lock.json"]) {
+      if (!(await exists(path.join(staging, name)))) continue;
+      const target = path.join(installDir, name);
+      await rename(target, path.join(staging, `${name}.previous`)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+      await rename(path.join(staging, name), target);
+    }
+    return version;
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
+}
+
+/** The version installed in `installDir`, only when the install is complete: an interrupted `npm install` must be repeated. */
+async function installedVersion(installDir: string): Promise<string | undefined> {
+  const packageDir = path.join(installDir, "node_modules", ...WISP_SERVER_PACKAGE.split("/"));
+  const text = await readIfExists(path.join(packageDir, "package.json"));
   if (!text) return undefined;
   let manifest: { version?: unknown; dependencies?: unknown };
   try {
@@ -483,11 +615,11 @@ async function installedVersion(paths: ReturnType<typeof setupPaths>): Promise<s
   }
   const { version, dependencies } = manifest;
   if (typeof version !== "string" || !SERVER_VERSION_PATTERN.test(version)) return undefined;
-  if (!(await exists(paths.mainScript))) return undefined;
+  if (!(await exists(path.join(packageDir, "server/main.js")))) return undefined;
   for (const name of Object.keys(typeof dependencies === "object" && dependencies ? dependencies : {})) {
     // npm puts a dependency at the top, or next to the package when versions conflict.
     const found = await Promise.all(
-      [paths.installDir, paths.packageDir].map((directory) =>
+      [installDir, packageDir].map((directory) =>
         exists(path.join(directory, "node_modules", ...name.split("/"), "package.json")),
       ),
     );

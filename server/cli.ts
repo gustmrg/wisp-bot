@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "./node-version.js";
 
+import os from "node:os";
 import path from "node:path";
 
 import { renderUnicodeCompact } from "uqr";
@@ -14,7 +15,8 @@ import type { DeviceView, PairingCode } from "./device-auth.js";
 import { InstanceLock } from "./instance-lock.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
 import { checkRuntime } from "./runtime-check.js";
-import { describeSetup, findServerArchive, runSetup, systemHost } from "./setup.js";
+import { describeSetup, findServerArchive, runSetup, setupPaths, systemHost } from "./setup.js";
+import { isProcessAlive, readUpdateRecord } from "./update-record.js";
 
 const HELP = `Usage: wispctl <command> [options]
 
@@ -30,6 +32,8 @@ Commands:
   status                   Show the running server's identity
   version [--check]        Show this server's version and Node.js; --check also makes sure
                            this machine can run it (SQLite, PDF rendering)
+  update-status [--id ID]  Show how the last setup or update ended; with --id, only if it
+                           was that one (state "unknown" otherwise)
   backup --output FILE --key-file KEY
                            Write an encrypted backup of the data directory. A running
                            server writes it itself; otherwise the directory must be idle.
@@ -52,6 +56,7 @@ Options of setup:
   --no-service             Only install the files; do not set up the service
   --no-pair                Do not print a pairing code
   --until-stdin-closes     Stop when stdin closes, before starting the service (for the desktop app)
+  --update-id ID           Name this run in the update record (for the desktop app)
 `;
 
 export interface CliOutput {
@@ -88,6 +93,8 @@ export async function runCli(
         "--web",
         "--no-web",
         "--check",
+        "--update-id",
+        "--id",
       ].includes(flag)
     ) {
       throw new Error(`Unknown option ${flag}.`);
@@ -142,6 +149,7 @@ export async function runCli(
             ...(flags.has("--public-origin") ? { publicOrigin: option("--public-origin") } : {}),
             ...(flags.has("--web") || flags.has("--no-web") ? { web: !flags.has("--no-web") } : {}),
             ...(flags.has("--data-dir") ? { dataDirectory: dataDirectory } : {}),
+            ...(flags.has("--update-id") ? { updateId: option("--update-id") } : {}),
           },
           // Progress goes to stderr, so `--json` leaves stdout for the result alone.
           systemHost(readAppVersion(), (message) => process.stderr.write(`${message}\n`)),
@@ -183,6 +191,12 @@ export async function runCli(
         `Wisp server ${info.version} (Node.js ${info.node}, ${info.platform} ${info.arch}, ${info.install})${checks ? "\nThis machine can run it." : ""}\n`,
       );
       return;
+    }
+    case "update-status": {
+      const record = await readUpdateRecord(setupPaths(os.homedir()).updateRecord, isProcessAlive);
+      const wanted = flags.has("--id") ? option("--id") : undefined;
+      result = record && (wanted === undefined || record.id === wanted) ? record : { state: "unknown" };
+      break;
     }
     case "keygen":
       MasterKeyEncryption.generate(path.resolve(option("--output")));

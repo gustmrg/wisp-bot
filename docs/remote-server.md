@@ -209,6 +209,7 @@ npx @gustmrg/wisp-server@latest setup
 | `--no-pair` | Do not print a pairing code |
 | `--json` | Print the result as JSON; progress goes to stderr |
 | `--until-stdin-closes` | Stop, before starting the service, when stdin closes; the desktop app cancels this way |
+| `--update-id ID` | Name the run in the update record (a UUID); the desktop app passes one to follow its update |
 
 Options you pass are saved in `server.env`, so later runs keep them.
 
@@ -262,6 +263,36 @@ protocol, it refuses to connect and says which one to update. This needs Node.js
 non-interactive SSH commands, and a version of the app that is published on npm.
 **Cancel setup**, or choosing another connection, stops it, also on the machine;
 what was already installed stays, and a service not yet started is left alone.
+
+### How an update is confirmed
+
+Every run of `setup` records how it goes in `~/.config/wisp/update.json`:
+accepted, preparing (installing and checking the new version while the
+running server is untouched), activating (restarting the service), and then
+completed, failed with the reason, or interrupted when its process ended
+before finishing. It holds versions and times, never credentials. Only one
+setup runs at a time; a second one stops and says which process runs.
+
+Before the service restarts, the setup checks that the new version runs on the
+machine (`wispctl version --check`). The npm package installs into a staging
+folder first, so a failed `npm install` leaves the installed server as it was.
+After the restart, the setup checks that the server answers at the new
+version.
+
+The desktop app gives each update an ID and keeps it until it learns how the
+update ended, also across a restart of the app. A reconnect alone does not
+count: the server's record must say completed, and the server must answer at
+the app's version. When the SSH connection drops during an update, the app
+reads the record with `wispctl update-status` instead of running the setup
+again. The banner at the top then says whether the update is still running,
+failed, or was interrupted, with **Update again**; the app never starts an
+update by itself. A server too old to keep the record is judged by its
+version alone.
+
+```sh
+wispctl update-status          # how the last setup ended
+wispctl update-status --id ID  # only if it was that one; "unknown" otherwise
+```
 
 ### Settings
 

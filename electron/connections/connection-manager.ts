@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { openAsBlob } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -19,9 +20,11 @@ import {
   type ConnectionRetry,
   type ConnectionStatus,
   type ConnectionsView,
+  type ServerUpdateView,
   type SshConnectionProfile,
   type SshPromptView,
 } from "../../shared/connections.js";
+import { type ServerUpdateRecord, UNFINISHED_UPDATE_STATES } from "../../shared/server-update.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import {
   REMOTE_HOST_REQUESTS,
@@ -39,7 +42,7 @@ import {
   INSTALL_STEPS,
 } from "../../shared/connection-progress.js";
 import type { ConnectionStore } from "./connection-store.js";
-import type { InstallStep } from "./ssh-install.js";
+import { type InstallOutcome, type InstallStep, SetupOutcomeUnknownError } from "./ssh-install.js";
 
 export interface ConnectionManagerOptions {
   store: ConnectionStore;
@@ -55,14 +58,20 @@ export interface ConnectionManagerOptions {
     onServerPort: (port: number) => Promise<void>,
   ): Promise<RemoteTransport>;
   /**
-   * Installs and starts the Wisp server on the machine behind an SSH profile;
-   * reports progress lines, and resolves with the port the server listens on.
+   * Installs and starts the Wisp server on the machine behind an SSH profile,
+   * naming the run `updateId` on the server; reports progress lines, and
+   * resolves with the port and version the server runs.
    */
   installServer(
     profile: SshConnectionProfile,
     onProgress: (message: string, step: InstallStep) => void,
     signal: AbortSignal,
-  ): Promise<number | undefined>;
+    updateId: string,
+  ): Promise<InstallOutcome>;
+  /** Reads how the setup run `updateId` ended on the server, without changing anything there. */
+  readServerUpdate(profile: SshConnectionProfile, updateId: string): Promise<ServerUpdateRecord | undefined>;
+  /** The version this app installs on a server. */
+  appVersion: string;
   /** Does what the local server asks on this computer's screen. */
   onHostRequest(request: HostRequest): Promise<HostResponse>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
@@ -120,6 +129,10 @@ export class ConnectionManager {
   private exposure: LocalServerExposure | undefined;
   private watchedLocalExit: Promise<void> | undefined;
   private localRestart: ReturnType<typeof setTimeout> | undefined;
+  /** The last server update this app started, shown while its connection is the active one. */
+  private update: { profileId: string; view: ServerUpdateView } | undefined;
+  /** Profiles whose pending update is being checked, so one check runs at a time. */
+  private checkingUpdates = new Set<string>();
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
@@ -169,6 +182,7 @@ export class ConnectionManager {
         ...this.status,
         ...(this.progress ? { progress: structuredClone(this.progress) } : {}),
         ...(this.retrying ? { retry: structuredClone(this.retrying) } : {}),
+        ...(this.update?.profileId === this.status.profileId ? { update: { ...this.update.view } } : {}),
       },
       secureStorageAvailable: store.secureStorageAvailable,
       ...(this.sshPrompts[0] ? { sshPrompt: this.sshPrompts[0].view } : {}),
@@ -351,21 +365,51 @@ export class ConnectionManager {
       });
       // Still the screen of this setup: nobody chose another connection meanwhile.
       const showing = (): boolean => active && !this.disposed && this.status.profileId === id && !this.session;
-      let installedPort: number | undefined;
+      // Recorded before the setup starts, so the app can ask how it ended even after a restart.
+      const updateId = randomUUID();
+      const { appVersion: targetVersion, store } = this.options;
+      await store.setPendingUpdate(id, { id: updateId, targetVersion });
+      this.setUpdate(id, { id: updateId, targetVersion, state: "running" });
+      let outcome: InstallOutcome | undefined;
       try {
-        installedPort = await this.options.installServer(
-          profile,
-          (message, step) => {
-            if (showing() && !signal.aborted) {
-              if (this.progress) this.progress = advance(this.progress, step, message);
-              this.setStatus({ profileId: id, phase: "connecting", message, installing: true });
-            }
-          },
-          signal,
-        );
+        try {
+          outcome = await this.options.installServer(
+            profile,
+            (message, step) => {
+              if (showing() && !signal.aborted) {
+                if (this.progress) this.progress = advance(this.progress, step, message);
+                this.setStatus({ profileId: id, phase: "connecting", message, installing: true });
+              }
+            },
+            signal,
+            updateId,
+          );
+        } catch (error) {
+          // The answer was lost, not necessarily the update: the server's record says how it went.
+          if (!(error instanceof SetupOutcomeUnknownError) || signal.aborted) throw error;
+          const record = await this.options.readServerUpdate(profile, updateId).catch(() => undefined);
+          if (record?.state !== "completed") throw new LostSetupError(error, record);
+          outcome = record.runningVersion ? { version: record.runningVersion } : {};
+        }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "The server could not be set up.";
+        const stillRunning = error instanceof LostSetupError && error.stillRunning;
+        const message = stillRunning
+          ? `The update is still running on ${profile.host}. Wisp checks how it ended when it connects again.`
+          : error instanceof Error
+            ? error.message
+            : "The server could not be set up.";
         this.options.logger.warn("server_install_failed", { profileId: id, cancelled: signal.aborted, message });
+        if (stillRunning) {
+          this.setUpdate(id, { id: updateId, targetVersion, state: "running", message });
+        } else {
+          await store.setPendingUpdate(id, undefined);
+          if (signal.aborted) this.setUpdate(id, undefined);
+          else {
+            const state =
+              error instanceof LostSetupError && error.record?.state === "interrupted" ? "interrupted" : "failed";
+            this.setUpdate(id, { id: updateId, targetVersion, state, message });
+          }
+        }
         if (showing()) {
           const failure: ConnectionFailure = signal.aborted
             ? "cancelled"
@@ -378,6 +422,9 @@ export class ConnectionManager {
         }
         throw new WispBackendError("unavailable", message, true);
       }
+      // Only the server's own version is left to confirm, once it answers.
+      await store.setPendingUpdate(id, { id: updateId, targetVersion, setupCompleted: true });
+      const installedPort = outcome.port;
       this.options.logger.info("server_installed", { profileId: id });
       if (installedPort !== undefined) await this.recordServerPort(id, installedPort);
       return await this.serialized(async () => {
@@ -390,6 +437,66 @@ export class ConnectionManager {
     } finally {
       if (this.installation === installation) this.installation = undefined;
     }
+  }
+
+  /**
+   * Finds out how an update this app started on the server ended, after the
+   * app reached the server (`runningVersion`) or failed to. It confirms the
+   * update only when the server's record says it completed and the server
+   * answers at the target version, so a reconnect alone confirms nothing.
+   * It only reads: a failed update is reported, never run again by itself.
+   */
+  private async checkPendingUpdate(profile: SshConnectionProfile, runningVersion: string | undefined): Promise<void> {
+    const { store } = this.options;
+    const pending = store.pendingUpdate(profile.id);
+    if (!pending || this.installation?.profileId === profile.id || this.checkingUpdates.has(profile.id)) return;
+    // Unreachable after a setup that reported success: the connection's own error says enough.
+    if (runningVersion === undefined && pending.setupCompleted) return;
+    this.checkingUpdates.add(profile.id);
+    try {
+      const record = pending.setupCompleted
+        ? undefined
+        : await this.options.readServerUpdate(profile, pending.id).catch(() => undefined);
+      if (store.pendingUpdate(profile.id)?.id !== pending.id || this.installation?.profileId === profile.id) return;
+      const base = { id: pending.id, targetVersion: pending.targetVersion };
+      if (record && UNFINISHED_UPDATE_STATES.has(record.state)) {
+        this.setUpdate(profile.id, {
+          ...base,
+          state: "running",
+          message: `The update to ${pending.targetVersion} is still running on ${profile.host}.`,
+        });
+        return;
+      }
+      let view: ServerUpdateView;
+      if (record && record.state !== "completed") {
+        view = {
+          ...base,
+          state: record.state === "interrupted" ? "interrupted" : "failed",
+          message: record.error ?? "The update did not finish.",
+        };
+      } else if (runningVersion === undefined) {
+        // Completed, or unknown to the server: only answering at the right version tells.
+        return;
+      } else if (runningVersion === pending.targetVersion) {
+        view = { ...base, state: "confirmed" };
+      } else {
+        view = {
+          ...base,
+          state: "failed",
+          message: `${profile.name} still runs Wisp server ${runningVersion}, not ${pending.targetVersion}.`,
+        };
+      }
+      await store.setPendingUpdate(profile.id, undefined);
+      this.options.logger.info("server_update_checked", { profileId: profile.id, state: view.state });
+      this.setUpdate(profile.id, view);
+    } finally {
+      this.checkingUpdates.delete(profile.id);
+    }
+  }
+
+  private setUpdate(profileId: string, view: ServerUpdateView | undefined): void {
+    this.update = view ? { profileId, view } : undefined;
+    this.publish();
   }
 
   /** Keeps the port the Wisp server on an SSH profile's machine listens on, as it reported. */
@@ -505,6 +612,8 @@ export class ConnectionManager {
           this.progress = undefined;
           this.retrying = undefined;
         } else if (phase === "connecting" || phase === "reconnecting" || phase === "error") {
+          // A server that does not come back after an update may have failed it.
+          if (profile.kind === "ssh" && failure) void this.checkPendingUpdate(profile, undefined);
           // Only a failed attempt, or a dropped connection, reports these: the first status is set above.
           if (this.progress) this.progress = fail(this.progress, failure?.failure, { now });
           const dropped = this.status.phase === "connected" || this.status.phase === "local";
@@ -554,7 +663,9 @@ export class ConnectionManager {
         this.publish();
       },
       onServer: (server) => {
-        if (!local) serverVersion = server.version;
+        if (local) return;
+        serverVersion = server.version;
+        if (profile.kind === "ssh") void this.checkPendingUpdate(profile, server.version);
       },
       onEvent: (type, payload) => {
         if (this.session === session && PUSHED.has(type)) {
@@ -638,4 +749,17 @@ function directTransport(url: string): RemoteTransport {
 
 function invalidResult(message: string): BackendResult<never> {
   return { ok: false, error: { code: "invalid_request", message, retryable: false } };
+}
+
+/** A setup whose answer was lost and that the server does not report as completed. */
+class LostSetupError extends TransportError {
+  readonly stillRunning: boolean;
+
+  constructor(
+    lost: SetupOutcomeUnknownError,
+    readonly record: ServerUpdateRecord | undefined,
+  ) {
+    super(record?.error ?? lost.message, lost.failure ?? "install", lost.details);
+    this.stillRunning = record !== undefined && UNFINISHED_UPDATE_STATES.has(record.state);
+  }
 }

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SERVER_ARCHIVE_MANIFEST } from "../../shared/server-package.js";
+import { readUpdateRecord } from "../../server/update-record.js";
 import {
   describeSetup,
   findServerArchive,
@@ -38,6 +39,11 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
   const progress: string[] = [];
   let healthy = true;
   let active = false;
+  let npmVersion = "1.2.3";
+  let answers: string | undefined;
+  /** What the service runs since its last restart: the archive `current` points at, or the npm package. */
+  let running: string | undefined;
+  let runtimeOk = true;
   let foreign = false;
   let listening = 0;
   const probed: string[] = [];
@@ -53,14 +59,21 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
       calls.push([command, ...args].join(" "));
       if (command === "npm") {
         // What `npm install --prefix` leaves behind.
-        await mkdir(path.dirname(paths.mainScript), { recursive: true });
-        await writeFile(path.join(paths.packageDir, "package.json"), JSON.stringify({ version: "1.2.3" }));
-        await writeFile(paths.mainScript, "");
+        const prefix = args[args.indexOf("--prefix") + 1]!;
+        const packageDir = path.join(prefix, path.relative(paths.installDir, paths.packageDir));
+        await mkdir(path.join(packageDir, "server"), { recursive: true });
+        await writeFile(path.join(packageDir, "package.json"), JSON.stringify({ version: npmVersion }));
+        await writeFile(path.join(packageDir, "server/main.js"), "");
         // The directory of the running Node.js comes first.
         expect(env.PATH).toMatch(/\/bin:\/usr\/bin$/);
       }
       if (command === "systemctl" && args.includes("restart")) {
         active = true;
+        const link = await readlink(paths.current).catch(() => undefined);
+        running = link
+          ? path.basename(link)
+          : (JSON.parse(await readFile(path.join(paths.packageDir, "package.json"), "utf8")) as { version: string })
+              .version;
         listening = Number(parseEnvFile(await readFile(paths.envFile, "utf8")).get("WISP_PORT"));
       }
       if (command === "systemctl" && args.includes("is-active")) return { ...ok, code: active ? 0 : 3 };
@@ -75,6 +88,17 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
       return foreign || (active && port === listening);
     },
     pairingCode: async () => "ABCDE-FGHJK",
+    serverVersion: async () => (active ? (answers ?? running) : undefined),
+    checkRuntime: async () => [
+      { name: "sqlite", ok: true },
+      runtimeOk
+        ? { name: "pdf", ok: true }
+        : { name: "pdf", ok: false, error: "canvas.node: cannot open shared object" },
+    ],
+    pid: 4242,
+    // This setup, and another one that runs.
+    isProcessAlive: (pid) => pid === 4242 || pid === 5000,
+    now: () => new Date("2026-11-09T12:00:00.000Z"),
     sleep: async () => undefined,
     progress: (message) => void progress.push(message),
   };
@@ -86,6 +110,9 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
     progress,
     probed,
     setHealthy: (value: boolean) => void (healthy = value),
+    setNpmVersion: (value: string) => void (npmVersion = value),
+    setAnswers: (value: string | undefined) => void (answers = value),
+    setRuntimeOk: (value: boolean) => void (runtimeOk = value),
     setForeign: (value: boolean) => void (foreign = value),
   };
 }
@@ -95,9 +122,12 @@ describe("runSetup", () => {
     const { host, paths, calls } = await machine();
     const result = await runSetup(options, host);
 
-    expect(calls[0]).toBe(
-      `npm install --prefix ${paths.installDir} --no-audit --no-fund --loglevel=error @gustmrg/wisp-server@1.2.3`,
+    expect(calls[0]).toMatch(
+      new RegExp(
+        `^npm install --prefix ${paths.installDir}/\\.npm-staging-\\w+ --no-audit --no-fund --loglevel=error @gustmrg/wisp-server@1\\.2\\.3$`,
+      ),
     );
+    expect(await readdir(paths.installDir)).toEqual(["node_modules"]);
     expect(calls.filter((call) => call.startsWith("systemctl"))).toEqual([
       "systemctl --user is-active --quiet wisp",
       "systemctl --user daemon-reload",
@@ -317,7 +347,8 @@ describe("runSetup", () => {
     await expect(
       runSetup(options, {
         ...host,
-        run: async (command, args) => {
+        run: async (command, args, env) => {
+          if (command === "npm") return host.run(command, args, env);
           if (args.includes("restart")) started = true;
           // Crash-looping: never active for long.
           return { ...ok, code: args.includes("is-active") ? 3 : 0 };
@@ -475,9 +506,10 @@ describe("runSetup from a server archive", () => {
   it("leaves no partial version behind when cancelled", async () => {
     const { host, paths } = await machine();
     const cancel = new AbortController();
-    cancel.abort();
+    // Cancelled while the archive is copied.
+    const progress = (message: string) => void (message.startsWith("Installing") && cancel.abort());
     await expect(
-      runSetup({ ...options, signal: cancel.signal }, { ...host, archive: await archiveOf("1.3.0") }),
+      runSetup({ ...options, signal: cancel.signal }, { ...host, progress, archive: await archiveOf("1.3.0") }),
     ).rejects.toThrow("The setup was cancelled.");
     expect(await readdir(paths.versionsDir)).toEqual([]);
     await expect(readlink(paths.current)).rejects.toThrow();
@@ -499,5 +531,106 @@ describe("runSetup from a server archive", () => {
     await writeFile(path.join(archive.root, SERVER_ARCHIVE_MANIFEST), JSON.stringify({ version: "1.3.0; rm -rf /" }));
     expect(findServerArchive(path.join(archive.root, "app/server"))).toBeUndefined();
     expect(findServerArchive(path.join(os.tmpdir(), "nowhere/app/server"))).toBeUndefined();
+  });
+});
+
+const UPDATE_ID = "0b7f8a6e-2c1d-4e5f-9a8b-7c6d5e4f3a2b";
+
+describe("the update record", () => {
+  const recordOf = async (paths: ReturnType<typeof setupPaths>) =>
+    JSON.parse(await readFile(paths.updateRecord, "utf8")) as Record<string, unknown>;
+
+  it("records each run and the version the server answered with", async () => {
+    const { host, paths, setNpmVersion } = await machine();
+    const result = await runSetup({ ...options, updateId: UPDATE_ID }, host);
+    expect(result).toMatchObject({ updateId: UPDATE_ID, runningVersion: "1.2.3" });
+    expect(await recordOf(paths)).toEqual({
+      id: UPDATE_ID,
+      targetVersion: "1.2.3",
+      runningVersion: "1.2.3",
+      state: "completed",
+      pid: 4242,
+      startedAt: "2026-11-09T12:00:00.000Z",
+      updatedAt: "2026-11-09T12:00:00.000Z",
+    });
+    expect((await stat(paths.updateRecord)).mode & 0o777).toBe(0o600);
+
+    setNpmVersion("1.3.0");
+    const update = await runSetup({ ...options, pair: false }, { ...host, version: "1.3.0" });
+    expect(update.updateId).not.toBe(UPDATE_ID);
+    expect(await recordOf(paths)).toMatchObject({
+      fromVersion: "1.2.3",
+      targetVersion: "1.3.0",
+      runningVersion: "1.3.0",
+      state: "completed",
+    });
+  });
+
+  it("leaves the running server alone when the new version cannot run on the machine", async () => {
+    const { host, paths, calls, setRuntimeOk } = await machine();
+    await runSetup({ ...options, pair: false }, host);
+    calls.length = 0;
+    setRuntimeOk(false);
+
+    await expect(runSetup({ ...options, updateId: UPDATE_ID }, { ...host, version: "1.3.0" })).rejects.toThrow(
+      "Wisp server 1.3.0 cannot run on this machine: the pdf check failed: canvas.node: cannot open shared object",
+    );
+    expect(calls).toEqual([]);
+    expect(await recordOf(paths)).toMatchObject({
+      id: UPDATE_ID,
+      fromVersion: "1.2.3",
+      targetVersion: "1.3.0",
+      state: "failed",
+      error: expect.stringContaining("cannot run on this machine"),
+    });
+  });
+
+  it("keeps the installed package when npm fails", async () => {
+    const { host, paths } = await machine();
+    await runSetup({ ...options, pair: false }, host);
+    const failing: SetupHost = {
+      ...host,
+      version: "1.3.0",
+      run: async (command, args, env) =>
+        command === "npm" ? { code: 1, stdout: "", stderr: "npm error code E404" } : host.run(command, args, env),
+    };
+    await expect(runSetup(options, failing)).rejects.toThrow(/is not published on npm/);
+    expect(JSON.parse(await readFile(path.join(paths.packageDir, "package.json"), "utf8")).version).toBe("1.2.3");
+    expect(await readdir(paths.installDir)).toEqual(["node_modules"]);
+  });
+
+  it("fails when the server answers at another version than the one installed", async () => {
+    const { host, paths, setAnswers } = await machine();
+    setAnswers("1.1.0");
+    await expect(runSetup(options, host)).rejects.toThrow(/answers as version 1\.1\.0 instead of 1\.2\.3/);
+    expect(await recordOf(paths)).toMatchObject({ state: "failed" });
+  });
+
+  it("refuses to run beside another setup, and reads one whose process ended as interrupted", async () => {
+    const { host, paths } = await machine();
+    const unfinished = (pid: number) => ({
+      id: UPDATE_ID,
+      targetVersion: "1.2.3",
+      state: "preparing",
+      pid,
+      startedAt: "2026-11-09T11:00:00.000Z",
+      updatedAt: "2026-11-09T11:00:00.000Z",
+    });
+    await mkdir(paths.configDir, { recursive: true });
+    await writeFile(paths.updateRecord, JSON.stringify(unfinished(5000)));
+    await expect(runSetup(options, host)).rejects.toThrow("Another Wisp server setup is running (process 5000).");
+
+    await writeFile(paths.updateRecord, JSON.stringify(unfinished(31337)));
+    expect(await readUpdateRecord(paths.updateRecord, host.isProcessAlive)).toMatchObject({
+      id: UPDATE_ID,
+      state: "interrupted",
+      error: "The setup stopped before it finished.",
+    });
+    await expect(runSetup(options, host)).resolves.toMatchObject({ service: "started" });
+  });
+
+  it("refuses an update ID that is not a UUID, since it reaches a remote shell", async () => {
+    const { host } = await machine();
+    await expect(runSetup({ ...options, updateId: "x; rm -rf ~" }, host)).rejects.toThrow("must be a UUID");
   });
 });

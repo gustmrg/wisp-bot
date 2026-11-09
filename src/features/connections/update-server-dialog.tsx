@@ -32,12 +32,15 @@ export function UpdateServerDialog({
   name,
   host,
   serverVersion,
+  reason,
   onConfirm,
   onCancel,
 }: {
   name: string;
   host: string;
   serverVersion: string;
+  /** Why to update, when it is not that the server is older. */
+  reason?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -50,7 +53,8 @@ export function UpdateServerDialog({
             Update {name} to {appVersion}?
           </DialogTitle>
           <DialogDescription>
-            The server runs {serverVersion}, older than this app. Some features need both on the same version.
+            {reason ??
+              `The server runs ${serverVersion}, older than this app. Some features need both on the same version.`}
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-[10px] border border-border bg-popover px-3.5 py-3 text-sm leading-relaxed">

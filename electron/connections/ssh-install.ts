@@ -3,8 +3,9 @@ import { spawn } from "node:child_process";
 import { FatalTransportError } from "../../client/remote-session.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
 import { SERVER_VERSION_PATTERN, WISP_SERVER_PACKAGE } from "../../shared/server-package.js";
+import { parseServerUpdateRecord, type ServerUpdateRecord, UPDATE_ID_PATTERN } from "../../shared/server-update.js";
 import { SshQuestions, type SshInteraction } from "./ssh-auth.js";
-import { detailsOf, sshArguments, sshFailure } from "./ssh-tunnel.js";
+import { detailsOf, parseLines, runWispctl, sshArguments, sshFailure, WISPCTL } from "./ssh-tunnel.js";
 
 // Downloading the package and its dependencies can take a while on a small machine.
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
@@ -20,6 +21,25 @@ export interface SshInstallOptions {
   onProgress?: (message: string, step: InstallStep) => void;
   /** Lets OpenSSH ask the person questions; without it, SSH runs in BatchMode. */
   interaction?: SshInteraction;
+  /** Names the run in the server's update record, so its result can be asked for later. */
+  updateId?: string;
+}
+
+/** What a setup that finished reported. */
+export interface InstallOutcome {
+  /** The port the server listens on, when the setup said. */
+  port?: number;
+  /** The version the server answered with once it ran. */
+  version?: string;
+}
+
+/**
+ * The setup started on the server, then the connection ended before it
+ * answered: it may still run, or have finished. Ask the server's update
+ * record before calling it failed, and never run it again only for this.
+ */
+export class SetupOutcomeUnknownError extends FatalTransportError {
+  override name = "SetupOutcomeUnknownError";
 }
 
 /** Where the setup is: downloading the server, installing it, or starting its service. */
@@ -47,18 +67,21 @@ export function installStepOf(message: string, previous: InstallStep): InstallSt
  * Without a terminal, ending ssh does not stop the remote command, so it
  * stops itself when its stdin closes.
  */
-export function installCommand(version: string, serverPort: number): string {
+export function installCommand(version: string, serverPort: number, updateId?: string): string {
   if (!SERVER_VERSION_PATTERN.test(version))
     throw new FatalTransportError(`${version} is not a version Wisp can install.`);
   if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535) {
     throw new FatalTransportError("The server port is invalid.");
+  }
+  if (updateId !== undefined && !UPDATE_ID_PATTERN.test(updateId)) {
+    throw new FatalTransportError("The update ID is invalid.");
   }
   const cli = `"$d/node_modules/${WISP_SERVER_PACKAGE}/server/cli.js"`;
   const script = [
     `PATH="$HOME/.local/bin:$PATH"`,
     `echo "${CONNECTED_MESSAGE}" >&2`,
     `d=$(mktemp -d) || exit 1`,
-    `npm install --prefix "$d" --no-audit --no-fund --loglevel=error ${WISP_SERVER_PACKAGE}@${version} >&2 && node ${cli} setup --json --no-pair --until-stdin-closes --port ${serverPort}`,
+    `npm install --prefix "$d" --no-audit --no-fund --loglevel=error ${WISP_SERVER_PACKAGE}@${version} >&2 && node ${cli} setup --json --no-pair --until-stdin-closes --port ${serverPort}${updateId ? ` --update-id ${updateId}` : ""}`,
     `s=$?`,
     `rm -rf "$d"`,
     `exit $s`,
@@ -69,13 +92,14 @@ export function installCommand(version: string, serverPort: number): string {
 
 /**
  * Installs and starts the Wisp server on a machine reached over SSH, by
- * running its `setup` there. Resolves with the port the setup reports.
+ * running its `setup` there. Resolves with the port and version the setup
+ * reports.
  */
 export async function installRemoteServer(
   profile: SshConnectionProfile,
   options: SshInstallOptions,
-): Promise<number | undefined> {
-  const command = installCommand(options.version, profile.serverPort);
+): Promise<InstallOutcome> {
+  const command = installCommand(options.version, profile.serverPort, options.updateId);
   const ssh = options.sshPath ?? "ssh";
   const questions = new SshQuestions(options.interaction, ssh, profile, options.signal);
   const child = spawn(
@@ -132,8 +156,39 @@ export async function installRemoteServer(
   options.signal?.removeEventListener("abort", stop);
   if (options.signal?.aborted) throw new FatalTransportError("Installing the server was cancelled.", "cancelled");
   const result = /^\{.*\}$/m.exec(stdout)?.[0];
-  if (code === 0 && result) return portOf(result);
-  throw explainInstallFailure(profile, options.version, code, stderr, timedOut, spawnError, questions);
+  if (code === 0 && result) return outcomeOf(result);
+  const failure = explainInstallFailure(profile, options.version, code, stderr, timedOut, spawnError, questions);
+  // OpenSSH exits with 255 when the connection drops; it may have dropped while the setup went on.
+  if (connected && (timedOut || code === 255 || code === null)) {
+    throw new SetupOutcomeUnknownError(failure.message, failure.failure, failure.details);
+  }
+  throw failure;
+}
+
+/**
+ * Asks the server how the setup with this ID ended, with `wispctl
+ * update-status` over SSH. It only reads. Resolves undefined when the server
+ * has no record of it, or is too old to keep one.
+ */
+export async function readServerUpdate(
+  profile: SshConnectionProfile,
+  updateId: string,
+  options: { sshPath?: string; interaction?: SshInteraction } = {},
+): Promise<ServerUpdateRecord | undefined> {
+  if (!UPDATE_ID_PATTERN.test(updateId)) throw new FatalTransportError("The update ID is invalid.");
+  const run = await runWispctl(
+    options.sshPath ?? "ssh",
+    profile,
+    options.interaction,
+    `${WISPCTL} update-status --json --id ${updateId}`,
+  );
+  if (run.exitCode === 255 || run.spawnError || run.timedOut) {
+    const failure = sshFailure(run.stderr, profile, run.spawnError, run.questions);
+    throw new FatalTransportError(failure.message, failure.failure, failure.details);
+  }
+  return parseLines(run.stdout)
+    .map(parseServerUpdateRecord)
+    .find((record) => record?.id === updateId);
 }
 
 /** Why the setup over SSH failed, in terms of what to do on the server. */
@@ -194,12 +249,15 @@ export function explainInstallFailure(
   );
 }
 
-/** The port in the setup's JSON result, when it is a valid one. */
-function portOf(result: string): number | undefined {
+/** The port and running version in the setup's JSON result, when they are valid. */
+function outcomeOf(result: string): InstallOutcome {
   try {
-    const { port } = JSON.parse(result) as { port?: unknown };
-    return Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65_535 ? (port as number) : undefined;
+    const { port, runningVersion } = JSON.parse(result) as { port?: unknown; runningVersion?: unknown };
+    const validPort = Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65_535;
+    const version =
+      typeof runningVersion === "string" && SERVER_VERSION_PATTERN.test(runningVersion) ? runningVersion : undefined;
+    return { ...(validPort ? { port: port as number } : {}), ...(version ? { version } : {}) };
   } catch {
-    return undefined;
+    return {};
   }
 }

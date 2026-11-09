@@ -4,7 +4,11 @@
 // `wispctl pair` through the server's admin socket. FAKE_SSH_FAIL makes it
 // fail like OpenSSH does, FAKE_SSH_REMOTE=missing makes the remote shell lack
 // wispctl, FAKE_SSH_INSTALL=no-node|not-published|systemd makes the server
-// setup fail, and FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped.
+// setup fail, FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped, and
+// FAKE_SSH_INSTALL=drop drops the connection while it runs. `wispctl
+// update-status` answers with a record in FAKE_SSH_UPDATE's state (completed,
+// failed, preparing, or interrupted), none when unset, or fails like a server
+// too old to know the command with FAKE_SSH_UPDATE=old.
 // FAKE_SSH_ASK=hostkey|password|passphrase asks through SSH_ASKPASS like
 // OpenSSH does: the host key is trusted once in FAKE_SSH_KNOWN, the password
 // is "hunter2" until a key is added to FAKE_SSH_AUTHORIZED, and the
@@ -104,6 +108,29 @@ if (command.includes("authorized_keys")) {
   process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
   // Runs until the test stops ssh.
   setInterval(() => undefined, 60_000);
+} else if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "drop") {
+  connected();
+  process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\nConnection to home-server closed by remote host.\n");
+  process.exit(255);
+} else if (command.includes("wispctl update-status")) {
+  const id = /--id (\S+)/.exec(command)?.[1];
+  const state = process.env.FAKE_SSH_UPDATE;
+  if (state === "old") {
+    process.stderr.write("Unknown command update-status. Run wispctl help.\n");
+    process.exit(1);
+  }
+  const record = {
+    id,
+    targetVersion: "1.0.0",
+    state,
+    pid: 1,
+    startedAt: "2026-11-09T12:00:00.000Z",
+    updatedAt: "2026-11-09T12:01:00.000Z",
+    ...(state === "completed" ? { runningVersion: "1.0.0" } : {}),
+    ...(state === "failed" ? { error: "The server did not answer on port 8787 within 30 seconds." } : {}),
+  };
+  process.stdout.write(`${JSON.stringify(state ? record : { state: "unknown" })}\n`);
+  process.exit(0);
 } else if (command.includes("setup --json")) {
   // `npx @gustmrg/wisp-server@VERSION setup`, run on the server.
   const outcomes = {
@@ -121,7 +148,10 @@ if (command.includes("authorized_keys")) {
     process.exit(outcome[1]);
   }
   process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\nStarting the service…\n");
-  process.stdout.write(`${JSON.stringify({ version: "1.0.0", service: "started" })}\n`);
+  const updateId = /--update-id (\S+)/.exec(command)?.[1];
+  process.stdout.write(
+    `${JSON.stringify({ version: "1.0.0", service: "started", runningVersion: "1.0.0", updateId })}\n`,
+  );
   process.exit(0);
 } else if (command) {
   // `wispctl status --json && wispctl pair --json`, or one of them, through the server's admin socket.

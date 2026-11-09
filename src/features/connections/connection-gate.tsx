@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { APP_METADATA } from "@/config/app-metadata";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { cn } from "@/lib/utils";
-import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
+import { LOCAL_CONNECTION_ID, type ConnectionsView, type ServerUpdateView } from "../../../shared/connections";
 import { ActiveConnectionContext } from "./active-connection";
 import {
   activeName,
@@ -123,20 +123,22 @@ function GateContent({
     return error ? <ConnectionMessage title="Wisp could not start" message={error} /> : <SplashScreen />;
   }
   const { status } = view;
+  // A confirmed update needs no word; any other outcome stays until dismissed.
+  const update = status.update && status.update.state !== "confirmed" ? status.update : undefined;
+  const versionDiffers = Boolean(status.serverVersion && status.serverVersion !== APP_METADATA.version);
+  const bannerKey = `${view.activeId}:${status.serverVersion ?? ""}:${update ? `${update.id}:${update.state}` : ""}`;
   if (status.phase === "local" || status.phase === "connected" || status.phase === "reconnecting") {
     // The banner takes its own row so it never covers the app; the app keeps
     // its place in the tree, so showing the banner does not remount it.
     return (
       <div className="flex h-full min-h-0 flex-col">
         {status.phase === "reconnecting" ? <ReconnectingBanner view={view} now={now} /> : null}
-        {status.phase === "connected" &&
-        status.serverVersion &&
-        status.serverVersion !== APP_METADATA.version &&
-        dismissedVersion !== `${view.activeId}:${status.serverVersion}` ? (
+        {status.phase === "connected" && (versionDiffers || update) && dismissedVersion !== bannerKey ? (
           <VersionMismatchBanner
             view={view}
-            serverVersion={status.serverVersion}
-            onDismiss={() => setDismissedVersion(`${view.activeId}:${status.serverVersion}`)}
+            serverVersion={status.serverVersion ?? APP_METADATA.version}
+            {...(update ? { update } : {})}
+            onDismiss={() => setDismissedVersion(bannerKey)}
           />
         ) : null}
         <div
@@ -419,39 +421,53 @@ function ReconnectDetails({ view, now }: { view: ConnectionsView; now: number })
   );
 }
 
-/** The server speaks this app's protocol, but some features may differ until both run the same version. */
+/**
+ * The server speaks this app's protocol, but some features may differ until
+ * both run the same version; or the last update this app started on it did
+ * not finish. A failed update is only reported: updating again is the
+ * person's choice.
+ */
 function VersionMismatchBanner({
   view,
   serverVersion,
+  update,
   onDismiss,
 }: {
   view: ConnectionsView;
   serverVersion: string;
+  update?: ServerUpdateView;
   onDismiss: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const appVersion = APP_METADATA.version;
   const serverIsOlder = compareVersions(serverVersion, appVersion) < 0;
   const profile = activeProfile(view);
+  const updateFailed = update?.state === "failed" || update?.state === "interrupted";
   // An SSH server can be updated right here, after the person confirms.
-  const canUpdate = serverIsOlder && profile?.kind === "ssh" && view.canManage !== false;
+  const canUpdate =
+    (serverIsOlder || updateFailed) &&
+    update?.state !== "running" &&
+    profile?.kind === "ssh" &&
+    view.canManage !== false;
   const advice = !serverIsOlder
     ? "Update this app so every feature works."
     : canUpdate
       ? "Update it so every feature works."
       : "Update the server so every feature works.";
+  const text = update
+    ? update.state === "running"
+      ? `Updating ${activeName(view)} to ${update.targetVersion} is still running on the server.`
+      : `Updating ${activeName(view)} to ${update.targetVersion} ${update.state === "interrupted" ? "was interrupted" : "failed"}${update.message ? `: ${update.message}` : "."}`
+    : `${activeName(view)} runs Wisp server ${serverVersion}, ${serverIsOlder ? "older" : "newer"} than this app (${appVersion}). ${advice}`;
   return (
     <div
       role="status"
       className="flex flex-none flex-wrap items-center justify-center gap-x-3 gap-y-2 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
     >
-      <span>
-        {activeName(view)} runs Wisp server {serverVersion}, {serverIsOlder ? "older" : "newer"} than this app (
-        {appVersion}). {advice}
-      </span>
+      <span>{text}</span>
       {canUpdate ? (
         <Button type="button" size="xs" variant="outline" onClick={() => setConfirming(true)}>
-          Update server
+          {updateFailed ? "Update again" : "Update server"}
         </Button>
       ) : null}
       <Button type="button" size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
@@ -462,6 +478,7 @@ function VersionMismatchBanner({
           name={activeName(view)}
           host={profile.host}
           serverVersion={serverVersion}
+          {...(updateFailed ? { reason: "The last update of this server did not finish." } : {})}
           onCancel={() => setConfirming(false)}
           onConfirm={() => {
             setConfirming(false);
