@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TranscriptionOutcome, TranscriptionRequest, TranscriptionRun } from "../backend/image-transcriber.js";
 
 import { isPdfFile, MAX_PDF_PAGE_IMAGES_PER_READ, readPdf } from "../backend/pdf-reader.js";
-import { buildPdf, type PdfFixturePage } from "./helpers/pdf-fixture.js";
+import { buildPdf, type PdfFixturePage } from "../server/sample-pdf.js";
 
 const INVOICE_TEXT = "Invoice 42 issued to Example Company for consulting services";
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64").slice(0, 4);

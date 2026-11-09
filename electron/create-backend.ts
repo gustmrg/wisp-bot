@@ -21,7 +21,14 @@ import { ConnectionManager } from "./connections/connection-manager.js";
 import { ConnectionStore, parseRemoteProfile } from "./connections/connection-store.js";
 import type { SshAskpass } from "./connections/ssh-askpass.js";
 import type { SshInteraction } from "./connections/ssh-auth.js";
-import { installRemoteServer, type InstallStep } from "./connections/ssh-install.js";
+import {
+  installRemoteServer,
+  readServerUpdate,
+  type InstallOutcome,
+  type InstallStep,
+} from "./connections/ssh-install.js";
+import type { ServerArchiveHashes } from "../shared/server-package.js";
+import type { ServerUpdateRecord } from "../shared/server-update.js";
 import { testSshConnection } from "./connections/ssh-test.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
@@ -71,18 +78,27 @@ export interface BackendHost {
   deviceName: string;
   /** The version of this app; the server it installs on another machine is the same version. */
   appVersion: string;
+  /** The hashes of this version's server archives; without them, servers are installed from npm. */
+  serverArchives?: ServerArchiveHashes;
   /**
    * Starts the helper that lets OpenSSH ask the person for a password, a key
    * passphrase, or to trust a host key. Without one, SSH runs in BatchMode.
    */
   startSshAskpass?: () => Promise<SshAskpass | undefined>;
-  /** Installs the server over SSH; tests substitute a fake. */
+  /** Installs the server over SSH, naming the run `updateId` on the server; tests substitute a fake. */
   installServer?: (
     profile: SshConnectionProfile,
     onProgress: (message: string, step: InstallStep) => void,
     signal: AbortSignal,
     interaction: SshInteraction | undefined,
-  ) => Promise<number | undefined>;
+    updateId: string,
+  ) => Promise<InstallOutcome>;
+  /** Reads how a setup run ended on a server over SSH; tests substitute a fake. */
+  readServerUpdate?: (
+    profile: SshConnectionProfile,
+    updateId: string,
+    interaction: SshInteraction | undefined,
+  ) => Promise<ServerUpdateRecord | undefined>;
   testSshConnection?: typeof testSshConnection;
   /** Native notifications and the badge, configured by the renderer. */
   systemNotifications?: SystemNotificationHandlers;
@@ -130,8 +146,17 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     ((profile, signal, _interaction, onServerPort) => openSshTunnel(profile, { signal, interaction, onServerPort }));
   const install =
     host.installServer ??
-    ((profile, onProgress, signal) =>
-      installRemoteServer(profile, { version: host.appVersion, onProgress, signal, interaction }));
+    ((profile, onProgress, signal, _interaction, updateId) =>
+      installRemoteServer(profile, {
+        version: host.appVersion,
+        onProgress,
+        signal,
+        interaction,
+        updateId,
+        ...(host.serverArchives ? { archives: host.serverArchives } : {}),
+      }));
+  const readUpdate =
+    host.readServerUpdate ?? ((profile, updateId) => readServerUpdate(profile, updateId, { interaction }));
   const manager = new ConnectionManager({
     store,
     localServer: host.localServer,
@@ -139,7 +164,10 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     selectFiles: () => host.hostActions.selectFiles(),
     onSessionClosed: () => oauthRelay.closeAll(),
     openSshTunnel: (profile, signal, onServerPort) => openTunnel(profile, signal, interaction, onServerPort),
-    installServer: (profile, onProgress, signal) => install(profile, onProgress, signal, interaction),
+    installServer: (profile, onProgress, signal, updateId) =>
+      install(profile, onProgress, signal, interaction, updateId),
+    readServerUpdate: (profile, updateId) => readUpdate(profile, updateId, interaction),
+    appVersion: host.appVersion,
     deviceName: host.deviceName,
     broadcast,
     logger: host.logger,

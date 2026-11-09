@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "./node-version.js";
 
+import os from "node:os";
 import path from "node:path";
 
 import { renderUnicodeCompact } from "uqr";
@@ -13,7 +14,11 @@ import { defaultDataDirectory } from "./config.js";
 import type { DeviceView, PairingCode } from "./device-auth.js";
 import { InstanceLock } from "./instance-lock.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
-import { describeSetup, runSetup, systemHost } from "./setup.js";
+import { checkRuntime } from "./runtime-check.js";
+import { describeSetup, findServerArchive, runSetup, setupPaths, systemHost } from "./setup.js";
+import { isProcessAlive, readUpdateRecord } from "./update-record.js";
+import { prepareServerData, readJournal } from "./update-transaction.js";
+import { StructuredLogger } from "../backend/structured-logger.js";
 
 const HELP = `Usage: wispctl <command> [options]
 
@@ -27,6 +32,10 @@ Commands:
   devices                  List paired devices
   revoke --device-id ID    Remove a device and end its sessions
   status                   Show the running server's identity
+  version [--check]        Show this server's version and Node.js; --check also makes sure
+                           this machine can run it (SQLite, PDF rendering)
+  update-status [--id ID]  Show how the last setup or update ended; with --id, only if it
+                           was that one (state "unknown" otherwise)
   backup --output FILE --key-file KEY
                            Write an encrypted backup of the data directory. A running
                            server writes it itself; otherwise the directory must be idle.
@@ -49,6 +58,7 @@ Options of setup:
   --no-service             Only install the files; do not set up the service
   --no-pair                Do not print a pairing code
   --until-stdin-closes     Stop when stdin closes, before starting the service (for the desktop app)
+  --update-id ID           Name this run in the update record (for the desktop app)
 `;
 
 export interface CliOutput {
@@ -84,12 +94,24 @@ export async function runCli(
         "--no-qr",
         "--web",
         "--no-web",
+        "--check",
+        "--update-id",
+        "--id",
       ].includes(flag)
     ) {
       throw new Error(`Unknown option ${flag}.`);
     }
     if (
-      ["--json", "--no-service", "--no-pair", "--until-stdin-closes", "--no-qr", "--web", "--no-web"].includes(flag)
+      [
+        "--json",
+        "--no-service",
+        "--no-pair",
+        "--until-stdin-closes",
+        "--no-qr",
+        "--web",
+        "--no-web",
+        "--check",
+      ].includes(flag)
     ) {
       flags.set(flag, true);
       continue;
@@ -129,6 +151,7 @@ export async function runCli(
             ...(flags.has("--public-origin") ? { publicOrigin: option("--public-origin") } : {}),
             ...(flags.has("--web") || flags.has("--no-web") ? { web: !flags.has("--no-web") } : {}),
             ...(flags.has("--data-dir") ? { dataDirectory: dataDirectory } : {}),
+            ...(flags.has("--update-id") ? { updateId: option("--update-id") } : {}),
           },
           // Progress goes to stderr, so `--json` leaves stdout for the result alone.
           systemHost(readAppVersion(), (message) => process.stderr.write(`${message}\n`)),
@@ -142,6 +165,61 @@ export async function runCli(
         return;
       }
       result = outcome;
+      break;
+    }
+    case "version":
+    case "--version": {
+      const archive = findServerArchive();
+      const checks = flags.has("--check") ? await checkRuntime() : undefined;
+      const info = {
+        version: readAppVersion(),
+        node: process.versions.node,
+        platform: process.platform,
+        arch: process.arch,
+        install: archive ? "archive" : "npm",
+        ...(checks ? { checks } : {}),
+      };
+      const failed = checks?.find(({ ok }) => !ok);
+      if (failed) {
+        throw new Error(
+          `Wisp server ${info.version} cannot run on this machine (${info.platform} ${info.arch}): the ${failed.name} check failed: ${failed.error}`,
+        );
+      }
+      if (flags.has("--json")) {
+        result = info;
+        break;
+      }
+      write(
+        `Wisp server ${info.version} (Node.js ${info.node}, ${info.platform} ${info.arch}, ${info.install})${checks ? "\nThis machine can run it." : ""}\n`,
+      );
+      return;
+    }
+    case "prepare-data": {
+      // Only the setup runs this, inside an update it holds the data directory's lock for.
+      const id = process.env.WISP_UPDATE_TRANSACTION;
+      const journal = await readJournal(dataDirectory);
+      if (!id || journal?.id !== id || journal.step !== "trying") {
+        throw new Error("prepare-data runs only inside a server update.");
+      }
+      // The setup lets go of the lock while this runs; nothing else may open the data meanwhile.
+      const lock = InstanceLock.acquire(dataDirectory);
+      try {
+        await prepareServerData({
+          dataDirectory,
+          encryption: MasterKeyEncryption.fromFile(path.resolve(option("--key-file"))),
+          logger: new StructuredLogger({ info: () => undefined, warn: (event) => process.stderr.write(`${event}\n`) }),
+          appVersion: readAppVersion(),
+        });
+      } finally {
+        lock.release();
+      }
+      result = { prepared: true };
+      break;
+    }
+    case "update-status": {
+      const record = await readUpdateRecord(setupPaths(os.homedir()).updateRecord, isProcessAlive);
+      const wanted = flags.has("--id") ? option("--id") : undefined;
+      result = record && (wanted === undefined || record.id === wanted) ? record : { state: "unknown" };
       break;
     }
     case "keygen":

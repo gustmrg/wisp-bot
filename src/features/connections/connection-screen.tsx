@@ -25,7 +25,6 @@ import {
   type ConnectionProgress,
   type ConnectionsView,
 } from "../../../shared/connections";
-import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
 import { AppBackdrop } from "./app-backdrop";
 import { ConnectionSteps, formatDuration, hostOf, useNow } from "./connection-steps";
 import { ConnectionsPanel } from "./connections-panel";
@@ -447,9 +446,10 @@ export function ConnectionScreen({
         <Guidance message={status.message} />
         {offerInstall && ssh ? (
           <Note icon={<InfoIcon aria-hidden="true" className="size-3.5" />} title="Wisp can set it up for you">
-            Wisp runs the setup of <code>{WISP_SERVER_PACKAGE}</code> on {ssh.host} over SSH. It installs the server in{" "}
-            <code>~/.local/lib/wisp-server</code>, creates a master key in <code>~/.config/wisp</code>, and starts a
-            systemd user service. The machine needs Node.js 22.19 or later and internet access.
+            Wisp downloads the Wisp server, with Node.js included, on {ssh.host} over SSH and runs its setup. It
+            installs the server in <code>~/.local/lib/wisp-server</code>, creates a master key in{" "}
+            <code>~/.config/wisp</code>, and starts a systemd user service. The machine needs Linux on x64 or arm64 with
+            glibc 2.28 or later, curl or wget, and access to github.com.
           </Note>
         ) : null}
         {details}

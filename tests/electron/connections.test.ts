@@ -16,7 +16,7 @@ import { RemoteClient } from "../../client/remote-client.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
 import { SshAskpass } from "../../electron/connections/ssh-askpass.js";
-import { installRemoteServer } from "../../electron/connections/ssh-install.js";
+import { installRemoteServer, readServerUpdate } from "../../electron/connections/ssh-install.js";
 import { testSshConnection } from "../../electron/connections/ssh-test.js";
 import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
@@ -63,7 +63,7 @@ async function temporaryDirectory(prefix: string): Promise<string> {
   return directory;
 }
 
-async function startServer(): Promise<{ server: WispServer; directory: string }> {
+async function startServer(appVersion = "1.0.0"): Promise<{ server: WispServer; directory: string }> {
   const directory = await temporaryDirectory("wisp-remote-");
   const server = await createWispServer({
     dataDirectory: directory,
@@ -72,7 +72,7 @@ async function startServer(): Promise<{ server: WispServer; directory: string }>
     encryption: new MasterKeyEncryption(randomBytes(32)),
     logger: silent,
     agentMode: "fake",
-    appVersion: "1.0.0",
+    appVersion,
     allowModelNetwork: false,
   });
   cleanups.push(() => server.close());
@@ -153,14 +153,17 @@ async function desktop(
         onServerPort,
         ...(interaction ? { interaction: { ...interaction, publicKeys: async () => [TEST_KEY] } } : {}),
       }),
-    installServer: (profile, onProgress, signal, interaction) =>
+    installServer: (profile, onProgress, signal, interaction, updateId) =>
       installRemoteServer(profile, {
         sshPath: fakeSsh,
         version: "1.0.0",
         onProgress,
         signal,
+        updateId,
         ...(interaction ? { interaction } : {}),
       }),
+    readServerUpdate: (profile, updateId, interaction) =>
+      readServerUpdate(profile, updateId, { sshPath: fakeSsh, ...(interaction ? { interaction } : {}) }),
   });
   let disposed = false;
   const dispose = async (): Promise<void> => {
@@ -774,10 +777,121 @@ describe("desktop connections", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as string[]);
+    const updateId = /--update-id ([0-9a-f-]{36});/.exec(calls[0]?.at(-1) ?? "")?.[1];
+    expect(updateId).toBeDefined();
     expect(calls[0]?.slice(-2)).toEqual([
       "raspberrypi",
-      `sh -c 'PATH="$HOME/.local/bin:$PATH"; echo "Connected. Downloading the Wisp server…" >&2; d=$(mktemp -d) || exit 1; npm install --prefix "$d" --no-audit --no-fund --loglevel=error @gustmrg/wisp-server@1.0.0 >&2 && node "$d/node_modules/@gustmrg/wisp-server/server/cli.js" setup --json --no-pair --until-stdin-closes --port ${server.port}; s=$?; rm -rf "$d"; exit $s'`,
+      `sh -c 'PATH="$HOME/.local/bin:$PATH"; echo "Connected. Downloading the Wisp server…" >&2; d=$(mktemp -d) || exit 1; npm install --prefix "$d" --no-audit --no-fund --loglevel=error @gustmrg/wisp-server@1.0.0 >&2 && node "$d/node_modules/@gustmrg/wisp-server/server/cli.js" setup --json --no-pair --until-stdin-closes --port ${server.port} --update-id ${updateId}; s=$?; rm -rf "$d"; exit $s'`,
     ]);
+    // Confirmed: the setup reported success and the server answers at this app's version.
+    expect((await app.view()).status.update).toMatchObject({ state: "confirmed", targetVersion: "1.0.0" });
+    expect(JSON.parse(await readFile(path.join(app.directory, "connections.json"), "utf8")).updates).toBeUndefined();
+  });
+
+  describe("tracking an update until the server confirms it", () => {
+    /** A server behind SSH at test-host.invalid, with the fake SSH logging what it runs. */
+    async function updatable(appVersion = "1.0.0") {
+      const { server, directory } = await startServer(appVersion);
+      process.env.FAKE_WISP_DATA_DIR = directory;
+      const log = path.join(directory, "ssh.log");
+      process.env.FAKE_SSH_LOG = log;
+      const app = await desktop();
+      const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+        kind: "ssh",
+        name: "Box",
+        host: "test-host.invalid",
+        serverPort: server.port,
+      });
+      const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+      const commands = async () =>
+        (await readFile(log, "utf8"))
+          .trim()
+          .split("\n")
+          .map((line) => (JSON.parse(line) as string[]).at(-1) ?? "");
+      const pending = async () =>
+        JSON.parse(await readFile(path.join(app.directory, "connections.json"), "utf8")).updates?.[ssh.id];
+      const update = async () => (await app.view()).status.update;
+      return { app, ssh, commands, pending, update };
+    }
+
+    it("asks the server how an update ended when its answer was lost, and never runs it again", async () => {
+      const { app, ssh, commands, update } = await updatable();
+      process.env.FAKE_SSH_INSTALL = "drop";
+      process.env.FAKE_SSH_UPDATE = "completed";
+      await app.invoke(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
+      await app.waitForPhase("connected");
+      expect(await update()).toMatchObject({ state: "confirmed", targetVersion: "1.0.0" });
+
+      const ran = await commands();
+      const setups = ran.filter((command) => command.includes("setup --json"));
+      expect(setups).toHaveLength(1);
+      const id = /--update-id (\S+);/.exec(setups[0]!)?.[1];
+      expect(ran).toContain(`PATH="$HOME/.local/bin:$PATH" wispctl update-status --json --id ${id}`);
+    });
+
+    it("keeps following an update still running after the app restarts, until it is confirmed", async () => {
+      const { app, ssh, commands, pending } = await updatable();
+      process.env.FAKE_SSH_INSTALL = "drop";
+      process.env.FAKE_SSH_UPDATE = "preparing";
+      expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id })).toMatchObject({
+        ok: false,
+        error: {
+          message: "The update is still running on test-host.invalid. Wisp checks how it ended when it connects again.",
+        },
+      });
+      const started = await pending();
+      expect(started).toEqual({ id: expect.stringMatching(/^[0-9a-f-]{36}$/), targetVersion: "1.0.0" });
+
+      await app.dispose();
+      process.env.FAKE_SSH_UPDATE = "completed";
+      const restarted = await desktop(app.directory, app.key);
+      await restarted.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+      await restarted.waitForPhase("connected");
+      await vi.waitFor(async () =>
+        expect((await restarted.view()).status.update).toMatchObject({ id: started.id, state: "confirmed" }),
+      );
+      expect(await pending()).toBeUndefined();
+      expect((await commands()).filter((command) => command.includes("setup --json"))).toHaveLength(1);
+    });
+
+    it("reports why an update failed on the server, without running it again", async () => {
+      const { app, ssh, commands, pending, update } = await updatable();
+      await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+      process.env.FAKE_SSH_INSTALL = "drop";
+      process.env.FAKE_SSH_UPDATE = "failed";
+      const result = await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
+      const message = "The server did not answer on port 8787 within 30 seconds.";
+      expect(result).toMatchObject({ ok: false, error: { message } });
+      expect(await update()).toMatchObject({ state: "failed", message });
+      expect((await app.view()).status).toMatchObject({ phase: "error", message });
+      expect(await pending()).toBeUndefined();
+      expect((await commands()).filter((command) => command.includes("setup --json"))).toHaveLength(1);
+    });
+
+    it("says when the server rolled an update back to the previous version", async () => {
+      const { app, ssh, update } = await updatable();
+      await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+      process.env.FAKE_SSH_INSTALL = "rolled-back";
+      process.env.FAKE_SSH_UPDATE = "rolled-back";
+      expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id })).toMatchObject({ ok: false });
+      expect(await update()).toMatchObject({
+        state: "rolled-back",
+        message: expect.stringContaining("so 0.9.0 and its data were restored"),
+      });
+    });
+
+    it("does not take a reconnect as success when the server still runs another version", async () => {
+      const { app, ssh, update } = await updatable("0.9.0");
+      process.env.FAKE_SSH_UPDATE = "completed";
+      await app.invoke(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
+      await app.waitForPhase("connected");
+      await vi.waitFor(async () =>
+        expect(await update()).toMatchObject({
+          state: "failed",
+          message: "Box still runs Wisp server 0.9.0, not 1.0.0.",
+        }),
+      );
+    });
   });
 
   it("explains why setting the server up failed and lets the person retry", async () => {

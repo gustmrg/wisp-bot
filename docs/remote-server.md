@@ -163,8 +163,10 @@ again opens its window.
 
 ## Install
 
-You need a Linux machine with systemd, Node.js 22.19 or later (with npm), and
-internet access. Run this on it, as the account that should own the Wisps:
+You need a Linux machine with systemd and internet access. Install the server
+with npm, which needs Node.js 22.19 or later, or from a
+[server archive](#from-a-server-archive), which brings its own Node.js. With
+npm, run this on the machine, as the account that should own the Wisps:
 
 ```sh
 npx @gustmrg/wisp-server setup
@@ -207,23 +209,151 @@ npx @gustmrg/wisp-server@latest setup
 | `--no-pair` | Do not print a pairing code |
 | `--json` | Print the result as JSON; progress goes to stderr |
 | `--until-stdin-closes` | Stop, before starting the service, when stdin closes; the desktop app cancels this way |
+| `--update-id ID` | Name the run in the update record (a UUID); the desktop app passes one to follow its update |
 
 Options you pass are saved in `server.env`, so later runs keep them.
+
+### From a server archive
+
+Each release also publishes the server as an archive with Node.js included,
+so the machine needs neither Node.js nor npm. Archives exist for Linux on
+x64 and on arm64 (such as a Raspberry Pi with a 64-bit system), with glibc
+2.28 or later:
+
+| Distribution | Supported from |
+| --- | --- |
+| Debian, Raspberry Pi OS (64-bit) | 10 (buster) |
+| Ubuntu | 20.04 |
+| Fedora, RHEL and its rebuilds | Fedora 29, RHEL 8 |
+
+Alpine and other musl-based systems, and 32-bit ARM, are not supported; use
+[Docker](#docker) there. Download the archive of a version and the release's
+checksums, check them, and run the setup inside the archive:
+
+```sh
+version=0.27.0
+arch=$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')
+base=https://github.com/gustmrg/wisp-bot/releases/download/v$version
+curl -fLO "$base/wisp-server-$version-linux-$arch.tar.gz"
+curl -fLO "$base/SHA256SUMS.txt"
+sha256sum --check --ignore-missing SHA256SUMS.txt
+tar -xzf "wisp-server-$version-linux-$arch.tar.gz"
+"wisp-server-$version-linux-$arch/bin/wispctl" setup
+```
+
+The setup takes the same options as above, except `--package`. It copies the
+archive to `~/.local/lib/wisp-server/versions/<version>` and points
+`~/.local/lib/wisp-server/current` at it; the service and `wispctl` run
+through `current`, with the archive's Node.js. The downloaded folder can be
+deleted afterwards. To update, run the setup of a newer archive the same way.
+`wispctl version --check` shows the version and checks that the machine can
+run it.
 
 ### From the desktop app
 
 If the machine accepts SSH connections from your computer, the app can run the
 setup for you. Add the server under **Settings → Connections** with the SSH
 option, then choose **Install the Wisp server** (it also appears when a
-connection fails). The app asks first, then runs `npx @gustmrg/wisp-server@<its
-own version> setup` on the machine over SSH, and connects. The same button
+connection fails). The app asks first, then connects. The same button
 (**Install or update the server**) in the server's settings updates it to the
 app's version. The app shows the server's version next to the connection and
 warns when it differs from its own; when the two no longer speak the same
-protocol, it refuses to connect and says which one to update. This needs Node.js and npm in the PATH of
-non-interactive SSH commands, and a version of the app that is published on npm.
-**Cancel setup**, or choosing another connection, stops it, also on the machine;
-what was already installed stays, and a service not yet started is left alone.
+protocol, it refuses to connect and says which one to update.
+
+Over SSH, the machine downloads the [server archive](#from-a-server-archive)
+of exactly the app's version from the release, for its processor, and:
+
+1. checks it against the SHA-256 the app carries, so it trusts nothing served
+   next to the archive;
+2. checks that it runs there (`wispctl version --check`);
+3. moves it into `~/.local/lib/wisp-server/versions/<version>` complete, or
+   not at all;
+4. runs its setup, which points `current` at it and restarts the service.
+
+A version already installed completely is not downloaded again. A lock
+(`~/.local/lib/wisp-server/.install.lock`) keeps two installs apart; one left
+by a process that died is taken over, and downloads an interrupted install
+left are removed. The machine needs Linux on x64 or arm64 with glibc 2.28 or
+later, `curl` or `wget`, `sha256sum` or `shasum`, and access to github.com; it
+does not need Node.js. When something is missing, the app says what.
+
+A server installed from npm moves to the archive on its next update. The
+master key, `server.env`, the data directory with its paired devices, and the
+service's options stay; the npm files are removed once the service runs the
+archive. Of the archive versions, the running one and the one before it are
+kept. The setup refuses to start the service while another Wisp server, such
+as one started by hand, uses the same data directory.
+
+A development build of the app carries no archive hashes and installs the npm
+package instead, which needs Node.js and npm in the `PATH` of non-interactive
+SSH commands. **Cancel setup**, or choosing another connection, stops it, also
+on the machine; what was already installed stays, and a service not yet
+started is left alone.
+
+### How an update is confirmed
+
+Every run of `setup` records how it goes in `~/.config/wisp/update.json`:
+accepted, preparing (installing and checking the new version while the
+running server is untouched), activating (restarting the service), and then
+completed, failed with the reason, or interrupted when its process ended
+before finishing. It holds versions and times, never credentials. Only one
+setup runs at a time; a second one stops and says which process runs.
+
+Before the service restarts, the setup checks that the new version runs on the
+machine (`wispctl version --check`). The npm package installs into a staging
+folder first, so a failed `npm install` leaves the installed server as it was.
+After the restart, the setup checks that the server answers at the new
+version.
+
+The desktop app gives each update an ID and keeps it until it learns how the
+update ended, also across a restart of the app. A reconnect alone does not
+count: the server's record must say completed, and the server must answer at
+the app's version. When the SSH connection drops during an update, the app
+reads the record with `wispctl update-status` instead of running the setup
+again. The banner at the top then says whether the update is still running,
+failed, or was interrupted, with **Update again**; the app never starts an
+update by itself. A server too old to keep the record is judged by its
+version alone.
+
+```sh
+wispctl update-status          # how the last setup ended
+wispctl update-status --id ID  # only if it was that one; "unknown" otherwise
+```
+
+### When an update fails to start
+
+Updating from one server archive to another is a transaction over the data
+directory, so a version that cannot open the data does not leave it half
+upgraded:
+
+1. Before stopping anything, the setup checks that there is room for a copy
+   of the data, and stops if not.
+2. It stops the service, and copies the data the new version may change into
+   `update-snapshots/` in the data directory.
+3. The new version opens the data in a process of its own: it upgrades the
+   databases and loads every store, but starts nothing. No Wisp runs, no
+   queued or scheduled message is sent, no job starts, and nothing is fetched
+   or changed in containers.
+4. If that works, `current` points at the new version, the copy is deleted,
+   and the service starts on it. If not, within 10 minutes, the copy is put
+   back, the previous version starts again, and the update is recorded as
+   rolled back with the reason.
+
+The copy and its rollback cover `server.sqlite` (identity and paired
+devices), `backend/conversations.sqlite` (conversations, Wisps, jobs, memory
+and settings) with their journals, and the settings and credential files in
+`backend/`. They do not cover workspaces, agent sessions, logs, the tool audit
+log, or containers and their images, which starting a version does not
+change. Nothing done outside the server, such as a message a provider
+received, is undone. After the new version starts, an update is not rolled
+back; install the previous archive's setup by hand only if its database
+layout can still read the data (see [Back up and restore](#back-up-and-restore)).
+
+The file `.update-transaction.json` in the data directory says how far an
+update got. If the machine or the setup stops halfway, the next setup or the
+next server start, whichever version it is, finishes the rollback before it
+opens the data. A server installed from npm, and the move from npm to an
+archive, update without a copy, as before.
 
 ### Settings
 

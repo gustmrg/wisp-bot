@@ -1,7 +1,7 @@
 /** A page with a line of text, or without text, like a scanned page holding only an image. */
 export type PdfFixturePage = { text: string } | { scan: true };
 
-/** Builds a small, valid PDF in memory, so tests need no binary fixtures. */
+/** Builds a small, valid PDF in memory, for tests and for checking that this machine can render one. */
 export function buildPdf(pages: ReadonlyArray<PdfFixturePage>): Buffer {
   const objects: string[] = [];
   const add = (body: string) => objects.push(body);

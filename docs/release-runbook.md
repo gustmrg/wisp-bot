@@ -74,6 +74,34 @@ npm authenticates the job with **trusted publishing**: an OIDC identity of this 
 
 Later releases need nothing else. npm prefers the OIDC identity when it is available, so a token left behind is unused, but it remains a credential that can publish; revoke it.
 
+## Server archives
+
+The **server-archive** job builds `wisp-server-<version>-linux-x64.tar.gz` and
+`wisp-server-<version>-linux-arm64.tar.gz` on a runner of each processor, with
+`npm run package:server` and `scripts/package-server-archive.mjs`. Each
+archive holds the server package, its production dependencies for that
+processor and glibc, and Node.js 22 LTS, whose download is checked against the
+Node.js release's checksums. The script fails when a native module was built
+for another processor or C library.
+
+Before anything is released, the job runs `scripts/smoke-server-archive.sh`
+in clean containers without Node.js, from Debian 10 (glibc 2.28) to Ubuntu
+24.04: the runtime check, `setup --no-service`, the server with fake agents,
+its health check, the browser app, `wispctl status` and `wispctl pair`.
+
+The desktop packaging jobs wait for both archives and write their SHA-256
+into the app (`scripts/server-archive-hashes.mjs` →
+`dist-electron/server-archives.json`). The app checks the archive a server
+downloads against these hashes, so an archive must never be rebuilt or
+replaced after its app was packaged: re-run the whole release instead.
+
+The archives go into the draft with the desktop files and are listed in
+`SHA256SUMS.txt`, so they become public together with the app. A beta's
+archives are part of its prerelease. To check one by hand, build it with
+`npm run package:server-archive` and run the smoke script as its header says.
+Raise `NODE_VERSION` in the archive script with each Node.js 22 security
+release.
+
 ## In-app updates
 
 Settings → About checks GitHub Releases only when asked and never downloads on its own.

@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { APP_METADATA } from "@/config/app-metadata";
-import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
 
 /** Compares dotted version numbers; anything after a `-` is ignored. */
 export function compareVersions(left: string, right: string): number {
@@ -32,12 +31,15 @@ export function UpdateServerDialog({
   name,
   host,
   serverVersion,
+  reason,
   onConfirm,
   onCancel,
 }: {
   name: string;
   host: string;
   serverVersion: string;
+  /** Why to update, when it is not that the server is older. */
+  reason?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -50,14 +52,16 @@ export function UpdateServerDialog({
             Update {name} to {appVersion}?
           </DialogTitle>
           <DialogDescription>
-            The server runs {serverVersion}, older than this app. Some features need both on the same version.
+            {reason ??
+              `The server runs ${serverVersion}, older than this app. Some features need both on the same version.`}
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-[10px] border border-border bg-popover px-3.5 py-3 text-sm leading-relaxed">
           <h2 className="m-0 mb-1.5 text-sm font-semibold">What happens</h2>
           <ul className="m-0 flex flex-col gap-1 pl-4">
             <li>
-              Wisp runs the setup of <code>{WISP_SERVER_PACKAGE}</code> on {host} over SSH, then reconnects.
+              Wisp downloads Wisp server {appVersion} on {host} over SSH, checks it, and runs its setup, then
+              reconnects.
             </li>
             <li>
               <strong className="font-medium">Kept:</strong> Wisps, conversations and the master key in{" "}

@@ -30,14 +30,15 @@ export function ServerSetupGuide() {
       <summary className="cursor-pointer text-base font-medium text-foreground">How to set up a Wisp server</summary>
       <ol className="mt-3 flex list-decimal flex-col gap-3 pl-5 leading-relaxed">
         <Step title="Install it on a Linux machine">
-          It needs Node.js 22.19 or later and systemd. One command installs the server, creates its master key, and
-          starts it as a service. Keep a copy of the key it reports.
+          It needs systemd. Download the server archive for the machine from the release, which brings its own Node.js,
+          and run its setup (see the server guide); or, with Node.js 22.19 or later and npm, run one command. The setup
+          installs the server, creates its master key, and starts it as a service. Keep a copy of the key it reports.
           <Commands>{`npx @gustmrg/wisp-server setup`}</Commands>
           <p className="mt-1.5">
             Or skip the terminal: run <code>ssh myserver</code> once so this computer trusts its host key, add the
             machine here with the SSH option, and save. Then open it with its settings button and choose{" "}
-            <span className="text-foreground">Install or update the server</span>. Node.js and npm must be in the PATH
-            of non-interactive SSH commands, which a Node.js from nvm or fnm usually is not.
+            <span className="text-foreground">Install or update the server</span>. The machine needs Linux on x64 or
+            arm64 with glibc 2.28 or later, curl or wget, and access to github.com; not Node.js.
           </p>
         </Step>
         <Step title="Connect">

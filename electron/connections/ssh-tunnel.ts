@@ -21,7 +21,7 @@ const MAX_DETAILS = 2 * 1024;
 // the server docs install wispctl, and it is often missing from the PATH of
 // non-interactive SSH sessions. Pairing reads the server's status first, which
 // says the port it listens on.
-const WISPCTL = 'PATH="$HOME/.local/bin:$PATH" wispctl';
+export const WISPCTL = 'PATH="$HOME/.local/bin:$PATH" wispctl';
 const STATUS_COMMAND = `${WISPCTL} status --json`;
 const PAIR_COMMAND = `${STATUS_COMMAND} && ${WISPCTL} pair --json`;
 // Adds the public keys read from stdin to authorized_keys, once each, like
@@ -222,7 +222,7 @@ async function serverPort(
   return run.exitCode === 0 ? portOf(parseLines(run.stdout)) : undefined;
 }
 
-interface WispctlRun {
+export interface WispctlRun {
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -232,7 +232,7 @@ interface WispctlRun {
 }
 
 /** Runs a fixed `wispctl` command on the server over SSH. */
-async function runWispctl(
+export async function runWispctl(
   ssh: string,
   profile: SshConnectionProfile,
   interaction: SshInteraction | undefined,
@@ -274,7 +274,7 @@ async function runWispctl(
 }
 
 /** Each line of `wispctl --json` output that is a JSON object. */
-function parseLines(stdout: string): Record<string, unknown>[] {
+export function parseLines(stdout: string): Record<string, unknown>[] {
   return stdout.split("\n").flatMap((line) => {
     try {
       const value = JSON.parse(line) as unknown;

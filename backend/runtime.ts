@@ -138,7 +138,48 @@ export interface BackendRuntime {
   dispose(): Promise<void>;
 }
 
+/**
+ * Composes the backend and starts it: restores the agents, then the message
+ * queue, scheduled messages and jobs, and the background updates.
+ */
 export async function createBackendRuntime(options: BackendRuntimeOptions): Promise<BackendRuntime> {
+  const composed = await composeBackendRuntime(options);
+  try {
+    await composed.activate();
+  } catch (error) {
+    await composed.runtime.dispose().catch(() => undefined);
+    throw error;
+  }
+  return composed.runtime;
+}
+
+/**
+ * Opens an environment's data the way a start does, upgrading its database
+ * and loading every store, then closes it without activating anything: no
+ * agent runs, no queued or scheduled message is sent, no job starts, no
+ * request is marked failed, no container is touched and nothing is fetched.
+ * A server update runs it with the new version before committing to it
+ * (ADR 046). Fails when the data cannot be opened, including when the
+ * database had to be set aside as unreadable, which a start would hide.
+ */
+export async function prepareBackendData(options: BackendRuntimeOptions): Promise<void> {
+  const composed = await composeBackendRuntime({ ...options, allowModelNetwork: false });
+  try {
+    await composed.prepare();
+  } finally {
+    await composed.runtime.dispose();
+  }
+}
+
+/**
+ * Builds every service without starting any. `activate` starts them;
+ * `prepare` only opens and upgrades the stored data.
+ */
+async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
+  runtime: BackendRuntime;
+  activate: () => Promise<void>;
+  prepare: () => Promise<void>;
+}> {
   const { dataDirectory, encryption, logger } = options;
   // Whether this server's `claude` can run Claude Code Wisps (ADR 026); the fake agent mode never runs it.
   const claudeCodeStatus = new ClaudeCodeStatusService(
@@ -445,9 +486,6 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     },
   );
   conversationService = service;
-  await service.start(await modelService.getSelection());
-  // Containers of Wisps deleted while the server was down; never blocks startup.
-  void executionService.reconcile().catch(() => undefined);
   const queue = new MessageQueue({
     repository: conversationRepository,
     isAvailable: (conversationId) => registry.isAvailable(conversationId),
@@ -460,7 +498,6 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     logger,
   });
   messageQueue = queue;
-  await queue.start();
   const scheduler = new MessageScheduler({
     repository: conversationRepository,
     send: async (conversationId, text, scheduled) => {
@@ -470,7 +507,6 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     logger,
   });
   messageScheduler = scheduler;
-  scheduler.start();
 
   const jobRunner = new JobRunner({
     sessionFactory,
@@ -502,7 +538,6 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     logger,
   });
   jobScheduler = jobs;
-  jobs.start();
 
   const sessionReportService = new SessionReportService(
     conversationRepository,
@@ -539,12 +574,26 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     logger,
     ...(options.agentMode === "fake" ? { fetch: fakeTranscriptionFetch() } : {}),
   });
-  // Startup used the cached catalog; network updates land after the host is ready.
-  if (options.allowModelNetwork ?? true) {
-    void refreshModelCatalog(modelService, (selection) => service.applyModel(selection), logger);
-  }
+  const activate = async (): Promise<void> => {
+    await service.start(await modelService.getSelection());
+    // Containers of Wisps deleted while the server was down; never blocks startup.
+    void executionService.reconcile().catch(() => undefined);
+    await queue.start();
+    scheduler.start();
+    jobs.start();
+    // Startup used the cached catalog; network updates land after the host is ready.
+    if (options.allowModelNetwork ?? true) {
+      void refreshModelCatalog(modelService, (selection) => service.applyModel(selection), logger);
+    }
+  };
+  const prepare = async (): Promise<void> => {
+    await conversationRepository.load();
+    if (conversationRepository.didRecoverCorruptState()) {
+      throw new Error("The conversation database could not be read and was set aside.");
+    }
+  };
 
-  return {
+  const runtime: BackendRuntime = {
     models: modelService,
     toolAuthorization: toolAuthorizationBroker,
     plugins: pluginService,
@@ -599,6 +648,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       await conversationRepository.close();
     },
   };
+  return { runtime, activate, prepare };
 }
 
 async function fakeJobRun(job: { title: string }): Promise<JobRunOutcome> {

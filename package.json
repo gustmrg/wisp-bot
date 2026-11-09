@@ -36,6 +36,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "start:server": "node dist-server/server/main.js",
     "package:server": "node -e \"require('fs').rmSync('dist-server',{recursive:true,force:true})\" && npm run build:server && npm run build:web && node scripts/package-server.mjs",
+    "package:server-archive": "npm run package:server && node scripts/package-server-archive.mjs",
     "build:web": "cross-env VITE_CONFIG_NATIVE_IGNORE_WARNING=true vite build --config vite.web.config.mts --configLoader bundle",
     "dev:web": "cross-env VITE_CONFIG_NATIVE_IGNORE_WARNING=true vite --config vite.web.config.mts --configLoader bundle",
     "smoke:pi": "npm run build:electron && node scripts/pi-live-smoke.mjs",

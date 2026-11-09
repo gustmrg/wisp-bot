@@ -12,7 +12,9 @@ the server also serves the app to browsers, which you can install on a phone.
 ## Requirements
 
 - Linux with systemd (for the service; see `--no-service` otherwise)
-- Node.js 22.19 or later, with npm
+- Node.js 22.19 or later, with npm. Without them, install from a
+  [server archive](https://github.com/gustmrg/wisp-bot/blob/main/docs/remote-server.md#from-a-server-archive),
+  which brings its own Node.js.
 - Your own model provider keys, which you add in the app
 
 ## Install

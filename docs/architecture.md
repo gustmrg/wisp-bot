@@ -90,6 +90,13 @@ with a message that names the tool and the error
 ([ADR 033](decisions/033-repeated-tool-failures.md)). On quit, agents get five seconds to
 settle before the app exits anyway.
 
+`createBackendRuntime` composes every service, then activates them: it
+restores the agents, starts the message queue, scheduled messages and jobs,
+and the background updates. Nothing before activation runs an agent or
+changes a conversation, so a server update can open and upgrade the data
+with a new version (`prepareBackendData`) and roll back if that fails
+([ADR 046](decisions/046-rolling-back-failed-server-updates.md)).
+
 The bundled fake agent is a deterministic test adapter used by tests and
 opt-in development runs (`WISP_AGENT_MODE=fake`, unpackaged builds only); it is
 not the production transport.

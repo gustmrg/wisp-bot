@@ -13,6 +13,8 @@ import {
   type RemoteConnectionProfile,
 } from "../../shared/connections.js";
 import type { DeviceCredentials } from "../../shared/remote-protocol.js";
+import { SERVER_VERSION_PATTERN } from "../../shared/server-package.js";
+import { UPDATE_ID_PATTERN } from "../../shared/server-update.js";
 
 const PROFILES_FILE = "connections.json";
 const CREDENTIALS_FILE = "connection-credentials.json";
@@ -26,6 +28,20 @@ interface ProfilesFile {
   /** Whether the person has chosen where Wisps run. */
   chosen: boolean;
   profiles: RemoteConnectionProfile[];
+  /** Updates of a server this app started and has not confirmed yet, by profile ID. */
+  updates?: Record<string, PendingServerUpdate>;
+}
+
+/**
+ * An update of a server's setup this app started. It stays until the app
+ * learns how it ended, even across a restart of the app or the server.
+ */
+export interface PendingServerUpdate {
+  /** The ID passed to the setup as `--update-id`, to ask the server about it. */
+  id: string;
+  targetVersion: string;
+  /** Set once the setup reported success: only the server's own version is left to confirm. */
+  setupCompleted?: boolean;
 }
 
 interface CredentialsFile {
@@ -106,6 +122,7 @@ export class ConnectionStore {
   private activeId = LOCAL_CONNECTION_ID;
   private chosen = false;
   private credentials = new Map<string, DeviceCredentials>();
+  private updates = new Map<string, PendingServerUpdate>();
   private writes = Promise.resolve();
 
   constructor(
@@ -130,6 +147,21 @@ export class ConnectionStore {
       }
       if (this.get(profiles.activeId)) this.activeId = profiles.activeId;
       this.chosen = profiles.chosen === true;
+      for (const [id, update] of Object.entries(profiles.updates ?? {})) {
+        if (
+          this.get(id) &&
+          typeof update?.id === "string" &&
+          UPDATE_ID_PATTERN.test(update.id) &&
+          typeof update.targetVersion === "string" &&
+          SERVER_VERSION_PATTERN.test(update.targetVersion)
+        ) {
+          this.updates.set(id, {
+            id: update.id,
+            targetVersion: update.targetVersion,
+            ...(update.setupCompleted === true ? { setupCompleted: true } : {}),
+          });
+        }
+      }
     }
     const stored = await readJson<CredentialsFile>(path.join(this.directory, CREDENTIALS_FILE));
     if (stored?.version === 1 && this.encryption.isAvailable()) {
@@ -198,11 +230,22 @@ export class ConnectionStore {
     await this.persistProfiles();
   }
 
+  pendingUpdate(id: string): PendingServerUpdate | undefined {
+    return this.updates.get(id);
+  }
+
+  async setPendingUpdate(id: string, update: PendingServerUpdate | undefined): Promise<void> {
+    if (update) this.updates.set(id, update);
+    else if (!this.updates.delete(id)) return;
+    await this.persistProfiles();
+  }
+
   async remove(id: string): Promise<void> {
     if (!this.profiles.some((profile) => profile.id === id)) {
       throw new WispBackendError("not_found", "That connection no longer exists.");
     }
     this.profiles = this.profiles.filter((profile) => profile.id !== id);
+    this.updates.delete(id);
     if (this.activeId === id) this.activeId = LOCAL_CONNECTION_ID;
     this.credentials.delete(id);
     await this.persistProfiles();
@@ -225,7 +268,13 @@ export class ConnectionStore {
   }
 
   private persistProfiles(): Promise<void> {
-    const file: ProfilesFile = { version: 1, activeId: this.activeId, chosen: this.chosen, profiles: this.profiles };
+    const file: ProfilesFile = {
+      version: 1,
+      activeId: this.activeId,
+      chosen: this.chosen,
+      profiles: this.profiles,
+      ...(this.updates.size ? { updates: Object.fromEntries(this.updates) } : {}),
+    };
     return this.enqueue(path.join(this.directory, PROFILES_FILE), `${JSON.stringify(file, null, 2)}\n`);
   }
 

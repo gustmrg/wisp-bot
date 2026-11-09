@@ -14,7 +14,7 @@ import type { ModelRuntimeLike } from "../backend/model-service.js";
 import type { PluginToolSource } from "../backend/plugin-types.js";
 import { WORKSPACE_SETTINGS_FILE } from "../backend/workspace-service.js";
 import { WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
-import { buildPdf } from "./helpers/pdf-fixture.js";
+import { buildPdf } from "../server/sample-pdf.js";
 
 const sdk = vi.hoisted(() => {
   const session = {

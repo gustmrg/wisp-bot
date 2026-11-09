@@ -29,6 +29,7 @@ import { UpdateService } from "./backend/update-service.js";
 import { disposeWithin } from "../backend/runtime.js";
 import { SshAskpass } from "./connections/ssh-askpass.js";
 import { createBackend } from "./create-backend.js";
+import { loadServerArchiveHashes } from "./connections/server-archives.js";
 import { loadOrCreateLocalMasterKey } from "./local-server/local-credentials.js";
 import { ChildProcessLocalServer } from "./local-server/local-server.js";
 import { RemoteAccessTray } from "./remote-access-tray.js";
@@ -269,6 +270,11 @@ async function bootstrap(): Promise<void> {
   );
   notifier = systemNotifier;
   const webAppAvailable = existsSync(path.join(webAppPath, "index.html"));
+  // Written by the release next to the build; a development build installs servers from npm.
+  const serverArchives = await loadServerArchiveHashes(
+    path.join(__dirname, "../server-archives.json"),
+    app.getVersion(),
+  );
   const backend = await createBackend({
     launchAtLoginService: new LaunchAtLoginService({
       platform: process.platform,
@@ -322,6 +328,7 @@ async function bootstrap(): Promise<void> {
     connectionsDirectory: userData,
     deviceName: `Wisp on ${hostname()}`,
     appVersion: app.getVersion(),
+    ...(serverArchives ? { serverArchives } : {}),
     // The helper is a shell script; on Windows, SSH keeps running in BatchMode.
     startSshAskpass: async () => (process.platform === "win32" ? undefined : SshAskpass.start()),
     systemNotifications: {
