@@ -24,10 +24,12 @@ async function setup() {
   let now = Date.parse("2026-10-05T12:00:00.000Z");
   const store = new ServerStore(directory);
   stores.push(store);
+  const clock = () => now;
   return {
     directory,
     store,
-    auth: new DeviceAuth(store, () => now),
+    clock,
+    auth: new DeviceAuth(store, clock),
     advance: (ms: number) => {
       now += ms;
     },
@@ -132,14 +134,15 @@ describe("DeviceAuth", () => {
   });
 
   it("keeps devices across restarts but requires a refresh for access", async () => {
-    const { auth, directory, store } = await setup();
+    const { auth, clock, directory, store } = await setup();
     const credentials = auth.pair(auth.createPairingCode().code, "Desktop");
     store.close();
     stores.splice(stores.indexOf(store), 1);
     const reopened = new ServerStore(directory);
     stores.push(reopened);
     expect(reopened.serverId).toBe(store.serverId);
-    const restarted = new DeviceAuth(reopened);
+    // The same clock: refresh tokens from the fixed date would look expired against the real one.
+    const restarted = new DeviceAuth(reopened, clock);
     expect(status(() => restarted.authenticate(credentials.accessToken))).toBe(401);
     expect(restarted.refresh(credentials.refreshToken).deviceId).toBe(credentials.deviceId);
   });
