@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { renderUnicodeCompact } from "uqr";
 
-import { describeDevices, describePairing } from "../../server/cli.js";
+import { describeDevices, describePairing, runCli } from "../../server/cli.js";
 import { pairingLink } from "../../shared/pairing-link.js";
 
 describe("wispctl output for people", () => {
@@ -66,5 +66,20 @@ describe("wispctl output for people", () => {
     expect(text).toContain("Phone\n  ID: d2\n  Paired ");
     expect(text).toContain("last seen never\n");
     expect(describeDevices([])).toBe("No paired devices. Run `wispctl pair` to pair one.\n");
+  });
+});
+
+describe("wispctl version", () => {
+  it("checks that this machine runs SQLite and renders PDF pages", async () => {
+    let output = "";
+    await runCli(["version", "--check", "--json"], (text) => void (output += text));
+    expect(JSON.parse(output)).toMatchObject({
+      node: process.versions.node,
+      install: "npm",
+      checks: [
+        { name: "sqlite", ok: true },
+        { name: "pdf", ok: true },
+      ],
+    });
   });
 });

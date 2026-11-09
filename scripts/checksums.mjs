@@ -4,7 +4,9 @@ import path from "node:path";
 
 const directory = path.resolve(process.argv[2] ?? "release");
 const names = (await readdir(directory))
-  .filter((name) => /\.(?:exe|dmg|zip|AppImage|deb|yml|blockmap|json)$/i.test(name) && name !== "builder-debug.yml")
+  .filter(
+    (name) => /\.(?:exe|dmg|zip|AppImage|deb|yml|blockmap|json|tar\.gz)$/i.test(name) && name !== "builder-debug.yml",
+  )
   .sort();
 const lines = [];
 for (const name of names) {

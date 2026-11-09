@@ -146,12 +146,56 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # Builds the server archives, which bring their own Node.js, on a runner of
+  # each processor, and checks each one on clean distributions without Node.js:
+  # the oldest supported glibc (2.28, Debian 10) up to the current releases.
+  server-archive:
+    needs: version
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
+      # Choosing the C library of optional dependencies (--libc) needs npm 11.
+      - run: npm install --global npm@^11.5.1
+      - run: npm run package:server
+      - run: node scripts/package-server-archive.mjs --arch ${{ matrix.arch }}
+      - name: Check the archive without Node.js
+        env:
+          ARCHIVE: release/wisp-server-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+        run: |
+          for image in debian:buster-slim debian:bookworm-slim ubuntu:22.04 ubuntu:24.04; do
+            echo "::group::$image"
+            docker run --rm -v "$PWD/release:/release:ro" -v "$PWD/scripts:/scripts:ro" "$image" \
+              sh /scripts/smoke-server-archive.sh "/$ARCHIVE"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-linux-${{ matrix.arch }}
+          path: release/wisp-server-*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
   # Commits the version bump, tags it, and uploads the release as a draft only
   # after every gate and every packaging job has passed. A release moves main
   # with it; a beta's commit is kept by its tag alone, so no branch takes its
-  # version. The draft stays hidden from the updater until the server is on npm.
+  # version. The draft stays hidden from the updater until the server is on npm;
+  # the server archives go up with it, so they are public as soon as the app is.
   release:
-    needs: [version, verify, package]
+    needs: [version, verify, package, server-archive]
     runs-on: ubuntu-latest
     permissions:
       contents: write

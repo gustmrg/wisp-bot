@@ -1,11 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { SERVER_ARCHIVE_MANIFEST } from "../../shared/server-package.js";
 import {
   describeSetup,
+  findServerArchive,
   normalizeOrigin,
   parseEnvFile,
   probeAddress,
@@ -14,6 +16,7 @@ import {
   runSetup,
   setupPaths,
   type CommandResult,
+  type ServerArchive,
   type SetupHost,
   type SetupOptions,
 } from "../../server/setup.js";
@@ -421,5 +424,80 @@ describe("setup files", () => {
     });
     expect(text).toContain("wispctl setup --web");
     expect(text).not.toContain("tailscale serve");
+  });
+});
+
+/** An extracted server archive with the files setup looks at. */
+async function archiveOf(version: string): Promise<ServerArchive> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "wisp-archive-"));
+  homes.push(root);
+  await mkdir(path.join(root, "app/server"), { recursive: true });
+  await writeFile(path.join(root, "app/server/main.js"), "");
+  await mkdir(path.join(root, "runtime"));
+  await writeFile(path.join(root, "runtime/node"), "", { mode: 0o755 });
+  const manifest = { version, platform: "linux", arch: "x64", node: "22.23.4" } as const;
+  await writeFile(path.join(root, SERVER_ARCHIVE_MANIFEST), JSON.stringify(manifest));
+  return { root, manifest };
+}
+
+describe("runSetup from a server archive", () => {
+  it("installs the archive under versions/ and runs the service with its own Node.js", async () => {
+    const { host, paths, calls } = await machine();
+    const archive = await archiveOf("1.3.0");
+    // Even a Node.js under the home: the archive's own runs the server.
+    const result = await runSetup(options, { ...host, archive, nodePath: path.join(host.home, ".nvm/node") });
+
+    expect(result).toMatchObject({ version: "1.3.0", service: "started" });
+    expect(calls.some((call) => call.startsWith("npm"))).toBe(false);
+    expect(await readlink(paths.current)).toBe("versions/1.3.0");
+    expect(await readFile(path.join(paths.versionsDir, "1.3.0/.install-complete"), "utf8")).toBe("1.3.0");
+    expect(await readFile(paths.currentMainScript, "utf8")).toBe("");
+    expect(await readFile(paths.unitFile, "utf8")).toContain(
+      `ExecStart=${paths.currentNode} ${paths.currentMainScript}`,
+    );
+    expect(await readFile(paths.wispctl, "utf8")).toContain(`exec ${paths.currentWispctl} "$@"`);
+    expect(result.warnings.join(" ")).not.toContain("Node.js version");
+  });
+
+  it("keeps an installed version, and switches and restarts for a new one", async () => {
+    const { host, paths } = await machine();
+    await runSetup({ ...options, pair: false }, { ...host, archive: await archiveOf("1.3.0") });
+
+    const again = await runSetup({ ...options, pair: false }, { ...host, archive: await archiveOf("1.3.0") });
+    expect(again.service).toBe("unchanged");
+
+    const update = await runSetup({ ...options, pair: false }, { ...host, archive: await archiveOf("1.4.0") });
+    expect(update).toMatchObject({ version: "1.4.0", service: "restarted" });
+    expect(await readlink(paths.current)).toBe("versions/1.4.0");
+    expect((await readdir(paths.versionsDir)).sort()).toEqual(["1.3.0", "1.4.0"]);
+  });
+
+  it("leaves no partial version behind when cancelled", async () => {
+    const { host, paths } = await machine();
+    const cancel = new AbortController();
+    cancel.abort();
+    await expect(
+      runSetup({ ...options, signal: cancel.signal }, { ...host, archive: await archiveOf("1.3.0") }),
+    ).rejects.toThrow("The setup was cancelled.");
+    expect(await readdir(paths.versionsDir)).toEqual([]);
+    await expect(readlink(paths.current)).rejects.toThrow();
+  });
+
+  it("refuses to install an npm package instead", async () => {
+    const { host } = await machine();
+    await expect(
+      runSetup(
+        { ...options, packageSpec: "@gustmrg/wisp-server@1.0.0" },
+        { ...host, archive: await archiveOf("1.3.0") },
+      ),
+    ).rejects.toThrow(/--package installs the npm package/);
+  });
+
+  it("finds the archive the running code belongs to", async () => {
+    const archive = await archiveOf("1.3.0");
+    expect(findServerArchive(path.join(archive.root, "app/server"))).toEqual(archive);
+    await writeFile(path.join(archive.root, SERVER_ARCHIVE_MANIFEST), JSON.stringify({ version: "1.3.0; rm -rf /" }));
+    expect(findServerArchive(path.join(archive.root, "app/server"))).toBeUndefined();
+    expect(findServerArchive(path.join(os.tmpdir(), "nowhere/app/server"))).toBeUndefined();
   });
 });

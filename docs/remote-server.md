@@ -163,8 +163,10 @@ again opens its window.
 
 ## Install
 
-You need a Linux machine with systemd, Node.js 22.19 or later (with npm), and
-internet access. Run this on it, as the account that should own the Wisps:
+You need a Linux machine with systemd and internet access. Install the server
+with npm, which needs Node.js 22.19 or later, or from a
+[server archive](#from-a-server-archive), which brings its own Node.js. With
+npm, run this on the machine, as the account that should own the Wisps:
 
 ```sh
 npx @gustmrg/wisp-server setup
@@ -209,6 +211,42 @@ npx @gustmrg/wisp-server@latest setup
 | `--until-stdin-closes` | Stop, before starting the service, when stdin closes; the desktop app cancels this way |
 
 Options you pass are saved in `server.env`, so later runs keep them.
+
+### From a server archive
+
+Each release also publishes the server as an archive with Node.js included,
+so the machine needs neither Node.js nor npm. Archives exist for Linux on
+x64 and on arm64 (such as a Raspberry Pi with a 64-bit system), with glibc
+2.28 or later:
+
+| Distribution | Supported from |
+| --- | --- |
+| Debian, Raspberry Pi OS (64-bit) | 10 (buster) |
+| Ubuntu | 20.04 |
+| Fedora, RHEL and its rebuilds | Fedora 29, RHEL 8 |
+
+Alpine and other musl-based systems, and 32-bit ARM, are not supported; use
+[Docker](#docker) there. Download the archive of a version and the release's
+checksums, check them, and run the setup inside the archive:
+
+```sh
+version=0.27.0
+arch=$(uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')
+base=https://github.com/gustmrg/wisp-bot/releases/download/v$version
+curl -fLO "$base/wisp-server-$version-linux-$arch.tar.gz"
+curl -fLO "$base/SHA256SUMS.txt"
+sha256sum --check --ignore-missing SHA256SUMS.txt
+tar -xzf "wisp-server-$version-linux-$arch.tar.gz"
+"wisp-server-$version-linux-$arch/bin/wispctl" setup
+```
+
+The setup takes the same options as above, except `--package`. It copies the
+archive to `~/.local/lib/wisp-server/versions/<version>` and points
+`~/.local/lib/wisp-server/current` at it; the service and `wispctl` run
+through `current`, with the archive's Node.js. The downloaded folder can be
+deleted afterwards. To update, run the setup of a newer archive the same way.
+`wispctl version --check` shows the version and checks that the machine can
+run it.
 
 ### From the desktop app
 

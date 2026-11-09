@@ -13,7 +13,8 @@ import { defaultDataDirectory } from "./config.js";
 import type { DeviceView, PairingCode } from "./device-auth.js";
 import { InstanceLock } from "./instance-lock.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
-import { describeSetup, runSetup, systemHost } from "./setup.js";
+import { checkRuntime } from "./runtime-check.js";
+import { describeSetup, findServerArchive, runSetup, systemHost } from "./setup.js";
 
 const HELP = `Usage: wispctl <command> [options]
 
@@ -27,6 +28,8 @@ Commands:
   devices                  List paired devices
   revoke --device-id ID    Remove a device and end its sessions
   status                   Show the running server's identity
+  version [--check]        Show this server's version and Node.js; --check also makes sure
+                           this machine can run it (SQLite, PDF rendering)
   backup --output FILE --key-file KEY
                            Write an encrypted backup of the data directory. A running
                            server writes it itself; otherwise the directory must be idle.
@@ -84,12 +87,22 @@ export async function runCli(
         "--no-qr",
         "--web",
         "--no-web",
+        "--check",
       ].includes(flag)
     ) {
       throw new Error(`Unknown option ${flag}.`);
     }
     if (
-      ["--json", "--no-service", "--no-pair", "--until-stdin-closes", "--no-qr", "--web", "--no-web"].includes(flag)
+      [
+        "--json",
+        "--no-service",
+        "--no-pair",
+        "--until-stdin-closes",
+        "--no-qr",
+        "--web",
+        "--no-web",
+        "--check",
+      ].includes(flag)
     ) {
       flags.set(flag, true);
       continue;
@@ -143,6 +156,33 @@ export async function runCli(
       }
       result = outcome;
       break;
+    }
+    case "version":
+    case "--version": {
+      const archive = findServerArchive();
+      const checks = flags.has("--check") ? await checkRuntime() : undefined;
+      const info = {
+        version: readAppVersion(),
+        node: process.versions.node,
+        platform: process.platform,
+        arch: process.arch,
+        install: archive ? "archive" : "npm",
+        ...(checks ? { checks } : {}),
+      };
+      const failed = checks?.find(({ ok }) => !ok);
+      if (failed) {
+        throw new Error(
+          `Wisp server ${info.version} cannot run on this machine (${info.platform} ${info.arch}): the ${failed.name} check failed: ${failed.error}`,
+        );
+      }
+      if (flags.has("--json")) {
+        result = info;
+        break;
+      }
+      write(
+        `Wisp server ${info.version} (Node.js ${info.node}, ${info.platform} ${info.arch}, ${info.install})${checks ? "\nThis machine can run it." : ""}\n`,
+      );
+      return;
     }
     case "keygen":
       MasterKeyEncryption.generate(path.resolve(option("--output")));

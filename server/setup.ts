@@ -1,11 +1,17 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { chmod, cp, mkdir, mkdtemp, readFile, readlink, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-import { SERVER_VERSION_PATTERN, WISP_SERVER_PACKAGE } from "../shared/server-package.js";
+import {
+  SERVER_ARCHIVE_MANIFEST,
+  SERVER_VERSION_PATTERN,
+  WISP_SERVER_PACKAGE,
+  type ServerArchiveManifest,
+} from "../shared/server-package.js";
 import { adminRequest } from "./admin.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
 
@@ -13,6 +19,8 @@ const HEALTH_TIMEOUT_MS = 30_000;
 const NPM_TIMEOUT_MS = 10 * 60_000;
 const SERVICE_NAME = "wisp";
 const DEFAULT_PORT = 8787;
+/** Written last into an installed archive version, holding its version: a folder without it is incomplete. */
+const INSTALL_COMPLETE = ".install-complete";
 
 export interface SetupOptions {
   /** What to install; the version of the package that is running by default. */
@@ -64,6 +72,11 @@ export interface SetupHost {
   nodePath: string;
   /** The version of the package that is running. */
   version: string;
+  /**
+   * The extracted server archive this setup runs from, which brings its own
+   * Node.js. Unset when it runs from the npm package.
+   */
+  archive?: ServerArchive;
   run(
     command: string,
     args: readonly string[],
@@ -79,9 +92,34 @@ export interface SetupHost {
   progress(message: string): void;
 }
 
+/** An extracted server archive: its folder and what its manifest says. */
+export interface ServerArchive {
+  root: string;
+  manifest: ServerArchiveManifest;
+}
+
+/**
+ * The archive the running code belongs to: `app/server/` sits two levels
+ * below the archive's top, next to its manifest.
+ */
+export function findServerArchive(directory = __dirname): ServerArchive | undefined {
+  const root = path.resolve(directory, "../..");
+  try {
+    const manifest = JSON.parse(
+      readFileSync(path.join(root, SERVER_ARCHIVE_MANIFEST), "utf8"),
+    ) as ServerArchiveManifest;
+    if (typeof manifest.version !== "string" || !SERVER_VERSION_PATTERN.test(manifest.version)) return undefined;
+    return { root, manifest };
+  } catch {
+    return undefined;
+  }
+}
+
 export function systemHost(version: string, progress: (message: string) => void): SetupHost {
   const info = os.userInfo();
+  const archive = findServerArchive();
   return {
+    ...(archive ? { archive } : {}),
     home: os.homedir(),
     user: info.username,
     uid: info.uid,
@@ -145,11 +183,18 @@ export function setupPaths(home: string) {
   const installDir = path.join(home, ".local/lib/wisp-server");
   const packageDir = path.join(installDir, "node_modules", ...WISP_SERVER_PACKAGE.split("/"));
   const configDir = path.join(home, ".config/wisp");
+  /** The installed archive the service runs; it points into `versions/`. */
+  const current = path.join(installDir, "current");
   return {
     installDir,
     packageDir,
     mainScript: path.join(packageDir, "server/main.js"),
     cliScript: path.join(packageDir, "server/cli.js"),
+    versionsDir: path.join(installDir, "versions"),
+    current,
+    currentNode: path.join(current, "runtime/node"),
+    currentMainScript: path.join(current, "app/server/main.js"),
+    currentWispctl: path.join(current, "bin/wispctl"),
     configDir,
     keyFile: path.join(configDir, "master.key"),
     envFile: path.join(configDir, "server.env"),
@@ -181,27 +226,43 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     throw new Error("The port must be between 1 and 65535.");
   }
 
-  // 1. The package, in a stable place: `npx` runs from a cache that may be cleared.
-  const installed = await installedVersion(paths);
-  const spec = options.packageSpec ?? `${WISP_SERVER_PACKAGE}@${host.version}`;
-  let version = installed ?? host.version;
-  if (options.packageSpec !== undefined || installed !== host.version) {
-    host.progress(`Installing ${spec}…`);
-    await mkdir(paths.installDir, { recursive: true });
-    const result = await host.run(
-      "npm",
-      ["install", "--prefix", paths.installDir, "--no-audit", "--no-fund", "--loglevel=error", spec],
-      { ...host.env, PATH: `${path.dirname(host.nodePath)}${path.delimiter}${host.env.PATH ?? ""}` },
-      NPM_TIMEOUT_MS,
-      options.signal,
-    );
-    stopIfCancelled();
-    if (result.code !== 0) throw new Error(explainInstallFailure(spec, result));
-    version = (await installedVersion(paths)) ?? host.version;
-    changed = true;
+  // 1. The server, in a stable place: `npx` runs from a cache that may be cleared,
+  // and an extracted archive from wherever it was downloaded.
+  let version: string;
+  if (host.archive) {
+    if (options.packageSpec !== undefined) {
+      throw new Error(
+        "--package installs the npm package. This setup runs from a server archive: run the setup of the archive you want instead.",
+      );
+    }
+    version = host.archive.manifest.version;
+    changed = (await installArchive(paths, host.archive, host, stopIfCancelled)) || changed;
   } else {
-    host.progress(`${WISP_SERVER_PACKAGE} ${version} is already installed.`);
+    const installed = await installedVersion(paths);
+    const spec = options.packageSpec ?? `${WISP_SERVER_PACKAGE}@${host.version}`;
+    version = installed ?? host.version;
+    if (options.packageSpec !== undefined || installed !== host.version) {
+      host.progress(`Installing ${spec}…`);
+      await mkdir(paths.installDir, { recursive: true });
+      const result = await host.run(
+        "npm",
+        ["install", "--prefix", paths.installDir, "--no-audit", "--no-fund", "--loglevel=error", spec],
+        { ...host.env, PATH: `${path.dirname(host.nodePath)}${path.delimiter}${host.env.PATH ?? ""}` },
+        NPM_TIMEOUT_MS,
+        options.signal,
+      );
+      stopIfCancelled();
+      if (result.code !== 0) throw new Error(explainInstallFailure(spec, result));
+      version = (await installedVersion(paths)) ?? host.version;
+      changed = true;
+    } else {
+      host.progress(`${WISP_SERVER_PACKAGE} ${version} is already installed.`);
+    }
   }
+  // An archive brings its own Node.js; the npm package runs on the one that runs setup.
+  const runtime = host.archive
+    ? { nodePath: paths.currentNode, mainScript: paths.currentMainScript }
+    : { nodePath: host.nodePath, mainScript: paths.mainScript };
 
   // 2. Settings. An existing server.env wins, apart from what was passed explicitly.
   const existingEnv = await readIfExists(paths.envFile);
@@ -241,14 +302,16 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   changed = (await writeIfChanged(paths.envFile, env, 0o600)) || changed;
 
   // 4. `wispctl`, for the person and for the desktop app's pairing over SSH.
-  const shim = `#!/bin/sh\n# Written by the Wisp server setup; run it again to update.\nexec ${shellQuote(host.nodePath)} ${shellQuote(paths.cliScript)} "$@"\n`;
+  const shim = `#!/bin/sh\n# Written by the Wisp server setup; run it again to update.\nexec ${
+    host.archive ? shellQuote(paths.currentWispctl) : `${shellQuote(host.nodePath)} ${shellQuote(paths.cliScript)}`
+  } "$@"\n`;
   await mkdir(path.dirname(paths.wispctl), { recursive: true });
   await writeIfChanged(paths.wispctl, shim, 0o755);
   if (!(host.env.PATH ?? "").split(path.delimiter).includes(path.dirname(paths.wispctl))) {
     warnings.push(`Add ${path.dirname(paths.wispctl)} to your PATH to run wispctl from a terminal.`);
   }
   // nvm, fnm, and the like keep each Node.js version in its own directory under the home.
-  if (!path.relative(host.home, host.nodePath).startsWith("..")) {
+  if (!host.archive && !path.relative(host.home, host.nodePath).startsWith("..")) {
     warnings.push(
       `The server runs ${host.nodePath}. After updating or removing that Node.js version, run \`npx ${WISP_SERVER_PACKAGE} setup\` again.`,
     );
@@ -271,7 +334,7 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     return {
       ...base,
       service: "skipped",
-      startCommand: `WISP_MASTER_KEY_FILE=${shellQuote(keyFile)} WISP_DATA_DIR=${shellQuote(dataDirectory)} WISP_PORT=${port}${web ? " WISP_WEB=1" : ""} ${shellQuote(host.nodePath)} ${shellQuote(paths.mainScript)}`,
+      startCommand: `WISP_MASTER_KEY_FILE=${shellQuote(keyFile)} WISP_DATA_DIR=${shellQuote(dataDirectory)} WISP_PORT=${port}${web ? " WISP_WEB=1" : ""} ${shellQuote(runtime.nodePath)} ${shellQuote(runtime.mainScript)}`,
     };
   }
 
@@ -289,7 +352,7 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     );
   }
   stopIfCancelled();
-  const unit = renderUnit(host.nodePath, paths.mainScript, paths.envFile);
+  const unit = renderUnit(runtime.nodePath, runtime.mainScript, paths.envFile);
   await mkdir(path.dirname(paths.unitFile), { recursive: true });
   changed = (await writeIfChanged(paths.unitFile, unit, 0o644)) || changed;
   const reload = await systemctl("daemon-reload");
@@ -363,6 +426,49 @@ export function describeSetup(result: SetupResult): string {
   }
   for (const warning of result.warnings) lines.push("", `Note: ${warning}`);
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Copies the archive setup runs from into `versions/<version>`, unless that
+ * version is there already, and points `current` at it. The copy goes into a
+ * staging folder first and is renamed into place complete, so an interrupted
+ * setup never leaves a partial version that looks installed. Reports whether
+ * `current` changed, which means the service must restart.
+ */
+async function installArchive(
+  paths: ReturnType<typeof setupPaths>,
+  archive: ServerArchive,
+  host: SetupHost,
+  stopIfCancelled: () => void,
+): Promise<boolean> {
+  const { version } = archive.manifest;
+  const target = path.join(paths.versionsDir, version);
+  const runningInstalled = path.resolve(archive.root) === path.resolve(target);
+  if (runningInstalled || (await readIfExists(path.join(target, INSTALL_COMPLETE))) === version) {
+    host.progress(`Wisp server ${version} is already installed.`);
+  } else {
+    host.progress(`Installing Wisp server ${version}…`);
+    await mkdir(paths.versionsDir, { recursive: true });
+    const staging = await mkdtemp(path.join(paths.versionsDir, ".staging-"));
+    try {
+      await cp(archive.root, staging, { recursive: true, verbatimSymlinks: true });
+      stopIfCancelled();
+      await writeFile(path.join(staging, INSTALL_COMPLETE), version);
+      await rm(target, { recursive: true, force: true });
+      await rename(staging, target);
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  const link = path.join("versions", version);
+  if ((await readlink(paths.current).catch(() => undefined)) === link) return false;
+  // A new link renamed over the old one, so `current` always points somewhere.
+  const temporary = `${paths.current}.${process.pid}.tmp`;
+  await rm(temporary, { force: true });
+  await symlink(link, temporary);
+  await rename(temporary, paths.current);
+  return true;
 }
 
 /** The installed version, only when the install is complete: an interrupted `npm install` must be repeated. */
