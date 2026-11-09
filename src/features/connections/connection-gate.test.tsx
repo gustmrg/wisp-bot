@@ -302,7 +302,7 @@ describe("ConnectionGate", () => {
     );
     expect(await screen.findByRole("heading", { name: "Wisp is not installed on Home server" })).toBeVisible();
     expect(screen.getByText("Wisp can set it up for you").parentElement).toHaveTextContent(
-      "the setup of @gustmrg/wisp-server",
+      "the Wisp server, with Node.js included",
     );
     await userEvent.click(screen.getByRole("button", { name: "Install on raspberrypi" }));
     expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });

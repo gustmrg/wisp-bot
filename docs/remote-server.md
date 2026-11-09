@@ -254,15 +254,41 @@ run it.
 If the machine accepts SSH connections from your computer, the app can run the
 setup for you. Add the server under **Settings → Connections** with the SSH
 option, then choose **Install the Wisp server** (it also appears when a
-connection fails). The app asks first, then runs `npx @gustmrg/wisp-server@<its
-own version> setup` on the machine over SSH, and connects. The same button
+connection fails). The app asks first, then connects. The same button
 (**Install or update the server**) in the server's settings updates it to the
 app's version. The app shows the server's version next to the connection and
 warns when it differs from its own; when the two no longer speak the same
-protocol, it refuses to connect and says which one to update. This needs Node.js and npm in the PATH of
-non-interactive SSH commands, and a version of the app that is published on npm.
-**Cancel setup**, or choosing another connection, stops it, also on the machine;
-what was already installed stays, and a service not yet started is left alone.
+protocol, it refuses to connect and says which one to update.
+
+Over SSH, the machine downloads the [server archive](#from-a-server-archive)
+of exactly the app's version from the release, for its processor, and:
+
+1. checks it against the SHA-256 the app carries, so it trusts nothing served
+   next to the archive;
+2. checks that it runs there (`wispctl version --check`);
+3. moves it into `~/.local/lib/wisp-server/versions/<version>` complete, or
+   not at all;
+4. runs its setup, which points `current` at it and restarts the service.
+
+A version already installed completely is not downloaded again. A lock
+(`~/.local/lib/wisp-server/.install.lock`) keeps two installs apart; one left
+by a process that died is taken over, and downloads an interrupted install
+left are removed. The machine needs Linux on x64 or arm64 with glibc 2.28 or
+later, `curl` or `wget`, `sha256sum` or `shasum`, and access to github.com; it
+does not need Node.js. When something is missing, the app says what.
+
+A server installed from npm moves to the archive on its next update. The
+master key, `server.env`, the data directory with its paired devices, and the
+service's options stay; the npm files are removed once the service runs the
+archive. Of the archive versions, the running one and the one before it are
+kept. The setup refuses to start the service while another Wisp server, such
+as one started by hand, uses the same data directory.
+
+A development build of the app carries no archive hashes and installs the npm
+package instead, which needs Node.js and npm in the `PATH` of non-interactive
+SSH commands. **Cancel setup**, or choosing another connection, stops it, also
+on the machine; what was already installed stays, and a service not yet
+started is left alone.
 
 ### How an update is confirmed
 

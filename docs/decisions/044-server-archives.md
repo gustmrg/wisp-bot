@@ -59,8 +59,34 @@ with Node.js included: `wisp-server-<version>-linux-x64.tar.gz` and
   SDKs that npm installs as well.
 - A Node.js security release needs a Wisp release to reach servers installed
   from an archive.
-- Installing an archive over SSH from the desktop app, with checksums the app
-  carries, follows in SWE-312.
+- The desktop app installs and updates servers from these archives; see
+  [Installing over SSH](#installing-over-ssh).
+
+## Installing over SSH
+
+The desktop app installs the archive of its own version on a machine over SSH
+(SWE-312):
+
+- The release builds the archives before the desktop packages and writes
+  their SHA-256 into the app (`dist-electron/server-archives.json`). The
+  machine downloads its archive from the release and checks it against that
+  hash; no checksum file from the same place is trusted.
+- One shell script, with only validated values in it, detects the processor
+  and glibc, takes a lock directory holding its PID (taken over when that
+  process is gone), removes interrupted downloads, downloads with `curl` or
+  `wget`, verifies, runs `wispctl version --check`, and moves the extracted
+  archive into `versions/<version>` with its completion marker. It then runs
+  that archive's setup, which records the update
+  ([ADR 045](045-confirming-server-updates.md)). Failures print one
+  `wisp-install:` line, which the app explains.
+- The setup moves a server installed from npm to the archive and removes the
+  npm files once the service runs the archive. The key, settings, data and
+  paired devices stay where they were. Archive versions other than the
+  running one and the one before it are removed.
+- The setup refuses to start the service while another server answers on the
+  same data directory. The data directory's own lock already keeps a second
+  server from opening it.
+- A development build carries no hashes and installs the npm package.
 
 ## Rejected alternatives
 

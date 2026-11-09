@@ -27,6 +27,7 @@ import {
   type InstallOutcome,
   type InstallStep,
 } from "./connections/ssh-install.js";
+import type { ServerArchiveHashes } from "../shared/server-package.js";
 import type { ServerUpdateRecord } from "../shared/server-update.js";
 import { testSshConnection } from "./connections/ssh-test.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
@@ -77,6 +78,8 @@ export interface BackendHost {
   deviceName: string;
   /** The version of this app; the server it installs on another machine is the same version. */
   appVersion: string;
+  /** The hashes of this version's server archives; without them, servers are installed from npm. */
+  serverArchives?: ServerArchiveHashes;
   /**
    * Starts the helper that lets OpenSSH ask the person for a password, a key
    * passphrase, or to trust a host key. Without one, SSH runs in BatchMode.
@@ -144,7 +147,14 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   const install =
     host.installServer ??
     ((profile, onProgress, signal, _interaction, updateId) =>
-      installRemoteServer(profile, { version: host.appVersion, onProgress, signal, interaction, updateId }));
+      installRemoteServer(profile, {
+        version: host.appVersion,
+        onProgress,
+        signal,
+        interaction,
+        updateId,
+        ...(host.serverArchives ? { archives: host.serverArchives } : {}),
+      }));
   const readUpdate =
     host.readServerUpdate ?? ((profile, updateId) => readServerUpdate(profile, updateId, { interaction }));
   const manager = new ConnectionManager({

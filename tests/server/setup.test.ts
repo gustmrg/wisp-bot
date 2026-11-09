@@ -44,6 +44,8 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
   /** What the service runs since its last restart: the archive `current` points at, or the npm package. */
   let running: string | undefined;
   let runtimeOk = true;
+  /** A server started by hand on the same data directory, outside the service. */
+  let foreignServer: string | undefined;
   let foreign = false;
   let listening = 0;
   const probed: string[] = [];
@@ -88,7 +90,7 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
       return foreign || (active && port === listening);
     },
     pairingCode: async () => "ABCDE-FGHJK",
-    serverVersion: async () => (active ? (answers ?? running) : undefined),
+    serverVersion: async () => (active ? (answers ?? running) : foreignServer),
     checkRuntime: async () => [
       { name: "sqlite", ok: true },
       runtimeOk
@@ -113,6 +115,7 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
     setNpmVersion: (value: string) => void (npmVersion = value),
     setAnswers: (value: string | undefined) => void (answers = value),
     setRuntimeOk: (value: boolean) => void (runtimeOk = value),
+    setForeignServer: (value: string | undefined) => void (foreignServer = value),
     setForeign: (value: boolean) => void (foreign = value),
   };
 }
@@ -513,6 +516,39 @@ describe("runSetup from a server archive", () => {
     ).rejects.toThrow("The setup was cancelled.");
     expect(await readdir(paths.versionsDir)).toEqual([]);
     await expect(readlink(paths.current)).rejects.toThrow();
+  });
+
+  it("moves a server installed from npm to the archive, keeping its key, settings and data", async () => {
+    const { host, paths } = await machine();
+    await runSetup({ ...options, pair: false, port: 9000, web: true }, host);
+    const key = await readFile(paths.keyFile);
+    const env = await readFile(paths.envFile, "utf8");
+
+    const result = await runSetup({ ...options, pair: false }, { ...host, archive: await archiveOf("1.3.0") });
+    expect(result).toMatchObject({ version: "1.3.0", service: "restarted", port: 9000, web: true });
+    expect((await readdir(paths.installDir)).sort()).toEqual(["current", "versions"]);
+    expect(await readFile(paths.keyFile)).toEqual(key);
+    expect(await readFile(paths.envFile, "utf8")).toBe(env);
+    expect(await readFile(paths.unitFile, "utf8")).toContain(
+      `ExecStart=${paths.currentNode} ${paths.currentMainScript}`,
+    );
+  });
+
+  it("keeps the running version and the one before it", async () => {
+    const { host, paths } = await machine();
+    for (const version of ["1.3.0", "1.4.0", "1.5.0"]) {
+      await runSetup({ ...options, pair: false }, { ...host, archive: await archiveOf(version) });
+    }
+    expect((await readdir(paths.versionsDir)).sort()).toEqual(["1.4.0", "1.5.0"]);
+  });
+
+  it("refuses to start the service while another server uses the data directory", async () => {
+    const { host, calls, setForeignServer } = await machine();
+    setForeignServer("1.2.0");
+    await expect(runSetup(options, { ...host, archive: await archiveOf("1.3.0") })).rejects.toThrow(
+      /A Wisp server \(1\.2\.0\) already runs on .* without the service/,
+    );
+    expect(calls.some((call) => call.includes("enable") || call.includes("restart"))).toBe(false);
   });
 
   it("refuses to install an npm package instead", async () => {

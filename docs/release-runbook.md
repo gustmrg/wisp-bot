@@ -89,6 +89,12 @@ in clean containers without Node.js, from Debian 10 (glibc 2.28) to Ubuntu
 24.04: the runtime check, `setup --no-service`, the server with fake agents,
 its health check, the browser app, `wispctl status` and `wispctl pair`.
 
+The desktop packaging jobs wait for both archives and write their SHA-256
+into the app (`scripts/server-archive-hashes.mjs` →
+`dist-electron/server-archives.json`). The app checks the archive a server
+downloads against these hashes, so an archive must never be rebuilt or
+replaced after its app was packaged: re-run the whole release instead.
+
 The archives go into the draft with the desktop files and are listed in
 `SHA256SUMS.txt`, so they become public together with the app. A beta's
 archives are part of its prerelease. To check one by hand, build it with

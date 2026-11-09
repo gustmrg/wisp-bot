@@ -1,7 +1,20 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { chmod, cp, mkdir, mkdtemp, readFile, readlink, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import os from "node:os";
@@ -427,6 +440,14 @@ async function setUp(
   const systemctl = async (...args: string[]): Promise<CommandResult> =>
     host.run("systemctl", ["--user", ...args], systemctlEnv);
   const wasActive = (await systemctl("is-active", "--quiet", SERVICE_NAME)).code === 0;
+  // One server per data directory: one started by hand, or by an older setup
+  // under another name, holds it, and the service would fail to start.
+  const other = wasActive ? undefined : await host.serverVersion(dataDirectory);
+  if (other !== undefined) {
+    throw new Error(
+      `A Wisp server (${other}) already runs on ${dataDirectory} without the service. Stop it, then run the setup again.`,
+    );
+  }
   // Checked before anything is enabled: a service that cannot get its port
   // would fail on every boot. A running Wisp holds its own port.
   const ownPort = wasActive && Number(current.get("WISP_PORT") ?? DEFAULT_PORT) === port;
@@ -478,8 +499,33 @@ async function setUp(
     if (!wasActive) await systemctl("disable", "--now", SERVICE_NAME);
     throw error;
   }
+  if (host.archive) await tidyInstall(paths, [version, fromVersion], host);
   const pairingCode = options.pair ? await host.pairingCode(dataDirectory) : undefined;
   return { ...base, service, ...(runningVersion ? { runningVersion } : {}), ...(pairingCode ? { pairingCode } : {}) };
+}
+
+/**
+ * Once the service runs an archive: removes the npm package a server set up
+ * before archives existed ran from, and archive versions other than the one
+ * running and the one before it. Data, the master key and settings live
+ * elsewhere and stay.
+ */
+async function tidyInstall(
+  paths: ReturnType<typeof setupPaths>,
+  keep: ReadonlyArray<string | undefined>,
+  host: SetupHost,
+): Promise<void> {
+  if (await exists(paths.packageDir)) {
+    for (const name of ["node_modules", "package.json", "package-lock.json"]) {
+      await rm(path.join(paths.installDir, name), { recursive: true, force: true });
+    }
+    host.progress("Removed the npm installation the server ran from before; data and settings are kept.");
+  }
+  for (const entry of await readdir(paths.versionsDir).catch(() => [])) {
+    if (!entry.startsWith(".") && !keep.includes(entry)) {
+      await rm(path.join(paths.versionsDir, entry), { recursive: true, force: true });
+    }
+  }
 }
 
 /** What to tell the person once setup is done, including what to do next. */

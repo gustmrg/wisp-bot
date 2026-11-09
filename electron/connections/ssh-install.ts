@@ -2,7 +2,13 @@ import { spawn } from "node:child_process";
 
 import { FatalTransportError } from "../../client/remote-session.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
-import { SERVER_VERSION_PATTERN, WISP_SERVER_PACKAGE } from "../../shared/server-package.js";
+import {
+  SERVER_RELEASES_URL,
+  SERVER_VERSION_PATTERN,
+  serverArchiveName,
+  WISP_SERVER_PACKAGE,
+  type ServerArchiveHashes,
+} from "../../shared/server-package.js";
 import { parseServerUpdateRecord, type ServerUpdateRecord, UPDATE_ID_PATTERN } from "../../shared/server-update.js";
 import { SshQuestions, type SshInteraction } from "./ssh-auth.js";
 import { detailsOf, parseLines, runWispctl, sshArguments, sshFailure, WISPCTL } from "./ssh-tunnel.js";
@@ -23,6 +29,12 @@ export interface SshInstallOptions {
   interaction?: SshInteraction;
   /** Names the run in the server's update record, so its result can be asked for later. */
   updateId?: string;
+  /**
+   * The hashes of this version's server archives, which this app carries.
+   * With them, the server downloads its archive with Node.js included;
+   * without them (a development build), it installs the npm package.
+   */
+  archives?: ServerArchiveHashes;
 }
 
 /** What a setup that finished reported. */
@@ -55,6 +67,97 @@ export function installStepOf(message: string, previous: InstallStep): InstallSt
   return previous;
 }
 
+/** The archive install script reports why it stopped on one stderr line: `wisp-install: <reason> [detail]`. */
+const ARCHIVE_FAILURE = /^wisp-install: ([a-z-]+)(?: (.*))?$/m;
+
+/**
+ * The command that installs a server archive on the server, then runs the
+ * setup inside it. The remote shell sees the app's version, the port, the
+ * update ID and the archives' hashes, all validated; never text from the user.
+ *
+ * It detects the processor and the C library, takes a lock (a directory,
+ * which `mkdir` creates atomically, holding the owner's PID so a lock left by
+ * a dead process is taken over), and removes downloads an interrupted run
+ * left. Unless that version is installed completely already, it downloads the
+ * archive from the release into a staging folder, checks it against the hash
+ * this app carries, checks that it runs on this machine, marks it complete,
+ * and moves it into `versions/<version>`. The setup then copies nothing and
+ * points `current` at it. Failures print one `wisp-install:` line for the
+ * app to explain.
+ */
+export function archiveInstallCommand(
+  version: string,
+  serverPort: number,
+  updateId: string | undefined,
+  archives: ServerArchiveHashes,
+): string {
+  validate(version, serverPort, updateId);
+  if (archives.version !== version) throw new FatalTransportError(`This app carries no server archive for ${version}.`);
+  const hashes = Object.values(archives.sha256);
+  if (!hashes.every((hash) => /^[0-9a-f]{64}$/.test(hash)))
+    throw new FatalTransportError("The archive hashes are invalid.");
+  // The archive's name for the processor the script detects ($a).
+  const name = serverArchiveName(version, "x64").replace(/x64$/, "$a");
+  const script = [
+    `PATH="$HOME/.local/bin:$PATH"`,
+    `echo "${CONNECTED_MESSAGE}" >&2`,
+    `fail() { echo "wisp-install: $*" >&2; exit 1; }`,
+    `case "$(uname -s) $(uname -m)" in`,
+    `  "Linux x86_64"|"Linux amd64") a=x64; h=${archives.sha256.x64} ;;`,
+    `  "Linux aarch64"|"Linux arm64") a=arm64; h=${archives.sha256.arm64} ;;`,
+    `  *) fail unsupported-system "$(uname -s) $(uname -m)" ;;`,
+    `esac`,
+    `g=$(getconf GNU_LIBC_VERSION 2>/dev/null) || fail unsupported-libc`,
+    `g=\${g#glibc }`,
+    `case "$g" in [01].*|2.[0-9]|2.[0-9].*|2.1[0-9]|2.1[0-9].*|2.2[0-7]|2.2[0-7].*) fail old-glibc "$g" ;; esac`,
+    `r="$HOME/.local/lib/wisp-server"; d="$r/versions"; v="$d/${version}"; n="${name}"`,
+    `mkdir -p "$d" || fail no-space "$d"`,
+    `l="$r/.install.lock"; i=0`,
+    `until mkdir "$l" 2>/dev/null; do`,
+    `  p=$(cat "$l/pid" 2>/dev/null); i=$((i + 1))`,
+    `  if { [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; } || { [ -z "$p" ] && [ "$i" -gt 10 ]; }; then rm -rf "$l"; continue; fi`,
+    `  [ "$i" -le 300 ] || fail busy`,
+    `  sleep 1`,
+    `done`,
+    `echo $$ >"$l/pid"; t=""`,
+    // No single quotes anywhere: the whole script is one single-quoted argument.
+    `cleanup() { rm -rf "$l"; if [ -n "$t" ]; then rm -rf "$t"; fi; }`,
+    `trap cleanup EXIT`,
+    `trap "exit 130" INT TERM HUP`,
+    `rm -rf "$d"/.download-*`,
+    `if [ "$(cat "$v/.install-complete" 2>/dev/null)" != "${version}" ]; then`,
+    `  t=$(mktemp -d "$d/.download-XXXXXX") || fail no-space "$d"`,
+    `  f="$t/archive.tar.gz"; u="${SERVER_RELEASES_URL}/v${version}/$n.tar.gz"`,
+    `  echo "Downloading Wisp server ${version} for $a…" >&2`,
+    `  if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time 900 -o "$f" "$u" || fail download "$u"`,
+    `  elif command -v wget >/dev/null 2>&1; then wget -q -T 30 -O "$f" "$u" || fail download "$u"`,
+    `  else fail no-downloader; fi`,
+    `  if command -v sha256sum >/dev/null 2>&1; then s=$(sha256sum "$f"); else s=$(shasum -a 256 "$f") || fail no-sha256; fi`,
+    `  [ "\${s%% *}" = "$h" ] || fail checksum`,
+    `  echo "Installing Wisp server ${version}…" >&2`,
+    `  tar -xzf "$f" -C "$t" || fail no-space "$d"`,
+    `  rm -f "$f"`,
+    `  "$t/$n/bin/wispctl" version --check >&2 || fail cannot-run`,
+    `  echo "${version}" >"$t/$n/.install-complete"`,
+    `  rm -rf "$v"; mv "$t/$n" "$v" || fail no-space "$d"`,
+    `fi`,
+    `"$v/bin/wispctl" setup --json --no-pair --until-stdin-closes --port ${serverPort}${updateId ? ` --update-id ${updateId}` : ""}`,
+  ].join("\n");
+  if (script.includes("'")) throw new FatalTransportError("The install script cannot be quoted.");
+  return `sh -c '${script}'`;
+}
+
+function validate(version: string, serverPort: number, updateId: string | undefined): void {
+  if (!SERVER_VERSION_PATTERN.test(version))
+    throw new FatalTransportError(`${version} is not a version Wisp can install.`);
+  if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535) {
+    throw new FatalTransportError("The server port is invalid.");
+  }
+  if (updateId !== undefined && !UPDATE_ID_PATTERN.test(updateId)) {
+    throw new FatalTransportError("The update ID is invalid.");
+  }
+}
+
 /**
  * The command run on the server. The remote shell sees only the app's own
  * version and the profile's port, both validated; never text from the user.
@@ -68,14 +171,7 @@ export function installStepOf(message: string, previous: InstallStep): InstallSt
  * stops itself when its stdin closes.
  */
 export function installCommand(version: string, serverPort: number, updateId?: string): string {
-  if (!SERVER_VERSION_PATTERN.test(version))
-    throw new FatalTransportError(`${version} is not a version Wisp can install.`);
-  if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535) {
-    throw new FatalTransportError("The server port is invalid.");
-  }
-  if (updateId !== undefined && !UPDATE_ID_PATTERN.test(updateId)) {
-    throw new FatalTransportError("The update ID is invalid.");
-  }
+  validate(version, serverPort, updateId);
   const cli = `"$d/node_modules/${WISP_SERVER_PACKAGE}/server/cli.js"`;
   const script = [
     `PATH="$HOME/.local/bin:$PATH"`,
@@ -99,7 +195,9 @@ export async function installRemoteServer(
   profile: SshConnectionProfile,
   options: SshInstallOptions,
 ): Promise<InstallOutcome> {
-  const command = installCommand(options.version, profile.serverPort, options.updateId);
+  const command = options.archives
+    ? archiveInstallCommand(options.version, profile.serverPort, options.updateId, options.archives)
+    : installCommand(options.version, profile.serverPort, options.updateId);
   const ssh = options.sshPath ?? "ssh";
   const questions = new SshQuestions(options.interaction, ssh, profile, options.signal);
   const child = spawn(
@@ -215,6 +313,9 @@ export function explainInstallFailure(
     const failure = sshFailure(stderr, profile, spawnError, questions);
     return new FatalTransportError(failure.message, failure.failure, failure.details);
   }
+  const archiveFailure = ARCHIVE_FAILURE.exec(stderr);
+  if (archiveFailure)
+    return explainArchiveFailure(host, version, archiveFailure[1]!, archiveFailure[2], stderr, details);
   if (
     /(npx|npm|node): (command )?not found|(npx|npm|node): No such file|env: .?(node|npx|npm).?: No such file/i.test(
       stderr,
@@ -247,6 +348,44 @@ export function explainInstallFailure(
     "install",
     details,
   );
+}
+
+/** Why installing a server archive stopped, from the script's `wisp-install:` line. */
+function explainArchiveFailure(
+  host: string,
+  version: string,
+  reason: string,
+  detail: string | undefined,
+  stderr: string,
+  details: string | undefined,
+): FatalTransportError {
+  const docs = "or use Docker there (see “How to set up a Wisp server”)";
+  const messages: Record<string, string> = {
+    "unsupported-system": `${host} runs ${detail ?? "a system"} the Wisp server is not built for. It runs on Linux on x64 or arm64; ${docs}.`,
+    "unsupported-libc": `${host} has no GNU C library (glibc), which the Wisp server needs; Alpine and other musl systems are not supported. Install the server ${docs}.`,
+    "old-glibc": `${host} has glibc ${detail ?? ""}, but the Wisp server needs 2.28 or later (Debian 10, Ubuntu 20.04, RHEL 8 or newer). Update the system, ${docs}.`,
+    busy: `Another installation of the Wisp server is running on ${host}. Wait for it to finish, then retry.`,
+    "no-downloader": `${host} has neither curl nor wget to download the Wisp server. Install one of them, then retry.`,
+    "no-sha256": `${host} has neither sha256sum nor shasum to check the download. Install coreutils, then retry.`,
+    download: `${host} could not download Wisp server ${version}. Check its internet access to github.com, then retry.`,
+    checksum: `The Wisp server ${host} downloaded does not match the one this app expects, so nothing was installed. Retry; if it happens again, report it.`,
+    "no-space": `Could not unpack the Wisp server on ${host}. Check the free space in ~/.local/lib, then retry.`,
+    "cannot-run": `Wisp server ${version} cannot run on ${host}: ${lastLine(stderr.slice(0, stderr.search(ARCHIVE_FAILURE))) ?? "its check failed"}.`,
+  };
+  return new FatalTransportError(
+    messages[reason] ?? `Could not set up the Wisp server on ${host}: ${reason}.`,
+    "install",
+    details,
+  );
+}
+
+function lastLine(text: string): string | undefined {
+  return text
+    .trim()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .pop();
 }
 
 /** The port and running version in the setup's JSON result, when they are valid. */

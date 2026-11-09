@@ -2,7 +2,6 @@ import { useState } from "react";
 import { LoaderCircleIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
 
 /**
  * Sets the Wisp server up on the machine behind an SSH connection, by running
@@ -54,17 +53,17 @@ export function InstallServerAction({
         >
           {mode === "update" ? (
             <p className="m-0 text-xs leading-relaxed">
-              Wisp will connect to {host} over SSH and run the setup of <code>{WISP_SERVER_PACKAGE}</code> there to
-              update the server in <code>~/.local/lib/wisp-server</code> to this app&apos;s version, then reconnect.
-              Wisps, conversations and the master key in <code>~/.config/wisp</code> are kept. Anything a Wisp is doing
-              on the server right now is interrupted.
+              Wisp will connect to {host} over SSH, download this app&apos;s version of the Wisp server, check it, and
+              run its setup to update the server in <code>~/.local/lib/wisp-server</code>, then reconnect. Wisps,
+              conversations and the master key in <code>~/.config/wisp</code> are kept. Anything a Wisp is doing on the
+              server right now is interrupted.
             </p>
           ) : (
             <p className="m-0 text-xs leading-relaxed">
-              Wisp will connect to {host} over SSH and run the setup of <code>{WISP_SERVER_PACKAGE}</code> there. It
-              installs the server in <code>~/.local/lib/wisp-server</code>, creates a master key in{" "}
-              <code>~/.config/wisp</code>, and starts a systemd user service. The machine needs Node.js 22.19 or later
-              and npm in the PATH of non-interactive SSH commands, and internet access.
+              Wisp will connect to {host} over SSH, download the Wisp server with Node.js included, and run its setup
+              there. It installs the server in <code>~/.local/lib/wisp-server</code>, creates a master key in{" "}
+              <code>~/.config/wisp</code>, and starts a systemd user service. The machine needs Linux on x64 or arm64
+              with glibc 2.28 or later, curl or wget, and access to github.com.
             </p>
           )}
           <div className="flex flex-wrap gap-2">

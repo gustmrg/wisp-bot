@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { APP_METADATA } from "@/config/app-metadata";
-import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
 
 /** Compares dotted version numbers; anything after a `-` is ignored. */
 export function compareVersions(left: string, right: string): number {
@@ -61,7 +60,8 @@ export function UpdateServerDialog({
           <h2 className="m-0 mb-1.5 text-sm font-semibold">What happens</h2>
           <ul className="m-0 flex flex-col gap-1 pl-4">
             <li>
-              Wisp runs the setup of <code>{WISP_SERVER_PACKAGE}</code> on {host} over SSH, then reconnects.
+              Wisp downloads Wisp server {appVersion} on {host} over SSH, checks it, and runs its setup, then
+              reconnects.
             </li>
             <li>
               <strong className="font-medium">Kept:</strong> Wisps, conversations and the master key in{" "}
