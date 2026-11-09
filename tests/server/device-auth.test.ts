@@ -27,6 +27,7 @@ async function setup() {
   return {
     directory,
     store,
+    clock: () => now,
     auth: new DeviceAuth(store, () => now),
     advance: (ms: number) => {
       now += ms;
@@ -132,14 +133,14 @@ describe("DeviceAuth", () => {
   });
 
   it("keeps devices across restarts but requires a refresh for access", async () => {
-    const { auth, directory, store } = await setup();
+    const { auth, clock, directory, store } = await setup();
     const credentials = auth.pair(auth.createPairingCode().code, "Desktop");
     store.close();
     stores.splice(stores.indexOf(store), 1);
     const reopened = new ServerStore(directory);
     stores.push(reopened);
     expect(reopened.serverId).toBe(store.serverId);
-    const restarted = new DeviceAuth(reopened);
+    const restarted = new DeviceAuth(reopened, clock);
     expect(status(() => restarted.authenticate(credentials.accessToken))).toBe(401);
     expect(restarted.refresh(credentials.refreshToken).deviceId).toBe(credentials.deviceId);
   });
