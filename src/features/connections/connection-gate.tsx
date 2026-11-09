@@ -421,6 +421,14 @@ function ReconnectDetails({ view, now }: { view: ConnectionsView; now: number })
   );
 }
 
+/** How the banner says an update ended; a confirmed one shows no banner. */
+const UPDATE_OUTCOMES: Record<Exclude<ServerUpdateView["state"], "running">, string> = {
+  confirmed: "finished",
+  failed: "failed",
+  interrupted: "was interrupted",
+  "rolled-back": "failed, and the previous version was restored",
+};
+
 /**
  * The server speaks this app's protocol, but some features may differ until
  * both run the same version; or the last update this app started on it did
@@ -442,7 +450,7 @@ function VersionMismatchBanner({
   const appVersion = APP_METADATA.version;
   const serverIsOlder = compareVersions(serverVersion, appVersion) < 0;
   const profile = activeProfile(view);
-  const updateFailed = update?.state === "failed" || update?.state === "interrupted";
+  const updateFailed = update?.state === "failed" || update?.state === "interrupted" || update?.state === "rolled-back";
   // An SSH server can be updated right here, after the person confirms.
   const canUpdate =
     (serverIsOlder || updateFailed) &&
@@ -457,7 +465,7 @@ function VersionMismatchBanner({
   const text = update
     ? update.state === "running"
       ? `Updating ${activeName(view)} to ${update.targetVersion} is still running on the server.`
-      : `Updating ${activeName(view)} to ${update.targetVersion} ${update.state === "interrupted" ? "was interrupted" : "failed"}${update.message ? `: ${update.message}` : "."}`
+      : `Updating ${activeName(view)} to ${update.targetVersion} ${UPDATE_OUTCOMES[update.state]}${update.message ? `: ${update.message}` : "."}`
     : `${activeName(view)} runs Wisp server ${serverVersion}, ${serverIsOlder ? "older" : "newer"} than this app (${appVersion}). ${advice}`;
   return (
     <div

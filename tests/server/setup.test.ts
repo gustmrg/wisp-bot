@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { SERVER_ARCHIVE_MANIFEST } from "../../shared/server-package.js";
 import { readUpdateRecord } from "../../server/update-record.js";
+import { readJournal } from "../../server/update-transaction.js";
 import {
   describeSetup,
   findServerArchive,
@@ -69,7 +71,8 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
         // The directory of the running Node.js comes first.
         expect(env.PATH).toMatch(/\/bin:\/usr\/bin$/);
       }
-      if (command === "systemctl" && args.includes("restart")) {
+      if (command === "systemctl" && args.includes("stop")) active = false;
+      if (command === "systemctl" && (args.includes("restart") || args.includes("start"))) {
         active = true;
         const link = await readlink(paths.current).catch(() => undefined);
         running = link
@@ -98,6 +101,7 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
         : { name: "pdf", ok: false, error: "canvas.node: cannot open shared object" },
     ],
     pid: 4242,
+    freeSpace: async () => 10 * 1024 ** 3,
     // This setup, and another one that runs.
     isProcessAlive: (pid) => pid === 4242 || pid === 5000,
     now: () => new Date("2026-11-09T12:00:00.000Z"),
@@ -668,5 +672,79 @@ describe("the update record", () => {
   it("refuses an update ID that is not a UUID, since it reaches a remote shell", async () => {
     const { host } = await machine();
     await expect(runSetup({ ...options, updateId: "x; rm -rf ~" }, host)).rejects.toThrow("must be a UUID");
+  });
+});
+
+describe("updating from one archive to another, with a rollback", () => {
+  /** A machine whose service ran 1.3.0 from its archive, with data in its data directory. */
+  async function runningArchive(respond?: Parameters<typeof machine>[0]) {
+    const running = await machine(respond);
+    await runSetup({ ...options, pair: false }, { ...running.host, archive: await archiveOf("1.3.0") });
+    const data = running.paths.defaultDataDirectory;
+    await mkdir(path.join(data, "backend"), { recursive: true });
+    await writeFile(path.join(data, "backend/conversations.sqlite"), "data of 1.3.0");
+    running.calls.length = 0;
+    return { ...running, data };
+  }
+  const conversations = (data: string) => readFile(path.join(data, "backend/conversations.sqlite"), "utf8");
+
+  it("stops the server, has the new version open the data, then commits and starts it", async () => {
+    const { host, paths, calls, data } = await runningArchive();
+    const result = await runSetup(
+      { ...options, pair: false, updateId: UPDATE_ID },
+      { ...host, archive: await archiveOf("1.4.0") },
+    );
+    expect(result).toMatchObject({ version: "1.4.0", service: "restarted", runningVersion: "1.4.0" });
+    const target = path.join(paths.versionsDir, "1.4.0");
+    const stop = calls.indexOf("systemctl --user stop wisp");
+    const trial = calls.indexOf(
+      `${target}/runtime/node ${target}/app/server/cli.js prepare-data --data-dir ${data} --key-file ${paths.keyFile}`,
+    );
+    const start = calls.indexOf("systemctl --user restart wisp");
+    expect(stop).toBeGreaterThanOrEqual(0);
+    expect(trial).toBeGreaterThan(stop);
+    expect(start).toBeGreaterThan(trial);
+    expect(await readlink(paths.current)).toBe("versions/1.4.0");
+    expect(await readJournal(data)).toBeUndefined();
+    expect(await readdir(data)).not.toContain("update-snapshots");
+  });
+
+  it("restores the data and the previous version when the new one cannot open the data", async () => {
+    let data = "";
+    const { host, paths, calls, ...running } = await runningArchive((command, args) => {
+      if (!args.includes("prepare-data")) return {};
+      // Halfway through its upgrade, the new version fails.
+      writeFileSync(path.join(data, "backend/conversations.sqlite"), "half upgraded by 1.4.0");
+      return { code: 1, stderr: "Error: no such column: wisp_id\n" };
+    });
+    data = running.data;
+    await expect(
+      runSetup({ ...options, pair: false, updateId: UPDATE_ID }, { ...host, archive: await archiveOf("1.4.0") }),
+    ).rejects.toThrow(
+      "Wisp server 1.4.0 could not open the data, so 1.3.0 and its data were restored: Error: no such column: wisp_id",
+    );
+    expect(await conversations(data)).toBe("data of 1.3.0");
+    expect(await readlink(paths.current)).toBe("versions/1.3.0");
+    expect(calls).toContain("systemctl --user start wisp");
+    expect(calls.some((call) => call.includes("restart"))).toBe(false);
+    expect(await readJournal(data)).toBeUndefined();
+    expect(JSON.parse(await readFile(paths.updateRecord, "utf8"))).toMatchObject({
+      id: UPDATE_ID,
+      state: "rolled-back",
+      fromVersion: "1.3.0",
+      targetVersion: "1.4.0",
+    });
+  });
+
+  it("stops nothing when there is no room for a copy of the data", async () => {
+    const { host, paths, calls } = await runningArchive();
+    await expect(
+      runSetup(
+        { ...options, pair: false },
+        { ...host, freeSpace: async () => 1024, archive: await archiveOf("1.4.0") },
+      ),
+    ).rejects.toThrow(/Updating needs \d+ MB free in .* to keep a copy of the data, and 1 MB are free/);
+    expect(calls.some((call) => call.includes("stop"))).toBe(false);
+    expect(await readlink(paths.current)).toBe("versions/1.3.0");
   });
 });

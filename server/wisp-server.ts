@@ -19,6 +19,7 @@ import { createHttpApi, OWNER_PRINCIPAL_ID, type HttpApi, type OperationListener
 import { InstanceLock } from "./instance-lock.js";
 import { openOAuthRelay } from "./oauth-relay.js";
 import { ServerStore } from "./server-store.js";
+import { recoverTransaction } from "./update-transaction.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 // Agents get this long to settle their last turn on shutdown.
@@ -90,6 +91,14 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     for (const step of cleanup.reverse()) await step();
   };
   try {
+    // An update stopped halfway is rolled back before anything opens the data (ADR 046).
+    const recovered = await recoverTransaction(options.dataDirectory);
+    if (recovered) {
+      options.logger.warn("update_transaction_recovered", {
+        outcome: recovered.outcome,
+        targetVersion: recovered.journal.targetVersion,
+      });
+    }
     const store = new ServerStore(options.dataDirectory);
     cleanup.push(() => store.close());
     const auth = new DeviceAuth(store, options.now);

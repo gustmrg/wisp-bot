@@ -57,8 +57,9 @@ answers at the target version.**
   though the app reconnected.
 - The record describes the last setup only; a later setup run by hand
   replaces it, and the app then judges by the version.
-- Restoring the previous version and data when the new one fails to start is
-  left to SWE-316.
+- Restoring the previous version and data when the new one cannot open the
+  data is [ADR 046](046-rolling-back-failed-server-updates.md), recorded as
+  `rolled-back`.
 
 ## Rejected alternatives
 

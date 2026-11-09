@@ -868,6 +868,18 @@ describe("desktop connections", () => {
       expect((await commands()).filter((command) => command.includes("setup --json"))).toHaveLength(1);
     });
 
+    it("says when the server rolled an update back to the previous version", async () => {
+      const { app, ssh, update } = await updatable();
+      await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+      process.env.FAKE_SSH_INSTALL = "rolled-back";
+      process.env.FAKE_SSH_UPDATE = "rolled-back";
+      expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id })).toMatchObject({ ok: false });
+      expect(await update()).toMatchObject({
+        state: "rolled-back",
+        message: expect.stringContaining("so 0.9.0 and its data were restored"),
+      });
+    });
+
     it("does not take a reconnect as success when the server still runs another version", async () => {
       const { app, ssh, update } = await updatable("0.9.0");
       process.env.FAKE_SSH_UPDATE = "completed";

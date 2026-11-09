@@ -23,12 +23,22 @@ export interface ServerUpdateRecord {
 
 /**
  * accepted: the setup started. preparing: it installs and checks the target
- * version; the running server is untouched. activating: it restarts the
- * service on the target version. completed: the server answered at the target
- * version. failed: the setup stopped with an error. interrupted: its process
- * ended before finishing, for example when the machine restarted.
+ * version; the running server is untouched. activating: it stops the server,
+ * keeps a copy of its data, opens the data with the target version, and
+ * starts the service on it. completed: the server answered at the target
+ * version. failed: the setup stopped with an error. rolled-back: the target
+ * version could not open the data, so the copy and the previous version were
+ * restored (ADR 046). interrupted: its process ended before finishing, for
+ * example when the machine restarted.
  */
-export type ServerUpdateState = "accepted" | "preparing" | "activating" | "completed" | "failed" | "interrupted";
+export type ServerUpdateState =
+  | "accepted"
+  | "preparing"
+  | "activating"
+  | "completed"
+  | "failed"
+  | "rolled-back"
+  | "interrupted";
 
 export const UNFINISHED_UPDATE_STATES: ReadonlySet<ServerUpdateState> = new Set([
   "accepted",
@@ -45,6 +55,7 @@ const STATES = new Set<ServerUpdateState>([
   "activating",
   "completed",
   "failed",
+  "rolled-back",
   "interrupted",
 ]);
 

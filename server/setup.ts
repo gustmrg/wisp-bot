@@ -30,9 +30,23 @@ import { type ServerUpdateRecord, UNFINISHED_UPDATE_STATES, UPDATE_ID_PATTERN } 
 import { adminRequest } from "./admin.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
 import { checkRuntime, type RuntimeCheck } from "./runtime-check.js";
+import { InstanceLock } from "./instance-lock.js";
 import { isProcessAlive, readUpdateRecord, writeUpdateRecord } from "./update-record.js";
+import {
+  commitTransaction,
+  coveredFiles,
+  freeSpace,
+  recoverTransaction,
+  restoreSnapshot,
+  snapshotSpace,
+  takeSnapshot,
+} from "./update-transaction.js";
 
 const HEALTH_TIMEOUT_MS = 30_000;
+/** How long the new version may take to open the data in an update, migrations included. */
+const PREPARE_TIMEOUT_MS = 10 * 60_000;
+/** How long to wait for the data directory's lock while the server it belonged to exits. */
+const LOCK_TIMEOUT_MS = 30_000;
 const NPM_TIMEOUT_MS = 10 * 60_000;
 const SERVICE_NAME = "wisp";
 const DEFAULT_PORT = 8787;
@@ -117,6 +131,8 @@ export interface SetupHost {
   checkRuntime(): Promise<RuntimeCheck[]>;
   pid: number;
   isProcessAlive(pid: number): boolean;
+  /** Free bytes on the file system of `directory`. */
+  freeSpace(directory: string): Promise<number>;
   now(): Date;
   sleep(ms: number): Promise<void>;
   progress(message: string): void;
@@ -214,6 +230,7 @@ export function systemHost(version: string, progress: (message: string) => void)
     checkRuntime,
     pid: process.pid,
     isProcessAlive,
+    freeSpace,
     now: () => new Date(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     progress,
@@ -295,11 +312,17 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     });
     return { ...result, updateId: record.id };
   } catch (error) {
-    await track({ state: "failed", error: error instanceof Error ? error.message : "The setup failed." }).catch(
-      () => undefined,
-    );
+    await track({
+      state: error instanceof RolledBackError ? "rolled-back" : "failed",
+      error: error instanceof Error ? error.message : "The setup failed.",
+    }).catch(() => undefined);
     throw error;
   }
+}
+
+/** The new version could not open the data; the previous version and its data were restored. */
+export class RolledBackError extends Error {
+  override name = "RolledBackError";
 }
 
 async function setUp(
@@ -343,7 +366,7 @@ async function setUp(
       );
     }
     version = host.archive.manifest.version;
-    changed = (await installArchive(paths, host.archive, host, stopIfCancelled)) || changed;
+    await installArchive(paths, host.archive, host, stopIfCancelled);
   } else {
     const installed = await installedVersion(paths.installDir);
     const spec = options.packageSpec ?? `${WISP_SERVER_PACKAGE}@${host.version}`;
@@ -427,6 +450,16 @@ async function setUp(
     web,
     warnings,
   };
+  // Another archive version ran on this data: switching to this one is a
+  // transaction that can be rolled back. Otherwise `current` moves now.
+  const transaction =
+    host.archive !== undefined &&
+    options.service &&
+    linked !== undefined &&
+    linked !== version &&
+    (await coveredFiles(dataDirectory)).length > 0;
+  if (host.archive && !transaction) changed = (await pointCurrentAt(paths, version)) || changed;
+
   if (!options.service) {
     return {
       ...base,
@@ -467,6 +500,20 @@ async function setUp(
   let service: SetupResult["service"] = "unchanged";
   let runningVersion: string | undefined;
   await track({ state: "activating", targetVersion: version });
+  if (transaction && linked) {
+    await updateWithRollback({
+      host,
+      paths,
+      systemctl,
+      dataDirectory,
+      keyFile,
+      version,
+      fromVersion: linked,
+      id: options.updateId ?? `${host.pid}-${host.now().getTime()}`,
+      wasActive,
+    });
+    changed = true;
+  }
   try {
     if (!wasActive || changed) {
       host.progress(wasActive ? "Restarting the service…" : "Starting the service…");
@@ -566,18 +613,113 @@ export function describeSetup(result: SetupResult): string {
 }
 
 /**
+ * Moves the service from the archive version it ran to this one as a
+ * transaction over its data (ADR 046). With enough free space for a copy of
+ * the data, it stops the service, snapshots the data under the data
+ * directory's lock, and has the new version open the data in a process of
+ * its own, which upgrades the databases without starting anything. If that
+ * works, `current` moves to the new version and the transaction commits;
+ * otherwise the snapshot is restored, the previous version starts again, and
+ * this throws `RolledBackError`. Interrupted at any point, the journal in the
+ * data directory lets the next setup or server start finish the rollback.
+ */
+async function updateWithRollback(update: {
+  host: SetupHost;
+  paths: ReturnType<typeof setupPaths>;
+  systemctl: (...args: string[]) => Promise<CommandResult>;
+  dataDirectory: string;
+  keyFile: string;
+  version: string;
+  fromVersion: string;
+  id: string;
+  wasActive: boolean;
+}): Promise<void> {
+  const { host, paths, systemctl, dataDirectory, keyFile, version, fromVersion, id, wasActive } = update;
+  const needed = await snapshotSpace(dataDirectory);
+  const available = await host.freeSpace(dataDirectory);
+  if (available < needed) {
+    throw new Error(
+      `Updating needs ${megabytes(needed)} free in ${dataDirectory} to keep a copy of the data, and ${megabytes(available)} are free. Free some space, then run the setup again.`,
+    );
+  }
+  const journal = { id, fromVersion, targetVersion: version };
+  host.progress(`Stopping Wisp server ${fromVersion} to update it…`);
+  if (wasActive) {
+    const stop = await systemctl("stop", SERVICE_NAME);
+    if (stop.code !== 0) throw new Error(explainSystemdFailure(stop));
+  }
+  // The server is down from here on: whatever happens, a version starts again.
+  let failure: string | undefined;
+  try {
+    await withLock(dataDirectory, host, async () => {
+      await recoverTransaction(dataDirectory);
+      await takeSnapshot(dataDirectory, { ...journal, step: "snapshotting" });
+    });
+    host.progress(`Opening the data with Wisp server ${version}…`);
+    const target = path.join(paths.versionsDir, version);
+    const trial = await host.run(
+      path.join(target, "runtime/node"),
+      [path.join(target, "app/server/cli.js"), "prepare-data", "--data-dir", dataDirectory, "--key-file", keyFile],
+      { ...host.env, WISP_UPDATE_TRANSACTION: id },
+      PREPARE_TIMEOUT_MS,
+    );
+    await withLock(dataDirectory, host, async () => {
+      if (trial.code === 0) {
+        // `current` moves before the commit: interrupted between the two, the
+        // new version starts, rolls back the uncommitted data, and upgrades it again.
+        await pointCurrentAt(paths, version);
+        await commitTransaction(dataDirectory);
+        return;
+      }
+      failure = trial.stderr.trim().split("\n").filter(Boolean).pop() ?? `exit code ${trial.code}`;
+      host.progress(`Wisp server ${version} could not open the data. Restoring ${fromVersion}…`);
+      await restoreSnapshot(dataDirectory, { ...journal, step: "trying" });
+    });
+  } catch (error) {
+    // The journal stays; the server that starts next finishes the rollback.
+    failure ??= error instanceof Error ? error.message : "The update stopped.";
+  }
+  if (failure === undefined) return;
+  if (wasActive) await systemctl("start", SERVICE_NAME);
+  throw new RolledBackError(
+    `Wisp server ${version} could not open the data, so ${fromVersion} and its data were restored: ${failure}`,
+  );
+}
+
+/** Runs `work` holding the data directory's lock, waiting for a server that is exiting to let go of it. */
+async function withLock<T>(dataDirectory: string, host: SetupHost, work: () => Promise<T>): Promise<T> {
+  let lock: InstanceLock | undefined;
+  for (let waited = 0; !lock; waited += 500) {
+    try {
+      lock = InstanceLock.acquire(dataDirectory);
+    } catch (error) {
+      if (waited >= LOCK_TIMEOUT_MS || !(error instanceof Error) || !/already using/.test(error.message)) throw error;
+      await host.sleep(500);
+    }
+  }
+  try {
+    return await work();
+  } finally {
+    lock.release();
+  }
+}
+
+function megabytes(bytes: number): string {
+  return `${Math.ceil(bytes / 1024 / 1024)} MB`;
+}
+
+/**
  * Copies the archive setup runs from into `versions/<version>`, unless that
- * version is there already, and points `current` at it. The copy goes into a
- * staging folder first and is renamed into place complete, so an interrupted
- * setup never leaves a partial version that looks installed. Reports whether
- * `current` changed, which means the service must restart.
+ * version is there already. The copy goes into a staging folder first and is
+ * renamed into place complete, so an interrupted setup never leaves a
+ * partial version that looks installed.
  */
 async function installArchive(
   paths: ReturnType<typeof setupPaths>,
   archive: ServerArchive,
   host: SetupHost,
   stopIfCancelled: () => void,
-): Promise<boolean> {
+): Promise<void> {
   const { version } = archive.manifest;
   const target = path.join(paths.versionsDir, version);
   const runningInstalled = path.resolve(archive.root) === path.resolve(target);
@@ -598,6 +740,10 @@ async function installArchive(
       throw error;
     }
   }
+}
+
+/** Points `current` at an installed version; reports whether it moved, which means the service must restart. */
+async function pointCurrentAt(paths: ReturnType<typeof setupPaths>, version: string): Promise<boolean> {
   const link = path.join("versions", version);
   if ((await readlink(paths.current).catch(() => undefined)) === link) return false;
   // A new link renamed over the old one, so `current` always points somewhere.

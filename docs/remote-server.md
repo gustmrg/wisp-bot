@@ -320,6 +320,41 @@ wispctl update-status          # how the last setup ended
 wispctl update-status --id ID  # only if it was that one; "unknown" otherwise
 ```
 
+### When an update fails to start
+
+Updating from one server archive to another is a transaction over the data
+directory, so a version that cannot open the data does not leave it half
+upgraded:
+
+1. Before stopping anything, the setup checks that there is room for a copy
+   of the data, and stops if not.
+2. It stops the service, and copies the data the new version may change into
+   `update-snapshots/` in the data directory.
+3. The new version opens the data in a process of its own: it upgrades the
+   databases and loads every store, but starts nothing. No Wisp runs, no
+   queued or scheduled message is sent, no job starts, and nothing is fetched
+   or changed in containers.
+4. If that works, `current` points at the new version, the copy is deleted,
+   and the service starts on it. If not, within 10 minutes, the copy is put
+   back, the previous version starts again, and the update is recorded as
+   rolled back with the reason.
+
+The copy and its rollback cover `server.sqlite` (identity and paired
+devices), `backend/conversations.sqlite` (conversations, Wisps, jobs, memory
+and settings) with their journals, and the settings and credential files in
+`backend/`. They do not cover workspaces, agent sessions, logs, the tool audit
+log, or containers and their images, which starting a version does not
+change. Nothing done outside the server, such as a message a provider
+received, is undone. After the new version starts, an update is not rolled
+back; install the previous archive's setup by hand only if its database
+layout can still read the data (see [Back up and restore](#back-up-and-restore)).
+
+The file `.update-transaction.json` in the data directory says how far an
+update got. If the machine or the setup stops halfway, the next setup or the
+next server start, whichever version it is, finishes the rollback before it
+opens the data. A server installed from npm, and the move from npm to an
+archive, update without a copy, as before.
+
 ### Settings
 
 `setup` writes `~/.config/wisp/server.env`, which the service reads. Edit it,

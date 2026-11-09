@@ -17,6 +17,8 @@ import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
 import { checkRuntime } from "./runtime-check.js";
 import { describeSetup, findServerArchive, runSetup, setupPaths, systemHost } from "./setup.js";
 import { isProcessAlive, readUpdateRecord } from "./update-record.js";
+import { prepareServerData, readJournal } from "./update-transaction.js";
+import { StructuredLogger } from "../backend/structured-logger.js";
 
 const HELP = `Usage: wispctl <command> [options]
 
@@ -191,6 +193,28 @@ export async function runCli(
         `Wisp server ${info.version} (Node.js ${info.node}, ${info.platform} ${info.arch}, ${info.install})${checks ? "\nThis machine can run it." : ""}\n`,
       );
       return;
+    }
+    case "prepare-data": {
+      // Only the setup runs this, inside an update it holds the data directory's lock for.
+      const id = process.env.WISP_UPDATE_TRANSACTION;
+      const journal = await readJournal(dataDirectory);
+      if (!id || journal?.id !== id || journal.step !== "trying") {
+        throw new Error("prepare-data runs only inside a server update.");
+      }
+      // The setup lets go of the lock while this runs; nothing else may open the data meanwhile.
+      const lock = InstanceLock.acquire(dataDirectory);
+      try {
+        await prepareServerData({
+          dataDirectory,
+          encryption: MasterKeyEncryption.fromFile(path.resolve(option("--key-file"))),
+          logger: new StructuredLogger({ info: () => undefined, warn: (event) => process.stderr.write(`${event}\n`) }),
+          appVersion: readAppVersion(),
+        });
+      } finally {
+        lock.release();
+      }
+      result = { prepared: true };
+      break;
     }
     case "update-status": {
       const record = await readUpdateRecord(setupPaths(os.homedir()).updateRecord, isProcessAlive);

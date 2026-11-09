@@ -153,12 +153,14 @@ export interface ConnectionStatus {
  *   the server could not be asked yet; nothing is started again by itself.
  * - confirmed: the server answers at the target version.
  * - failed: the setup failed, or the server still answers at another version.
+ * - rolled-back: the new version could not open the server's data, so the
+ *   previous version and its data were restored (ADR 046).
  * - interrupted: the setup's process ended before it finished.
  */
 export interface ServerUpdateView {
   id: string;
   targetVersion: string;
-  state: "running" | "confirmed" | "failed" | "interrupted";
+  state: "running" | "confirmed" | "failed" | "rolled-back" | "interrupted";
   message?: string;
 }
 

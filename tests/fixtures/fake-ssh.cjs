@@ -7,7 +7,7 @@
 // setup fail, FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped, and
 // FAKE_SSH_INSTALL=drop drops the connection while it runs. `wispctl
 // update-status` answers with a record in FAKE_SSH_UPDATE's state (completed,
-// failed, preparing, or interrupted), none when unset, or fails like a server
+// failed, rolled-back, preparing, or interrupted), none when unset, or fails like a server
 // too old to know the command with FAKE_SSH_UPDATE=old.
 // FAKE_SSH_ASK=hostkey|password|passphrase asks through SSH_ASKPASS like
 // OpenSSH does: the host key is trusted once in FAKE_SSH_KNOWN, the password
@@ -128,6 +128,12 @@ if (command.includes("authorized_keys")) {
     updatedAt: "2026-11-09T12:01:00.000Z",
     ...(state === "completed" ? { runningVersion: "1.0.0" } : {}),
     ...(state === "failed" ? { error: "The server did not answer on port 8787 within 30 seconds." } : {}),
+    ...(state === "rolled-back"
+      ? {
+          error:
+            "Wisp server 1.0.0 could not open the data, so 0.9.0 and its data were restored: no such column: wisp_id",
+        }
+      : {}),
   };
   process.stdout.write(`${JSON.stringify(state ? record : { state: "unknown" })}\n`);
   process.exit(0);
@@ -140,6 +146,10 @@ if (command.includes("authorized_keys")) {
       1,
     ],
     systemd: ["The systemd user session is not running (Failed to connect to bus).", 1],
+    "rolled-back": [
+      "Wisp server 1.0.0 could not open the data, so 0.9.0 and its data were restored: no such column: wisp_id",
+      1,
+    ],
   };
   connected();
   const outcome = outcomes[process.env.FAKE_SSH_INSTALL];

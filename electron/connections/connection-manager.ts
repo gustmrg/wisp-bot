@@ -385,14 +385,20 @@ export class ConnectionManager {
             updateId,
           );
         } catch (error) {
+          if (signal.aborted || !(error instanceof TransportError)) throw error;
+          if (!(error instanceof SetupOutcomeUnknownError)) {
+            // A setup that failed on the server says how in its record, such as a rollback.
+            if (error.failure !== "install") throw error;
+            const record = await this.options.readServerUpdate(profile, updateId).catch(() => undefined);
+            throw new SetupFailedError(error, record);
+          }
           // The answer was lost, not necessarily the update: the server's record says how it went.
-          if (!(error instanceof SetupOutcomeUnknownError) || signal.aborted) throw error;
           const record = await this.options.readServerUpdate(profile, updateId).catch(() => undefined);
-          if (record?.state !== "completed") throw new LostSetupError(error, record);
+          if (record?.state !== "completed") throw new SetupFailedError(error, record);
           outcome = record.runningVersion ? { version: record.runningVersion } : {};
         }
       } catch (error) {
-        const stillRunning = error instanceof LostSetupError && error.stillRunning;
+        const stillRunning = error instanceof SetupFailedError && error.stillRunning;
         const message = stillRunning
           ? `The update is still running on ${profile.host}. Wisp checks how it ended when it connects again.`
           : error instanceof Error
@@ -405,8 +411,8 @@ export class ConnectionManager {
           await store.setPendingUpdate(id, undefined);
           if (signal.aborted) this.setUpdate(id, undefined);
           else {
-            const state =
-              error instanceof LostSetupError && error.record?.state === "interrupted" ? "interrupted" : "failed";
+            const recorded = error instanceof SetupFailedError ? error.record?.state : undefined;
+            const state = recorded === "interrupted" || recorded === "rolled-back" ? recorded : "failed";
             this.setUpdate(id, { id: updateId, targetVersion, state, message });
           }
         }
@@ -471,7 +477,7 @@ export class ConnectionManager {
       if (record && record.state !== "completed") {
         view = {
           ...base,
-          state: record.state === "interrupted" ? "interrupted" : "failed",
+          state: record.state === "interrupted" || record.state === "rolled-back" ? record.state : "failed",
           message: record.error ?? "The update did not finish.",
         };
       } else if (runningVersion === undefined) {
@@ -751,15 +757,15 @@ function invalidResult(message: string): BackendResult<never> {
   return { ok: false, error: { code: "invalid_request", message, retryable: false } };
 }
 
-/** A setup whose answer was lost and that the server does not report as completed. */
-class LostSetupError extends TransportError {
+/** A setup that did not complete, with the server's record of it when it could be read. */
+class SetupFailedError extends TransportError {
   readonly stillRunning: boolean;
 
   constructor(
-    lost: SetupOutcomeUnknownError,
+    failure: TransportError,
     readonly record: ServerUpdateRecord | undefined,
   ) {
-    super(record?.error ?? lost.message, lost.failure ?? "install", lost.details);
+    super(record?.error ?? failure.message, failure.failure ?? "install", failure.details);
     this.stillRunning = record !== undefined && UNFINISHED_UPDATE_STATES.has(record.state);
   }
 }
