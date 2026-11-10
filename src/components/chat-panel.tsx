@@ -1,4 +1,13 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
 import type { ChatView, Message, Wisp, WispCollection } from "@/chat-data";
@@ -18,7 +27,7 @@ import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
-import { processStatesOf } from "@/components/message-steps";
+import { processStatesOf, type ProcessStates } from "@/components/message-steps";
 import { PendingMessagesBar } from "@/components/pending-messages-bar";
 import type { MessageQueueController } from "@/hooks/use-message-queue";
 import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
@@ -43,6 +52,24 @@ function deletedAuthor(id: string, name: string | undefined): Wisp {
     color: DELETED_WISP_COLOR,
   };
 }
+/** The same object for the same deleted author, as `MessageView` needs of its props. */
+function deletedAuthorOf(known: Map<string, Wisp>, id: string, name: string | undefined): Wisp {
+  const key = `${id}
+${name ?? ""}`;
+  let author = known.get(key);
+  if (!author) {
+    author = deletedAuthor(id, name);
+    known.set(key, author);
+  }
+  return author;
+}
+
+function sameProcessStates(left: ProcessStates, right: ProcessStates): boolean {
+  if (left.size !== right.size) return false;
+  for (const [processId, state] of left) if (right.get(processId) !== state) return false;
+  return true;
+}
+
 const unavailable = async () => "This server cannot do that. Update it first.";
 const NO_QUEUE = { update: unavailable, cancel: unavailable };
 const NO_SCHEDULE = { update: unavailable, cancel: unavailable, sendNow: unavailable };
@@ -274,7 +301,22 @@ function ChatPanel({
       ? messages.filter((message) => !(message.type === "incoming" && message.steps?.length && !message.text))
       : messages;
   const transcriptMessages = withDateDividers(visibleMessages, new Date(), timeZone);
-  const processStates = useMemo(() => processStatesOf(messages), [messages]);
+  // What a message is rendered with stays the same object until it changes, so a reply
+  // streaming in renders only itself (see `MessageView`).
+  const latestProcessStates = useMemo(() => processStatesOf(messages), [messages]);
+  const shownProcessStates = useRef(latestProcessStates);
+  if (!sameProcessStates(shownProcessStates.current, latestProcessStates)) {
+    shownProcessStates.current = latestProcessStates;
+  }
+  const processStates = shownProcessStates.current;
+  const handlers = useRef({ onAnswerPrompt, onRetry });
+  handlers.current = { onAnswerPrompt, onRetry };
+  const answerPrompt = useCallback(
+    (messageId: string | undefined, answer: string) => handlers.current.onAnswerPrompt(messageId, answer),
+    [],
+  );
+  const retry = useCallback((messageId: string | undefined) => handlers.current.onRetry(messageId), []);
+  const deletedAuthors = useRef(new Map<string, Wisp>());
   const working = status === "working";
   const attached = !transcript || isAttached(transcript);
   const targetMessageId = transcript?.targetMessageId;
@@ -615,7 +657,9 @@ function ChatPanel({
               // A reply whose Wisp is gone keeps the name it was written with.
               const authorDeleted = chat.kind === "circle" && Boolean(reply) && !participant;
               const author =
-                authorDeleted && reply?.authorId ? deletedAuthor(reply.authorId, reply.authorName) : participant;
+                authorDeleted && reply?.authorId
+                  ? deletedAuthorOf(deletedAuthors.current, reply.authorId, reply.authorName)
+                  : participant;
               const previousAuthor = previous?.type === "incoming" ? previous.authorId : undefined;
               const authorColor = author ? wispColor(author.name, author.color) : undefined;
               return (
@@ -634,8 +678,8 @@ function ChatPanel({
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     mentions={mentions}
                     fileMentions={chat.kind === "wisp"}
-                    onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
-                    onRetry={() => onRetry(message.id)}
+                    onAnswer={answerPrompt}
+                    onRetry={retry}
                     processStates={processStates}
                   />
                 </div>

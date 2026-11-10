@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon, LifeBuoyIcon } from "lucide-react";
 
 import type { Message, Wisp } from "@/chat-data";
@@ -28,8 +28,9 @@ interface MessageViewProps {
   mentions?: WispMentions;
   /** In a direct conversation, the user's `@` mentions of workspace files are set apart. */
   fileMentions?: boolean;
-  onAnswer?: (answer: string) => void;
-  onRetry?: () => void;
+  /** Called with the message's ID, so one handler serves every message and none renders again for it. */
+  onAnswer?: (messageId: string | undefined, answer: string) => void;
+  onRetry?: (messageId: string | undefined) => void;
   /** What is known of each background process the conversation's steps started. */
   processStates?: ProcessStates;
 }
@@ -83,7 +84,13 @@ function MessageTools({
   );
 }
 
-function MessageView({
+/**
+ * Renders again only when its own props change: a reply that streams in changes
+ * the transcript many times a second, and parsing every other message's Markdown
+ * each time is what made long conversations slow. Callers keep the props of a
+ * message that did not change identical.
+ */
+const MessageView = memo(function MessageView({
   message,
   dense = false,
   author,
@@ -101,6 +108,7 @@ function MessageView({
     message.type === "incoming" ? message.text : "",
     message.status,
   );
+  const retry = onRetry ? () => onRetry(message.id) : undefined;
   if (message.type === "incoming" && message.steps?.length && !message.text) {
     return (
       <div className="relative flex flex-col items-start">
@@ -161,7 +169,7 @@ function MessageView({
                   type="button"
                   key={option.key}
                   className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-2 py-[7px] text-left hover:border-ring hover:bg-muted"
-                  onClick={() => onAnswer?.(option.label)}
+                  onClick={() => onAnswer?.(message.id, option.label)}
                 >
                   <kbd className="inline-flex size-5 items-center justify-center rounded-[5px] bg-secondary text-2xs text-dim [font-family:inherit]">
                     {option.key}
@@ -184,7 +192,7 @@ function MessageView({
         {message.status === "failed" ? (
           <FailedNotice
             reason={message.type === "incoming" ? message.error?.message : undefined}
-            onRetry={message.retryable ? onRetry : undefined}
+            onRetry={message.retryable ? retry : undefined}
           />
         ) : (
           <>
@@ -262,14 +270,14 @@ function MessageView({
           {message.status === "failed" ? (
             <FailedNotice
               reason={outgoing ? undefined : message.error?.message}
-              onRetry={!outgoing && message.retryable ? onRetry : undefined}
+              onRetry={!outgoing && message.retryable ? retry : undefined}
             />
           ) : null}
         </div>
       ) : null}
     </div>
   );
-}
+});
 
 /**
  * Marks a message that failed, in the error colour so it stands apart from a

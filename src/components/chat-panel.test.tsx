@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,18 @@ import { ChatPanel, type ChatPanelProps } from "@/components/chat-panel";
 import type { MessageWindow } from "@/lib/message-windows";
 import { circleChatView, testWisp, wispChatView } from "@/test/chat-fixtures";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
+
+// Counts how often each text's Markdown is rendered, which is the costly part of showing a message.
+const markdownRenders = vi.hoisted(() => [] as string[]);
+vi.mock("@/components/markdown-view", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/markdown-view")>();
+  return {
+    MarkdownView: (props: Parameters<typeof actual.MarkdownView>[0]) => {
+      markdownRenders.push(props.text);
+      return createElement(actual.MarkdownView, props);
+    },
+  };
+});
 
 const ROW_HEIGHT = 40;
 const VIEWPORT_HEIGHT = 200;
@@ -54,6 +67,7 @@ class FakeResizeObserver {
 }
 
 beforeEach(() => {
+  markdownRenders.length = 0;
   viewportHeight = VIEWPORT_HEIGHT;
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
@@ -105,6 +119,24 @@ function renderPanel(held: MessageWindow | undefined, overrides: Partial<ChatPan
 }
 
 describe("ChatPanel transcript", () => {
+  it("renders only the reply that is streaming as its text arrives", async () => {
+    const user = userEvent.setup();
+    const earlier: Message = { id: "earlier", type: "incoming", text: "Earlier reply", status: "complete" };
+    const failed: Message = { id: "failed", type: "incoming", text: "Half", status: "failed", retryable: true };
+    const reply = (text: string): Message => ({ id: "reply", type: "incoming", text, status: "streaming" });
+    const { show } = renderPanel(transcript([earlier, failed, reply("Hel")]), { status: "working" });
+    const onRetry = vi.fn();
+
+    // Each piece of text arrives with new handlers, as the app passes them on every render.
+    show(transcript([earlier, failed, reply("Hello")]), { status: "working", onAnswerPrompt: vi.fn(), onRetry });
+
+    expect(markdownRenders.filter((text) => text === "Earlier reply")).toHaveLength(1);
+    expect(markdownRenders).toContain("Hello");
+    // A message that did not render again still reaches the latest handler.
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledWith("failed");
+  });
+
   it("shows tool execution only in the chat, then removes it when the reply starts", () => {
     const request: Message = { id: "request", type: "outgoing", text: "Search the web", status: "complete" };
     const reply: Message = { id: "reply", type: "incoming", text: "", status: "streaming" };

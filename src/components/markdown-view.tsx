@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -75,8 +75,11 @@ const markdownComponents: Components = {
   ),
 };
 
-/** Renders Markdown; given a circle's `mentions`, its prose's `@` mentions of members are set apart. */
-function MarkdownView({ text, mentions }: { text: string; mentions?: WispMentions }) {
+/**
+ * Renders Markdown; given a circle's `mentions`, its prose's `@` mentions of members are set apart.
+ * Parsing is the costly part, so the same text is not parsed again.
+ */
+const MarkdownView = memo(function MarkdownView({ text, mentions }: { text: string; mentions?: WispMentions }) {
   const { plugins, components } = useMemo(() => {
     if (!mentions?.members.length) return { plugins: [remarkGfm, remarkBreaks], components: markdownComponents };
     const withMentions: Components = {
@@ -98,6 +101,6 @@ function MarkdownView({ text, mentions }: { text: string; mentions?: WispMention
       {text}
     </ReactMarkdown>
   );
-}
+});
 
 export { MarkdownView };
