@@ -160,9 +160,8 @@ bodies stay JSON (see [ADR 010](decisions/010-wisp-entity.md#storage-layout)). T
 Wisps and conversations in memory as its read model, without their messages,
 and adopts a change only after its transaction commits. Messages stay in the
 database and are read a page at a time, so startup time and memory do not
-grow with history. Each conversation keeps its newest 10,000 messages; older
-ones leave the displayed transcript, while the Wisp's Pi session keeps its own
-full history. A database that cannot be read is set aside as
+grow with history. A conversation keeps every message: stored history has no
+limit. A database that cannot be read is set aside as
 `conversations.sqlite.corrupt-<time>` and a fresh store starts. One written by
 a newer app version, or by one older than v0.25.3, is left in place and the
 app refuses to start ([ADR 036](decisions/036-upgrade-floor.md)).
