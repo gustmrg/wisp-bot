@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Chat, CircleChat, Message, WispChat } from "../shared/conversations.js";
+import type { ChatSummary, CircleSummary, Message, WispSummary } from "../shared/conversations.js";
 import {
   applyWorkspaceAction,
   type ConversationRecord,
@@ -19,11 +19,11 @@ function wispRecord(id: string): WispRecord {
   };
 }
 
-function wispChat(id: string, overrides: Partial<WispChat> = {}): WispChat {
-  return { id, kind: "wisp", wispId: id, notifyOnUpdatesEnabled: true, preview: "Ready", messages: [], ...overrides };
+function wispChat(id: string, overrides: Partial<WispSummary> = {}): WispSummary {
+  return { id, kind: "wisp", wispId: id, notifyOnUpdatesEnabled: true, preview: "Ready", ...overrides };
 }
 
-function circle(id: string, memberIds: string[]): CircleChat {
+function circle(id: string, memberIds: string[]): CircleSummary {
   return {
     id,
     kind: "circle",
@@ -33,11 +33,10 @@ function circle(id: string, memberIds: string[]): CircleChat {
     memberIds,
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
-    messages: [],
   };
 }
 
-function record(chat: Chat): ConversationRecord {
+function record(chat: ChatSummary): ConversationRecord {
   return {
     chat,
     storageId: `workspace-${chat.id}`,
@@ -51,7 +50,7 @@ function record(chat: Chat): ConversationRecord {
 }
 
 /** Wisps with their own conversations, and the given circles. */
-function graph(wispIds: string[], circles: CircleChat[] = []): WorkspaceRecords {
+function graph(wispIds: string[], circles: CircleSummary[] = []): WorkspaceRecords {
   return {
     wisps: Object.fromEntries(wispIds.map((id) => [id, wispRecord(id)])),
     conversations: Object.fromEntries([
@@ -248,8 +247,13 @@ describe("workspace actions", () => {
   it("marks a conversation unread when a Wisp's reply or question arrives, not for the person's own messages", () => {
     const records = graph(["first"]);
     const append = (message: Message & { id: string }) =>
-      applyWorkspaceAction(records, { type: "append-message", conversationId: "first", message, updatedAt: "after" })
-        .records.conversations.first?.chat.unread;
+      applyWorkspaceAction(records, {
+        type: "append-message",
+        conversationId: "first",
+        message,
+        earlier: undefined,
+        updatedAt: "after",
+      }).records.conversations.first?.chat.unread;
 
     expect(append({ id: "reply", type: "incoming", text: "Done", status: "complete" })).toBe(true);
     expect(append({ id: "failed", type: "incoming", text: "Rate limited", status: "failed" })).toBe(true);
@@ -261,13 +265,18 @@ describe("workspace actions", () => {
 
   it("counts each reply and question once, and clears the count when read", () => {
     let records = graph(["first"]);
+    // What the repository reads from the database: the stored message an append replaces.
+    const stored = new Map<string, Message>();
     const append = (message: Message & { id: string }) => {
-      records = applyWorkspaceAction(records, {
+      const result = applyWorkspaceAction(records, {
         type: "append-message",
         conversationId: "first",
         message,
+        earlier: stored.get(message.id),
         updatedAt: "after",
-      }).records;
+      });
+      records = result.records;
+      stored.set(message.id, result.message!);
       return records.conversations.first?.chat;
     };
 
@@ -296,63 +305,64 @@ describe("workspace actions", () => {
       type: "append-message",
       conversationId: "first",
       message: { id: "reply", type: "incoming", text: "Done", status: "complete" },
+      earlier: undefined,
       updatedAt: "after",
     });
     expect(appended.records.conversations.first?.chat.unreadCount).toBe(2);
   });
 
-  it("upserts messages and treats a missing target as a no-op", () => {
+  it("returns the message an append stores and treats a missing target as a no-op", () => {
     const records = graph(["first"]);
     const appended = applyWorkspaceAction(records, {
       type: "append-message",
       conversationId: "first",
       message: { id: "message-1", type: "incoming", text: "Hello", authorId: "first" },
+      earlier: undefined,
       updatedAt: "after",
     });
-    const replaced = applyWorkspaceAction(appended.records, {
-      type: "append-message",
-      conversationId: "first",
-      message: { id: "message-1", type: "incoming", text: "Complete", authorId: "first" },
-      updatedAt: "later",
+    expect(appended.message).toEqual({
+      id: "message-1",
+      type: "incoming",
+      text: "Hello",
+      authorId: "first",
+      status: "complete",
     });
-    expect(replaced.records.conversations.first?.chat.messages).toEqual([
-      expect.objectContaining({ id: "message-1", text: "Complete", authorId: "first" }),
-    ]);
+    // The conversation keeps a summary: its preview and last activity, never the messages.
+    expect(appended.records.conversations.first?.chat).toMatchObject({ preview: "Hello", lastActivityAt: "after" });
+    expect(appended.records.conversations.first?.chat).not.toHaveProperty("messages");
     const missing = applyWorkspaceAction(records, {
       type: "append-message",
       conversationId: "missing",
       message: { id: "message-1", type: "incoming", text: "Ignored" },
+      earlier: undefined,
       updatedAt: "after",
     });
     expect(missing).toEqual({ records, status: "not_found" });
   });
 
   it("answers an existing prompt and reports a missing prompt", () => {
-    const records: WorkspaceRecords = {
-      ...graph(["first"]),
-      conversations: {
-        first: record(
-          wispChat("first", { messages: [{ id: "prompt-1", type: "prompt", question: "Continue?", options: [] }] }),
-        ),
-      },
-    };
+    const records = graph(["first"]);
     const answered = applyWorkspaceAction(records, {
       type: "answer-prompt",
       conversationId: "first",
-      messageId: "prompt-1",
+      prompt: { id: "prompt-1", type: "prompt", question: "Continue?", options: [] },
       answer: "yes",
       updatedAt: "after",
     });
-    expect(answered.records.conversations.first?.chat.messages[0]).toMatchObject({ answer: "yes" });
-    expect(
-      applyWorkspaceAction(records, {
-        type: "answer-prompt",
-        conversationId: "first",
-        messageId: "missing",
-        answer: "yes",
-        updatedAt: "after",
-      }).status,
-    ).toBe("prompt_not_found");
+    expect(answered.message).toMatchObject({ id: "prompt-1", answer: "yes" });
+    expect(answered.records.conversations.first?.updatedAt).toBe("after");
+    // No such message, or one that is not a question.
+    for (const prompt of [undefined, { id: "reply", type: "incoming", text: "Done" } as const]) {
+      expect(
+        applyWorkspaceAction(records, {
+          type: "answer-prompt",
+          conversationId: "first",
+          prompt,
+          answer: "yes",
+          updatedAt: "after",
+        }).status,
+      ).toBe("prompt_not_found");
+    }
   });
 
   it("does not link a replacement Wisp with the same display name to an old circle", () => {

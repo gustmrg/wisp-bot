@@ -250,9 +250,13 @@ Each step ships on its own and keeps every quality gate green.
    the sidebar time from `lastActivityAt`. The single-conversation channels and
    the push carry deltas, and the state gains `liveMessages`; the full-state
    view still carries transcripts, which the renderer no longer reads.
-3. **Remove full transcripts.** Messages leave `ConversationStateView`, pushes,
-   and startup, and the message cap is removed. Startup then reads only the
-   conversation list.
+3. **Remove full transcripts.** Messages leave startup, the backend's memory,
+   and the full-state view. Startup then reads only the conversation list, and
+   a conversation is kept as a `ChatSummary`. `ConversationStateView` still
+   gives each conversation an empty `messages` field, so an app from before
+   this step that connects to a newer server finds the field it expects. The
+   message cap stays in this step, enforced in SQLite.
+4. **Remove the message cap.**
 
 ## Consequences
 

@@ -8,12 +8,10 @@ import type {
 } from "../shared/contracts.js";
 import {
   assistantMessageId,
-  chatSummary,
   messageFailure,
-  type Chat,
   type ChatChanges,
+  type ChatSummary,
   type CircleChat,
-  type ChatCollection,
   type ConversationDelta,
   type ConversationStateView,
   type JobOrigin,
@@ -117,14 +115,13 @@ export class ConversationService {
     this.onSessionsEnding = options.onSessionsEnding;
   }
 
-  /** The member the decision model chose for each circle's current turn. */
   /** The members the decision model chose, for the turns each circle has running. */
   private readonly chosenMembers = new Map<string, Set<string>>();
 
   async start(model: ModelSelection | null): Promise<void> {
     this.model = model;
     await this.repository.load();
-    this.failUnansweredRequests();
+    await this.failUnansweredRequests();
     await this.registry.restore(this.agentContexts(), model);
   }
 
@@ -176,7 +173,10 @@ export class ConversationService {
     return {
       initialized: this.repository.isInitialized(),
       wisps: this.repository.readWisps(),
-      chats: this.withLiveMessages(this.repository.readChats()),
+      // Transcripts are read a page at a time; `messages` stays for apps that expect the field.
+      chats: Object.fromEntries(
+        Object.entries(this.repository.readChats()).map(([id, chat]) => [id, { ...chat, messages: [] }]),
+      ),
       statuses: this.registry.statuses(),
       liveMessages: Object.fromEntries(
         [...this.liveMessages].map(([conversationId, messages]) => [conversationId, [...messages.values()]]),
@@ -341,8 +341,8 @@ export class ConversationService {
    * Requests left without a reply when Wisp last stopped would show as queued
    * forever; they failed, and the person can retry them.
    */
-  private failUnansweredRequests(): void {
-    for (const { conversationId, messageId } of this.repository.listUnansweredRequests()) {
+  private async failUnansweredRequests(): Promise<void> {
+    for (const { conversationId, messageId } of await this.repository.listUnansweredRequests()) {
       this.persistRequestFailure(conversationId, messageId, {
         code: "aborted",
         message: "Wisp stopped before answering this message.",
@@ -407,12 +407,12 @@ export class ConversationService {
     }
   }
 
-  /** Replies in a Wisp's own conversation are the Wisp's; in a circle, the member's the event names. */
   /** Marks the reply of the member the decision model chose; a member it hands the task to was not chosen. */
   private chosenMark(conversationId: string, wispId?: string): { chosenAutomatically?: true } {
     return wispId && this.chosenMembers.get(conversationId)?.has(wispId) ? { chosenAutomatically: true } : {};
   }
 
+  /** Replies in a Wisp's own conversation are the Wisp's; in a circle, the member's the event names. */
   private authorOf(conversationId: string, wispId?: string): { authorId?: string; authorName?: string } {
     const chat = this.repository.readChat(conversationId);
     if (chat?.kind === "wisp") return this.author(chat.wispId);
@@ -510,9 +510,7 @@ export class ConversationService {
   private publishWisps(): void {
     this.onWispsChanged({
       wisps: this.repository.readWisps(),
-      chats: Object.fromEntries(
-        Object.entries(this.repository.readChats()).map(([id, chat]) => [id, chatSummary(chat)]),
-      ),
+      chats: this.repository.readChats(),
       statuses: this.registry.statuses(),
     });
   }
@@ -620,10 +618,6 @@ export class ConversationService {
   }
 
   /**
-   * One page of a transcript. Replies still streaming are overlaid by ID, and
-   * those not yet stored are added to a page that reaches the newest message.
-   */
-  /**
    * Adds a job run's message as the Wisp's own, unread and notifying like a
    * reply, and then to the Wisp's context once its current turn ends (ADR
    * 019). Resolves with the message's ID once it is saved.
@@ -679,6 +673,10 @@ export class ConversationService {
     this.publish(conversationId, changesOf(change));
   }
 
+  /**
+   * One page of a transcript. Replies still streaming are overlaid by ID, and
+   * those not yet stored are added to a page that reaches the newest message.
+   */
   async getMessagePage(request: MessagePageRequest): Promise<MessagePage> {
     const page = await this.repository.getMessagePage(request);
     const live = this.liveMessages.get(request.conversationId);
@@ -841,23 +839,6 @@ export class ConversationService {
       },
     });
   }
-
-  private withLiveMessages(chats: Readonly<ChatCollection>): ChatCollection {
-    const result: ChatCollection = { ...chats };
-    for (const [conversationId, live] of this.liveMessages) {
-      const chat = chats[conversationId];
-      if (!chat) continue;
-      const storedIds = new Set(chat.messages.flatMap(({ id }) => (id ? [id] : [])));
-      result[conversationId] = {
-        ...chat,
-        messages: [
-          ...chat.messages.map((message) => (message.id && live.has(message.id) ? live.get(message.id)! : message)),
-          ...[...live.values()].filter((message) => !message.id || !storedIds.has(message.id)),
-        ],
-      };
-    }
-    return result;
-  }
 }
 
 type MessageChanges = Partial<Pick<ConversationDelta, "added" | "updated">>;
@@ -866,6 +847,6 @@ function changesOf({ message, added }: MessageChange): MessageChanges {
   return added ? { added: [message] } : { updated: [message] };
 }
 
-function deltaOf(chat: Readonly<Chat>, changes: MessageChanges): ConversationDelta {
-  return { chat: chatSummary(chat), added: changes.added ?? [], updated: changes.updated ?? [] };
+function deltaOf(chat: Readonly<ChatSummary>, changes: MessageChanges): ConversationDelta {
+  return { chat, added: changes.added ?? [], updated: changes.updated ?? [] };
 }

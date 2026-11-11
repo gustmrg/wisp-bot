@@ -21,7 +21,7 @@ async function databasePath(): Promise<string> {
   return path.join(await mkdtemp(path.join(os.tmpdir(), "wisp-store-")), "conversations.sqlite");
 }
 
-function record(id: string, messages: Message[] = []): ConversationRecord {
+function record(id: string): ConversationRecord {
   return {
     chat: {
       id,
@@ -30,7 +30,6 @@ function record(id: string, messages: Message[] = []): ConversationRecord {
       notifyOnUpdatesEnabled: true,
       preview: "",
       lastActivityAt: "2026-09-01T00:00:00.000Z",
-      messages,
     },
     storageId: `${id}-workspace`,
     sessions: { [id]: { sessionId: `${id}-session`, piSessionId: null, piSessionFile: null } },
@@ -62,7 +61,6 @@ function circleRecord(id: string, memberIds: string[]): ConversationRecord {
       preview: "",
       unread: true,
       unreadCount: 1,
-      messages: [],
     },
     storageId: `${id}-workspace`,
     sessions: {},
@@ -77,13 +75,10 @@ function numbered(count: number): Message[] {
 
 async function storeWith(messageCount: number): Promise<ConversationStore> {
   const store = ConversationStore.open(await databasePath());
-  store.transaction(() =>
-    store.replaceAll({
-      initialized: true,
-      wisps: { one: wispRecord("one") },
-      conversations: { one: record("one", numbered(messageCount)) },
-    }),
-  );
+  store.transaction(() => {
+    store.replaceAll({ initialized: true, wisps: { one: wispRecord("one") }, conversations: { one: record("one") } });
+    store.putMessages("one", numbered(messageCount));
+  });
   return store;
 }
 
@@ -137,6 +132,25 @@ describe("ConversationStore pages", () => {
     const last = store.readPage("one", { page: "around", messageId: "m118" });
     expect(ids(last).at(-1)).toBe("m119");
     expect(last.newerCursor).toBeNull();
+  });
+
+  it("finds the person's messages still queued, and drops all but the newest messages on request", async () => {
+    const store = await storeWith(5);
+    store.transaction(() =>
+      store.putMessages("one", [
+        { id: "sent", type: "outgoing", text: "Done", status: "complete" },
+        { id: "waiting", type: "outgoing", text: "Still waiting", status: "queued" },
+        { id: "reply", type: "incoming", text: "Working", status: "queued" },
+      ]),
+    );
+
+    expect(store.readQueuedOutgoingMessages()).toEqual([{ conversationId: "one", messageId: "waiting" }]);
+
+    // Fewer than it holds: the oldest go. As many or more: nothing does.
+    store.transaction(() => store.keepNewestMessages("one", 8));
+    expect(ids(store.readPage("one", { page: "latest" }))).toHaveLength(8);
+    store.transaction(() => store.keepNewestMessages("one", 4));
+    expect(ids(store.readPage("one", { page: "latest" }))).toEqual(["m4", "sent", "waiting", "reply"]);
   });
 
   it("returns empty pages for empty conversations and missing targets", async () => {
@@ -222,20 +236,21 @@ describe("ConversationStore versions", () => {
     const records = {
       wisps: { one, two: wispRecord("two") },
       conversations: {
-        one: record("one", numbered(2)),
+        one: record("one"),
         two: { ...record("two"), sessions: {} },
         crew: circleRecord("crew", ["two", "one"]),
       },
     };
-    store.transaction(() => store.replaceAll({ initialized: true, ...records }));
+    store.transaction(() => {
+      store.replaceAll({ initialized: true, ...records });
+      store.putMessages("one", numbered(2));
+    });
 
+    // Records come back without their messages, which are read a page at a time.
     const stored = store.read();
     expect(stored.wisps).toEqual(records.wisps);
-    expect(stored.conversations).toEqual({
-      one: { ...records.conversations.one, chat: { ...records.conversations.one.chat, messages: numbered(2) } },
-      two: records.conversations.two,
-      crew: records.conversations.crew,
-    });
+    expect(stored.conversations).toEqual(records.conversations);
+    expect(store.readPage("one", { page: "latest" }).messages).toEqual(numbered(2));
 
     // A deleted Wisp takes its own conversation and leaves every circle.
     store.transaction(() => store.deleteWisp("one"));

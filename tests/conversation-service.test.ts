@@ -14,7 +14,7 @@ import { seedConversations } from "./helpers/seed-conversations.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import { PiEventTranslator } from "../backend/pi-event-translator.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
-import type { Chat, CircleChat, ConversationDelta, Wisp, WispsView } from "../shared/conversations.js";
+import type { Chat, CircleChat, ConversationDelta, Message, Wisp, WispsView } from "../shared/conversations.js";
 import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
 
 function chat(id: string, circle = false): Chat {
@@ -108,6 +108,11 @@ describe("ConversationService with a decision model", () => {
     await service.dispose();
   });
 });
+
+/** A conversation's newest messages as a device reads them: the stored ones, and replies still streaming. */
+async function transcript(service: ConversationService, conversationId: string): Promise<ReadonlyArray<Message>> {
+  return (await service.getMessagePage({ conversationId, page: "latest" })).messages;
+}
 
 describe("ConversationService", () => {
   it("keeps one managed agent per Wisp and disposes it before archiving its workspace", async () => {
@@ -319,9 +324,9 @@ describe("ConversationService", () => {
     registry.dispatch({ conversationId: "one", requestId: "one-b", text: "B" });
     registry.dispatch({ conversationId: "two", requestId: "two-a", text: "C" });
 
-    await vi.waitFor(() => {
+    await vi.waitFor(async () => {
       const snapshot = service.getState();
-      expect(snapshot.chats.one.messages).toContainEqual(
+      expect(await transcript(service, "one")).toContainEqual(
         expect.objectContaining({
           id: "one-a:assistant",
           status: "streaming",
@@ -329,15 +334,15 @@ describe("ConversationService", () => {
       );
       expect(snapshot.agentEventSequence).toBeGreaterThan(0);
     });
-    await vi.waitFor(() => {
-      const snapshot = service.getState();
-      expect(snapshot.chats.one.messages).toContainEqual(
+    await vi.waitFor(async () => {
+      const one = await transcript(service, "one");
+      expect(one).toContainEqual(
         expect.objectContaining({
           id: "one-a",
           status: "complete",
         }),
       );
-      expect(snapshot.chats.one.messages.filter(({ type }) => type === "incoming")).toEqual([
+      expect(one.filter(({ type }) => type === "incoming")).toEqual([
         expect.objectContaining({
           id: "one-a:assistant",
           text: "Reply:A",
@@ -352,7 +357,7 @@ describe("ConversationService", () => {
           createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         }),
       ]);
-      expect(snapshot.chats.two.messages).toContainEqual(
+      expect(await transcript(service, "two")).toContainEqual(
         expect.objectContaining({
           id: "two-a:assistant",
           text: "Reply:C",
@@ -539,8 +544,8 @@ describe("ConversationService", () => {
     await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Go", status: "queued" });
 
     registry.dispatch({ conversationId: "one", requestId: "request-1", text: "Go" });
-    await vi.waitFor(() =>
-      expect(service.getState().chats.one?.messages.at(-1)).toMatchObject({
+    await vi.waitFor(async () =>
+      expect((await transcript(service, "one")).at(-1)).toMatchObject({
         id: "request-1:assistant",
         status: "streaming",
       }),
@@ -573,7 +578,7 @@ describe("ConversationService", () => {
     await expect(
       service.appendMessage("one", { id: "request-2", type: "outgoing", text: "Mine", status: "queued" }),
     ).resolves.toMatchObject({ chat: { preview: "Mine" } });
-    expect(repository.getChats().one?.messages).toContainEqual(
+    expect(await transcript(service, "one")).toContainEqual(
       expect.objectContaining({ id: "request-1:assistant", text: "Real reply" }),
     );
     await service.dispose();
@@ -619,9 +624,43 @@ describe("ConversationService", () => {
     );
     expect(published.find((event) => event.type === "conversation_error")).not.toHaveProperty("requestId");
     // Still visible until restart.
-    expect(service.getState().chats.one?.messages).toContainEqual(
+    expect(await transcript(service, "one")).toContainEqual(
       expect.objectContaining({ id: "request-1:assistant", text: "Lost reply" }),
     );
+    await service.dispose();
+  });
+
+  it("fails the requests left unanswered when Wisp last stopped, and only those", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-unanswered-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await seedConversations(repository, { one: chat("one"), two: chat("two") });
+    await repository.appendMessage("one", { id: "answered", type: "outgoing", text: "A", status: "complete" });
+    await repository.appendMessage("one", { id: "answered:assistant", type: "incoming", text: "Done" });
+    await repository.appendMessage("one", { id: "waiting", type: "outgoing", text: "B", status: "queued" });
+    await repository.close();
+
+    const service = new ConversationService(
+      new ConversationRepository({ dataDirectory: directory }),
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await service.start({ providerId: "test", modelId: "test" });
+
+    await vi.waitFor(async () =>
+      expect(await transcript(service, "one")).toEqual([
+        expect.objectContaining({ id: "answered", status: "complete" }),
+        expect.objectContaining({ id: "answered:assistant", status: "complete" }),
+        expect.objectContaining({ id: "waiting", status: "failed" }),
+        expect.objectContaining({
+          id: "waiting:assistant",
+          status: "failed",
+          retryable: true,
+          error: { code: "aborted", message: "Wisp stopped before answering this message." },
+        }),
+      ]),
+    );
+    expect(await transcript(service, "two")).toEqual([]);
+    // The state lists the conversations without their messages, which are read a page at a time.
+    expect(service.getState().chats.one).toMatchObject({ id: "one", messages: [] });
     await service.dispose();
   });
 
@@ -654,8 +693,8 @@ describe("ConversationService", () => {
       { type: "conversation_error", conversationId: "two", requestId: "request-2", error },
     ] as const;
     events.forEach((event, index) => service.handleAgentEvent({ ...event, sequence: index + 1 }));
-    await vi.waitFor(() =>
-      expect(service.getState().chats.two?.messages).toContainEqual(
+    await vi.waitFor(async () =>
+      expect(await transcript(service, "two")).toContainEqual(
         expect.objectContaining({ id: "request-2:assistant", status: "failed" }),
       ),
     );
@@ -670,10 +709,10 @@ describe("ConversationService", () => {
     await restored.initialize();
     const failure = { code: "model_unavailable", message: "The provider is out of credits." };
     const { chats } = restored.getState();
-    expect(chats.one?.messages).toContainEqual(
+    expect(await transcript(restored, "one")).toContainEqual(
       expect.objectContaining({ id: "request-1:assistant", status: "failed", text: "Partial", error: failure }),
     );
-    expect(chats.two?.messages).toContainEqual(
+    expect(await transcript(restored, "two")).toContainEqual(
       expect.objectContaining({ id: "request-2:assistant", status: "failed", text: "", error: failure }),
     );
     // A reply that failed before writing anything previews why.
@@ -722,8 +761,8 @@ describe("ConversationService", () => {
     });
     translator.handle({ type: "agent_settled" });
 
-    await vi.waitFor(() =>
-      expect(service.getState().chats.one?.messages.at(-1)).toMatchObject({
+    await vi.waitFor(async () =>
+      expect((await transcript(service, "one")).at(-1)).toMatchObject({
         id: "request-1:assistant:2",
         status: "complete",
       }),
@@ -738,19 +777,20 @@ describe("ConversationService", () => {
     await restored.start({ providerId: "test", modelId: "test" });
     await restored.initialize();
     const one = restored.getState().chats.one!;
-    expect(one.messages.map((message) => [message.id, message.type === "incoming" ? message.text : ""])).toEqual([
+    const messages = await transcript(restored, "one");
+    expect(messages.map((message) => [message.id, message.type === "incoming" ? message.text : ""])).toEqual([
       ["request-1", ""],
       ["request-1:work", ""],
       ["request-1:assistant", "Found it."],
       ["request-1:work:2", ""],
       ["request-1:assistant:2", "Running the tests."],
     ]);
-    expect(one.messages[1]).toMatchObject({
+    expect(messages[1]).toMatchObject({
       type: "incoming",
       status: "complete",
       steps: [{ id: "a", type: "file_read", paths: ["a.ts"], status: "completed" }],
     });
-    expect(one.messages[3]).toMatchObject({
+    expect(messages[3]).toMatchObject({
       steps: [{ id: "b", type: "command_execution", command: "npm test", exitCode: 0, status: "completed" }],
     });
     // Only the reply's two parts are news, and the preview is its text.
@@ -856,8 +896,8 @@ it("persists a Wisp's fallback choice across restart, and the fallback badge on 
     messageId: "request-1:assistant",
     fallbackModel: "Backup",
   });
-  await vi.waitFor(() =>
-    expect(first.getState().chats.one?.messages).toContainEqual(
+  await vi.waitFor(async () =>
+    expect(await transcript(first, "one")).toContainEqual(
       expect.objectContaining({ id: "request-1:assistant", text: "Hi", fallbackModel: "Backup" }),
     ),
   );

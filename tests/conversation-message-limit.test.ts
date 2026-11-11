@@ -45,6 +45,13 @@ it("keeps the newest messages when a conversation reaches its limit", async () =
   const reloaded = new ConversationRepository({ dataDirectory: directory });
   await reloaded.load();
   for (const current of [repository, reloaded]) {
-    expect(current.getChats().first!.messages.map(({ id }) => id)).toEqual(["m1", "m2", "newest"]);
+    const { messages, olderCursor } = await current.getMessagePage({ conversationId: "first", page: "latest" });
+    expect(messages.map(({ id }) => id)).toEqual(["m1", "m2", "newest"]);
+    expect(olderCursor).toBeNull();
   }
+
+  // Saving a message again, as a reply does while it streams, removes nothing.
+  await repository.appendMessage("first", { id: "newest", type: "outgoing", text: "Still sends", status: "complete" });
+  const { messages } = await repository.getMessagePage({ conversationId: "first", page: "latest" });
+  expect(messages.map(({ id }) => id)).toEqual(["m1", "m2", "newest"]);
 });

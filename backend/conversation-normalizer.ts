@@ -2,7 +2,8 @@ import {
   type Chat,
   type ChatBase,
   type ChatChanges,
-  type ChatCollection,
+  type ChatSummary,
+  type ChatSummaryCollection,
   type Message,
   type MessageStatus,
   type JobOrigin,
@@ -299,28 +300,6 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   throw invalidRequest();
 }
 
-/**
- * Adds or replaces one message by ID. Stored messages were normalized when they
- * were written, so only the incoming message is validated rather than the whole
- * transcript on every append. At the per-conversation limit the oldest messages
- * are dropped: the transcript is display history, and the agent session keeps
- * its own full history.
- */
-export function upsertNormalizedMessage(
-  chat: Chat,
-  value: unknown,
-): { chat: Chat; message: Message; droppedOldest: number } {
-  const message = normalizeMessage(value);
-  if (!message.id) throw invalidRequest();
-  const index = chat.messages.findIndex(({ id }) => id === message.id);
-  if (index !== -1) {
-    const messages = chat.messages.map((candidate, candidateIndex) => (candidateIndex === index ? message : candidate));
-    return { chat: { ...chat, messages }, message, droppedOldest: 0 };
-  }
-  const droppedOldest = Math.max(0, chat.messages.length + 1 - CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation);
-  return { chat: { ...chat, messages: [...chat.messages.slice(droppedOldest), message] }, message, droppedOldest };
-}
-
 export function normalizeWisp(value: unknown): Wisp {
   const raw = asRecord(value);
   const color = raw.color === undefined ? undefined : storedColor(raw.color);
@@ -361,17 +340,25 @@ export function applyWispChanges(wisp: Wisp, changes: WispChanges): Wisp {
   return next;
 }
 
+/** A conversation a request carries whole, with the messages it starts with. */
 export function normalizeChat(value: unknown): Chat {
+  const raw = asRecord(value);
+  const summary = normalizeChatSummary(raw);
+  if (!Array.isArray(raw.messages) || raw.messages.length > CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation)
+    throw invalidRequest();
+  const messages = raw.messages.map((message, index) => normalizeMessage(message, `${summary.id}:message:${index}`));
+  return { ...summary, messages };
+}
+
+/** A conversation without its transcript, as the backend keeps it in memory; any `messages` are left out. */
+export function normalizeChatSummary(value: unknown): ChatSummary {
   const raw = asRecord(value);
   const id = normalizeConversationId(raw.id);
   if (typeof raw.notifyOnUpdatesEnabled !== "boolean") throw invalidRequest();
-  if (!Array.isArray(raw.messages) || raw.messages.length > CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation)
-    throw invalidRequest();
   const base = {
     id,
     notifyOnUpdatesEnabled: raw.notifyOnUpdatesEnabled,
     preview: string(raw.preview),
-    messages: raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
     ...unreadFields(raw),
     ...(raw.pinned === true ? { pinned: true } : {}),
     ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),
@@ -414,7 +401,10 @@ function unreadFields(raw: Record<string, unknown>): Pick<ChatBase, "unread" | "
  * Every Wisp has exactly one conversation of its own, and circles list only
  * existing Wisps, each once.
  */
-export function validateConversationGraph(chats: Readonly<ChatCollection>, wisps: Readonly<WispCollection>): void {
+export function validateConversationGraph(
+  chats: Readonly<ChatSummaryCollection>,
+  wisps: Readonly<WispCollection>,
+): void {
   for (const wisp of Object.values(wisps)) {
     if (chats[wisp.id]?.kind !== "wisp") throw invalidRequest();
   }

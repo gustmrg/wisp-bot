@@ -350,7 +350,8 @@ describe("ConversationRepository", () => {
       createdAt: "2026-08-31T23:10:00.000Z",
     });
 
-    const matching = repository.getChats().first?.messages.filter(({ id }) => id === "request-1:assistant");
+    const { messages } = await repository.getMessagePage({ conversationId: "first", page: "latest" });
+    const matching = messages.filter(({ id }) => id === "request-1:assistant");
     expect(matching).toEqual([
       expect.objectContaining({
         text: "Complete response",
@@ -681,7 +682,34 @@ describe("ConversationRepository", () => {
       modelId: "claude-sonnet-5",
     });
     expect(restarted.getChats().circle).toMatchObject({ memberIds: ["first"] });
-    expect(restarted.getChats().first?.messages.map(({ id }) => id)).toEqual(["first:message:0", "reply", "question"]);
+    const { messages } = await restarted.getMessagePage({ conversationId: "first", page: "latest" });
+    expect(messages.map(({ id }) => id)).toEqual(["first:message:0", "reply", "question"]);
+    expect(messages[2]).toMatchObject({ answer: "yes" });
+    // Conversations are held without their messages.
+    expect(restarted.getChats().first).not.toHaveProperty("messages");
+  });
+
+  it("opens a store that holds a message it cannot read, and leaves only that message out", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-unreadable-message-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await seedConversations(repository, { first: chat("first") });
+    await repository.appendMessage("first", { id: "reply", type: "incoming", text: "Done" });
+    await repository.close();
+    const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    db.prepare("UPDATE messages SET body = ? WHERE id = ?").run(
+      JSON.stringify({ id: "reply", type: "unknown" }),
+      "reply",
+    );
+    db.close();
+
+    const restarted = await reload(directory);
+
+    expect(restarted.didRecoverCorruptState()).toBe(false);
+    const { messages } = await restarted.getMessagePage({ conversationId: "first", page: "latest" });
+    expect(messages.map(({ id }) => id)).toEqual(["first:message:0"]);
+    // Writing the message again replaces what could not be read.
+    await restarted.appendMessage("first", { id: "reply", type: "incoming", text: "Done again" });
+    expect((await restarted.getMessage("first", "reply"))?.type).toBe("incoming");
   });
 
   it("preserves a database that is not a database and starts fresh", async () => {
