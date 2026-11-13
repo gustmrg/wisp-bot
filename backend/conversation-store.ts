@@ -692,14 +692,6 @@ export class ConversationStore {
     }
   }
 
-  /** Deletes all but a conversation's newest `keep` messages. */
-  keepNewestMessages(conversationId: string, keep: number): void {
-    this.statement(
-      `DELETE FROM messages WHERE conversation_id = ? AND seq <= (
-        SELECT seq FROM messages WHERE conversation_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?)`,
-    ).run(conversationId, conversationId, keep);
-  }
-
   /** The person's messages that were handed to a Wisp and never answered, oldest first. */
   readQueuedOutgoingMessages(): Array<{ conversationId: string; messageId: string }> {
     return this.db

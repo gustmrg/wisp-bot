@@ -58,7 +58,6 @@ import {
   renderMemoryForPrompt,
 } from "./memory/index.js";
 import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
-import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import {
   CIRCLE_CONFIG_DIRECTORY,
   CIRCLE_DECISION_USAGE_DIRECTORY,
@@ -1124,8 +1123,6 @@ export class ConversationRepository {
     await this.commit({ ...this.state, ...result.records }, (store) => {
       store.putConversation(record);
       store.putMessages(conversationId, [stored]);
-      // The transcript is display history, and the agent session keeps its own full history.
-      if (added) store.keepNewestMessages(conversationId, CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation);
       alsoWrite?.(store);
     });
     return { message: stored, added };

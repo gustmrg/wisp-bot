@@ -8,24 +8,23 @@ import { ConversationRepository } from "../backend/conversation-repository.js";
 import type { Message } from "../shared/conversations.js";
 import { seedConversations } from "./helpers/seed-conversations.js";
 
-const LIMIT = 3;
+const REQUEST_LIMIT = 3;
 
-/** A small limit: filling a conversation up to the real one takes seconds, spent only on setting up the test. */
+/** A small limit: reaching the real one takes seconds, spent only on setting up the test. */
 vi.mock("../backend/storage-policy.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../backend/storage-policy.js")>();
   return {
     ...original,
-    CONVERSATION_STORAGE_POLICY: { ...original.CONVERSATION_STORAGE_POLICY, maxMessagesPerConversation: 3 },
+    CONVERSATION_STORAGE_POLICY: { ...original.CONVERSATION_STORAGE_POLICY, maxMessagesPerRequest: 3 },
   };
 });
 
-it("keeps the newest messages when a conversation reaches its limit", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-message-limit-"));
-  const full: Message[] = Array.from({ length: LIMIT }, (_, index) => ({
-    id: `m${index}`,
-    type: "incoming",
-    text: `Message ${index}`,
-  }));
+function numbered(count: number): Message[] {
+  return Array.from({ length: count }, (_, index) => ({ id: `m${index}`, type: "incoming", text: `Message ${index}` }));
+}
+
+it("keeps every message of a conversation, however many one request may carry", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-history-"));
   const repository = new ConversationRepository({ dataDirectory: directory });
   await seedConversations(repository, {
     first: {
@@ -36,7 +35,7 @@ it("keeps the newest messages when a conversation reaches its limit", async () =
       description: "A test conversation",
       notifyOnUpdatesEnabled: true,
       preview: "Ready",
-      messages: full,
+      messages: numbered(REQUEST_LIMIT + 2),
     },
   });
 
@@ -46,12 +45,23 @@ it("keeps the newest messages when a conversation reaches its limit", async () =
   await reloaded.load();
   for (const current of [repository, reloaded]) {
     const { messages, olderCursor } = await current.getMessagePage({ conversationId: "first", page: "latest" });
-    expect(messages.map(({ id }) => id)).toEqual(["m1", "m2", "newest"]);
+    expect(messages.map(({ id }) => id)).toEqual(["m0", "m1", "m2", "m3", "m4", "newest"]);
     expect(olderCursor).toBeNull();
   }
 
-  // Saving a message again, as a reply does while it streams, removes nothing.
-  await repository.appendMessage("first", { id: "newest", type: "outgoing", text: "Still sends", status: "complete" });
-  const { messages } = await repository.getMessagePage({ conversationId: "first", page: "latest" });
-  expect(messages.map(({ id }) => id)).toEqual(["m1", "m2", "newest"]);
+  // One request is still bounded: a new circle may start with only so many messages.
+  const circle = {
+    id: "crew",
+    kind: "circle",
+    name: "Crew",
+    label: "",
+    description: "",
+    notifyOnUpdatesEnabled: true,
+    preview: "",
+    memberIds: ["first"],
+  };
+  await expect(repository.create({ ...circle, messages: numbered(REQUEST_LIMIT + 1) })).rejects.toMatchObject({
+    code: "invalid_request",
+  });
+  await expect(repository.create({ ...circle, messages: numbered(REQUEST_LIMIT) })).resolves.toBeUndefined();
 });

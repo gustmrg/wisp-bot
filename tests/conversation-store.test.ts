@@ -134,7 +134,7 @@ describe("ConversationStore pages", () => {
     expect(last.newerCursor).toBeNull();
   });
 
-  it("finds the person's messages still queued, and drops all but the newest messages on request", async () => {
+  it("finds the person's messages still queued", async () => {
     const store = await storeWith(5);
     store.transaction(() =>
       store.putMessages("one", [
@@ -145,12 +145,6 @@ describe("ConversationStore pages", () => {
     );
 
     expect(store.readQueuedOutgoingMessages()).toEqual([{ conversationId: "one", messageId: "waiting" }]);
-
-    // Fewer than it holds: the oldest go. As many or more: nothing does.
-    store.transaction(() => store.keepNewestMessages("one", 8));
-    expect(ids(store.readPage("one", { page: "latest" }))).toHaveLength(8);
-    store.transaction(() => store.keepNewestMessages("one", 4));
-    expect(ids(store.readPage("one", { page: "latest" }))).toEqual(["m4", "sent", "waiting", "reply"]);
   });
 
   it("returns empty pages for empty conversations and missing targets", async () => {

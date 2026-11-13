@@ -344,7 +344,7 @@ export function applyWispChanges(wisp: Wisp, changes: WispChanges): Wisp {
 export function normalizeChat(value: unknown): Chat {
   const raw = asRecord(value);
   const summary = normalizeChatSummary(raw);
-  if (!Array.isArray(raw.messages) || raw.messages.length > CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation)
+  if (!Array.isArray(raw.messages) || raw.messages.length > CONVERSATION_STORAGE_POLICY.maxMessagesPerRequest)
     throw invalidRequest();
   const messages = raw.messages.map((message, index) => normalizeMessage(message, `${summary.id}:message:${index}`));
   return { ...summary, messages };
