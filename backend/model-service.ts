@@ -748,6 +748,20 @@ export class ModelService {
     return this.isUsableCredential(selection.providerId, credential) ? selection : null;
   }
 
+  /** The provider and model names settings show for a selection; its IDs when the catalog no longer lists it. */
+  describeSelection(selection: ModelSelection): { provider: string; model: string } {
+    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
+      return {
+        provider: CLAUDE_CODE_PROVIDER_NAME,
+        model: claudeCodeModel(selection.modelId)?.name ?? selection.modelId,
+      };
+    }
+    return {
+      provider: this.runtime.getProvider(selection.providerId)?.name ?? selection.providerId,
+      model: this.runtime.getModel(selection.providerId, selection.modelId)?.name ?? selection.modelId,
+    };
+  }
+
   async validateConversationSelection(selection: ModelSelection): Promise<void> {
     this.assertValidSelection(selection);
     if (selection.providerId === CLAUDE_CODE_PROVIDER) {
