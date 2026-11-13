@@ -10,9 +10,9 @@ import type { ModelSelection, WispFallback } from "../shared/contracts.js";
 import type { CircleExecutionTarget } from "./execution-service.js";
 import { normalizeSelection, normalizeWispFallback } from "./ai-settings-store.js";
 import type {
-  Chat,
   ChatChanges,
-  ChatCollection,
+  ChatSummary,
+  ChatSummaryCollection,
   Message,
   MessagePage,
   MessagePageRequest,
@@ -38,6 +38,7 @@ import {
 } from "./conversation-agent.js";
 import {
   normalizeChat,
+  normalizeChatSummary,
   normalizeConversationId,
   normalizeMessage,
   normalizeWisp,
@@ -57,6 +58,7 @@ import {
   renderMemoryForPrompt,
 } from "./memory/index.js";
 import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
+import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import {
   CIRCLE_CONFIG_DIRECTORY,
   CIRCLE_DECISION_USAGE_DIRECTORY,
@@ -66,7 +68,7 @@ import {
 import { ARCHIVE_MANIFEST_FILE, type ArchiveManifest } from "../shared/storage.js";
 import {
   applyWorkspaceAction,
-  withLastActivity,
+  summaryWithLastActivity,
   type ConversationRecord,
   type ParticipantSession,
   type WispRecord,
@@ -89,7 +91,7 @@ function emptyState(): PersistedConversationState {
   return { initialized: false, wisps: {}, conversations: {} };
 }
 
-function chatsOf(records: Readonly<Record<string, ConversationRecord>>): ChatCollection {
+function chatsOf(records: Readonly<Record<string, ConversationRecord>>): ChatSummaryCollection {
   return Object.fromEntries(Object.values(records).map(({ chat }) => [chat.id, chat]));
 }
 
@@ -131,10 +133,12 @@ export interface ConversationRepositoryOptions {
 }
 
 /**
- * Conversations and their transcripts. The in-memory state is the read model;
- * SQLite is the durable store. Each mutation builds its next state, writes only
- * the rows it changed in one transaction, and adopts the next state only after
- * the commit succeeds, so a failed write never leaves memory and disk apart.
+ * Conversations and their transcripts. The in-memory state is the read model
+ * of the Wisps and conversations, without their messages; SQLite is the
+ * durable store, and messages are read from it on demand (ADR 006). Each
+ * mutation builds its next state, writes only the rows it changed in one
+ * transaction, and adopts the next state only after the commit succeeds, so a
+ * failed write never leaves memory and disk apart.
  */
 export class ConversationRepository {
   private readonly dataDirectory: string;
@@ -336,12 +340,12 @@ export class ConversationRepository {
     return Object.values(this.state.conversations).map((record) => structuredClone(record));
   }
 
-  getChats(): ChatCollection {
+  getChats(): ChatSummaryCollection {
     return Object.fromEntries(this.list().map(({ chat }) => [chat.id, chat]));
   }
 
   /** Uncloned stored chat; see `readChats`. */
-  readChat(conversationId: string): Readonly<Chat> | undefined {
+  readChat(conversationId: string): Readonly<ChatSummary> | undefined {
     return this.state.conversations[conversationId]?.chat;
   }
 
@@ -350,7 +354,7 @@ export class ConversationRepository {
    * the objects stay valid snapshots; callers must treat them as read-only.
    * Use this on hot paths that copy anyway (IPC serialization, validation).
    */
-  readChats(): Readonly<ChatCollection> {
+  readChats(): Readonly<ChatSummaryCollection> {
     return chatsOf(this.state.conversations);
   }
 
@@ -597,13 +601,12 @@ export class ConversationRepository {
       const timestamp = this.now().toISOString();
       const wispRecord = this.newWispRecord(wisp, modelOverride, timestamp);
       const conversation = this.newConversationRecord(
-        normalizeChat({
+        normalizeChatSummary({
           id: wisp.id,
           kind: "wisp",
           wispId: wisp.id,
           notifyOnUpdatesEnabled: options.notifyOnUpdatesEnabled,
           preview: NEW_WISP_PREVIEW,
-          messages: [],
         }),
         timestamp,
         [wisp.id],
@@ -648,14 +651,15 @@ export class ConversationRepository {
   /** Creates a circle. A Wisp's own conversation is created with the Wisp. */
   async create(chatValue: unknown): Promise<void> {
     await this.enqueue(async () => {
-      const chat = withLastActivity(normalizeChat(chatValue));
+      const created = normalizeChat(chatValue);
+      const chat = summaryWithLastActivity(created);
       if (chat.kind !== "circle") {
         throw new WispBackendError("invalid_request", "A Wisp's conversation is created with the Wisp.");
       }
       // Each member gets its session in the circle (ADR 011).
       const record = this.newConversationRecord(chat, this.now().toISOString(), chat.memberIds);
       const result = applyWorkspaceAction(this.state, { type: "create", record });
-      await this.adopt(result, { ensure: { conversations: [record] } });
+      await this.adopt(result, { ensure: { conversations: [record] }, messages: { [chat.id]: created.messages } });
     });
   }
 
@@ -763,7 +767,7 @@ export class ConversationRepository {
       throw new WispBackendError("not_found", "The message was not found.");
     }
     return {
-      messages: page.messages.map((message) => normalizeMessage(message)),
+      messages: page.messages.flatMap((message) => readableMessage(message) ?? []),
       olderCursor: page.olderCursor === null ? null : String(page.olderCursor),
       newerCursor: page.newerCursor === null ? null : String(page.newerCursor),
     };
@@ -776,12 +780,8 @@ export class ConversationRepository {
     const hits = await this.searchWorker.search(query);
     return hits.flatMap(({ conversationId, messageId, body }) => {
       if (!this.state.conversations[conversationId]) return [];
-      let message: Message;
-      try {
-        message = normalizeMessage(JSON.parse(body));
-      } catch {
-        return [];
-      }
+      const message = readableMessage(body);
+      if (!message) return [];
       return [
         {
           conversationId,
@@ -799,13 +799,13 @@ export class ConversationRepository {
       const result = applyWorkspaceAction(this.state, {
         type: "answer-prompt",
         conversationId,
-        messageId,
+        prompt: await this.storedMessage(conversationId, messageId),
         answer,
         updatedAt: this.now().toISOString(),
       });
       this.throwForActionStatus(result.status);
       const record = result.records.conversations[conversationId]!;
-      const prompt = record.chat.messages.find(({ id }) => id === messageId)!;
+      const prompt = result.message!;
       await this.commit({ ...this.state, ...result.records }, (store) => {
         store.putConversation(record);
         store.putMessages(conversationId, [prompt]);
@@ -1087,14 +1087,10 @@ export class ConversationRepository {
   }
 
   /** Messages the person sent that were handed to a Wisp but never answered, e.g. when Wisp stopped mid-turn. */
-  listUnansweredRequests(): Array<{ conversationId: string; messageId: string }> {
-    return Object.values(this.state.conversations).flatMap(({ chat }) =>
-      chat.messages.flatMap((message) =>
-        message.type === "outgoing" && message.status === "queued" && message.id
-          ? [{ conversationId: chat.id, messageId: message.id }]
-          : [],
-      ),
-    );
+  async listUnansweredRequests(): Promise<Array<{ conversationId: string; messageId: string }>> {
+    return (await this.openStore())
+      .readQueuedOutgoingMessages()
+      .filter(({ conversationId }) => this.state.conversations[conversationId]);
   }
 
   /** Waits for pending writes, then closes the database. A later write reopens it. */
@@ -1113,20 +1109,23 @@ export class ConversationRepository {
     alsoWrite?: (store: ConversationStore) => void,
   ): Promise<MessageChange> {
     const messageId = message.id ?? this.createId();
-    const added = (await this.openStore()).getMessage(conversationId, messageId) === undefined;
+    const earlier = await this.storedMessage(conversationId, messageId);
+    const added = earlier === undefined;
     const result = applyWorkspaceAction(this.state, {
       type: "append-message",
       conversationId,
       message: { ...message, id: messageId },
+      earlier,
       updatedAt: this.now().toISOString(),
     });
     this.throwForActionStatus(result.status);
     const record = result.records.conversations[conversationId]!;
-    const stored = record.chat.messages.find(({ id }) => id === messageId)!;
+    const stored = result.message!;
     await this.commit({ ...this.state, ...result.records }, (store) => {
       store.putConversation(record);
-      store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
       store.putMessages(conversationId, [stored]);
+      // The transcript is display history, and the agent session keeps its own full history.
+      if (added) store.keepNewestMessages(conversationId, CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation);
       alsoWrite?.(store);
     });
     return { message: stored, added };
@@ -1173,9 +1172,14 @@ export class ConversationRepository {
     });
   }
 
+  /** A message of a conversation that exists; an unknown conversation has none, and the action says so. */
+  private async storedMessage(conversationId: string, messageId: string): Promise<Message | undefined> {
+    return this.state.conversations[conversationId] ? this.lookupMessage(conversationId, messageId) : undefined;
+  }
+
   private async lookupMessage(conversationId: string, messageId: string): Promise<Message | undefined> {
     const body = (await this.openStore()).getMessage(conversationId, messageId);
-    return body === undefined ? undefined : normalizeMessage(body);
+    return body === undefined ? undefined : readableMessage(body);
   }
 
   /**
@@ -1184,7 +1188,11 @@ export class ConversationRepository {
    */
   private async adopt(
     result: WorkspaceActionResult,
-    options: { ensure?: { wisps?: ReadonlyArray<WispRecord>; conversations?: ReadonlyArray<ConversationRecord> } } = {},
+    options: {
+      ensure?: { wisps?: ReadonlyArray<WispRecord>; conversations?: ReadonlyArray<ConversationRecord> };
+      /** The messages new conversations start with, by conversation ID. */
+      messages?: Readonly<Record<string, ReadonlyArray<Message>>>;
+    } = {},
   ): Promise<void> {
     this.throwForActionStatus(result.status);
     if (result.status === "unchanged") return;
@@ -1198,7 +1206,9 @@ export class ConversationRepository {
     const previous = this.state;
     await this.commit({ ...this.state, ...result.records, initialized: true }, (store) => {
       putChangedRecords(store, previous, result.records);
-      for (const record of options.ensure?.conversations ?? []) store.putMessages(record.chat.id, record.chat.messages);
+      for (const [conversationId, messages] of Object.entries(options.messages ?? {})) {
+        store.putMessages(conversationId, messages);
+      }
       if (!previous.initialized) store.setInitialized(true);
     });
   }
@@ -1215,7 +1225,7 @@ export class ConversationRepository {
 
   /** A new conversation record; each listed Wisp gets a new agent session in it. */
   private newConversationRecord(
-    chat: Chat,
+    chat: ChatSummary,
     timestamp: string,
     participantIds: ReadonlyArray<WispId> = [],
   ): ConversationRecord {
@@ -1375,7 +1385,7 @@ export class ConversationRepository {
     }
     for (const [id, value] of Object.entries(this.stateRecord(raw.conversations))) {
       const record = this.stateRecord(value);
-      const chat = normalizeChat(record.chat);
+      const chat = normalizeChatSummary(record.chat);
       if (chat.id !== id) throw new Error("Invalid state");
       const createdAt = this.timestampOf(record.createdAt);
       state.conversations[id] = {
@@ -1544,6 +1554,19 @@ export class ConversationRepository {
         ? [move(path.join(this.circleConfigRoot, conversation.storageId), "circle-config")]
         : []),
     ]);
+  }
+}
+
+/**
+ * A stored message, or undefined for one this version cannot read. Messages
+ * are no longer checked when the store opens, so one unreadable message is
+ * left out instead of failing its whole page.
+ */
+function readableMessage(stored: unknown): Message | undefined {
+  try {
+    return normalizeMessage(typeof stored === "string" ? JSON.parse(stored) : stored);
+  } catch {
+    return undefined;
   }
 }
 

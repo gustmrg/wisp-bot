@@ -156,9 +156,11 @@ Conversations live in `backend/conversations.sqlite` (Node's built-in
 circle member, agent session, and message, so a change writes only its own
 rows. Records are stored as columns, and foreign keys relate them: deleting a
 Wisp deletes its own conversation and removes it from every circle. Message
-bodies stay JSON (see [ADR 010](decisions/010-wisp-entity.md#storage-layout)). The main process keeps the
-stores in memory as its read model and adopts a change only after its
-transaction commits. Each conversation keeps its newest 10,000 messages; older
+bodies stay JSON (see [ADR 010](decisions/010-wisp-entity.md#storage-layout)). The backend keeps the
+Wisps and conversations in memory as its read model, without their messages,
+and adopts a change only after its transaction commits. Messages stay in the
+database and are read a page at a time, so startup time and memory do not
+grow with history. Each conversation keeps its newest 10,000 messages; older
 ones leave the displayed transcript, while the Wisp's Pi session keeps its own
 full history. A database that cannot be read is set aside as
 `conversations.sqlite.corrupt-<time>` and a fresh store starts. One written by
@@ -170,9 +172,9 @@ transcripts can be read a page at a time; each conversation also records its
 `lastActivityAt`. The store records the layout that wrote it and the oldest
 layout that can still read it, so additive changes stay readable by older
 builds. [ADR 006](decisions/006-paged-conversation-transcripts.md) describes the
-move to loading transcripts on demand. The renderer already reads pages and
-searches through the backend; the main process still loads every transcript at
-startup and sends them with the full conversation state until the last step.
+move to loading transcripts on demand. The conversation state sent to a
+client lists every conversation with an empty `messages` field, kept for apps
+that expect it; clients read pages and search through the backend.
 
 Theme, timezone, microphone selection, launch-at-login, notification-sound,
 and related UI preferences are stored locally in the renderer through the

@@ -158,7 +158,8 @@ describe("createBackend", () => {
     );
     expect(broadcasts.some(([channel]) => channel === WISP_IPC_CHANNELS.agentEvent)).toBe(true);
     const state = await invoke<ConversationStateView>(WISP_IPC_CHANNELS.getConversationState);
-    expect(state.chats.atlas?.messages).toHaveLength(2);
+    // The state lists conversations; their messages are read a page at a time.
+    expect(state.chats.atlas).toMatchObject({ id: "atlas", messages: [] });
 
     // Transcript pages and search answer through the same guarded handlers.
     await expect(

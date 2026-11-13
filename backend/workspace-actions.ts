@@ -4,12 +4,13 @@ import {
   type Chat,
   type ChatChanges,
   type ChatId,
+  type ChatSummary,
   type Message,
   type Wisp,
   type WispChanges,
   type WispId,
 } from "../shared/conversations.js";
-import { applyWispChanges, normalizeChat, upsertNormalizedMessage } from "./conversation-normalizer.js";
+import { applyWispChanges, normalizeChatSummary, normalizeMessage } from "./conversation-normalizer.js";
 
 export interface WispRecord {
   wisp: Wisp;
@@ -35,7 +36,8 @@ export interface ParticipantSession {
 }
 
 export interface ConversationRecord {
-  chat: Chat;
+  /** The conversation without its transcript, which is read from the database a page at a time (ADR 006). */
+  chat: ChatSummary;
   /** Names the conversation's workspace directory, shared by the Wisps in it. */
   storageId: string;
   /** The agent session of each Wisp in this conversation that has one. */
@@ -66,8 +68,22 @@ export type WorkspaceAction =
   | { type: "delete"; conversationId: string; updatedAt: string }
   | { type: "mark-read"; conversationId: string; updatedAt: string }
   | { type: "mark-unread"; conversationId: string; updatedAt: string }
-  | { type: "append-message"; conversationId: string; message: Message & { id: string }; updatedAt: string }
-  | { type: "answer-prompt"; conversationId: string; messageId: string; answer: string; updatedAt: string };
+  | {
+      type: "append-message";
+      conversationId: string;
+      message: Message & { id: string };
+      /** The stored message this one replaces, if any. */
+      earlier: Message | undefined;
+      updatedAt: string;
+    }
+  | {
+      type: "answer-prompt";
+      conversationId: string;
+      /** The stored message being answered, if there is one. */
+      prompt: Message | undefined;
+      answer: string;
+      updatedAt: string;
+    };
 
 export type WorkspaceActionStatus =
   | "applied"
@@ -83,8 +99,8 @@ export interface WorkspaceActionResult {
   status: WorkspaceActionStatus;
   /** What a delete removed: the conversation, and for a Wisp also the Wisp. */
   deleted?: { conversation: ConversationRecord; wisp?: WispRecord };
-  /** Oldest messages an append dropped to stay within the per-conversation limit. */
-  droppedOldestMessages?: number;
+  /** The message an append or an answer wrote, as it is stored. */
+  message?: Message;
 }
 
 /** The chat's last activity: its newest timestamped message, else what it already had. */
@@ -96,11 +112,14 @@ export function lastActivityOf(chat: Pick<Chat, "messages" | "lastActivityAt">):
   return chat.lastActivityAt;
 }
 
-/** A new chat with its last activity derived from its messages, replacing any value it arrived with. */
-export function withLastActivity<T extends Chat>(chat: T): T {
-  const { lastActivityAt: _ignored, ...rest } = chat;
-  const lastActivityAt = lastActivityOf({ messages: chat.messages });
-  return (lastActivityAt ? { ...rest, lastActivityAt } : rest) as T;
+/**
+ * A new chat as the backend keeps it: without its messages, and with its last
+ * activity derived from them, replacing any value it arrived with.
+ */
+export function summaryWithLastActivity(chat: Chat): ChatSummary {
+  const { lastActivityAt: _ignored, messages, ...rest } = chat;
+  const lastActivityAt = lastActivityOf({ messages });
+  return lastActivityAt ? { ...rest, lastActivityAt } : rest;
 }
 
 // Later of two ISO times. Writes can arrive out of order (a delivery status
@@ -182,7 +201,7 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       if (!record) return { records, status: "not_found" };
       const { kind, ...fields } = action.changes;
       if (record.chat.kind !== kind) return { records, status: "kind_mismatch" };
-      const chat = normalizeChat({ ...record.chat, ...fields });
+      const chat = normalizeChatSummary({ ...record.chat, ...fields });
       return withConversation(records, action.conversationId, { ...record, chat, updatedAt: action.updatedAt });
     }
     case "replace-circle-members": {
@@ -236,10 +255,11 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
     case "append-message": {
       const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
-      const { chat, message, droppedOldest } = upsertNormalizedMessage(record.chat, action.message);
+      const { chat } = record;
+      // Stored messages were normalized when they were written, so only this one is validated.
+      const message = normalizeMessage(action.message);
       // A message counts once: saving it again, say with its usage, adds nothing.
-      const earlier = record.chat.messages.find(({ id }) => id === message.id);
-      const counts = marksUnread(message) && !(earlier && marksUnread(earlier));
+      const counts = marksUnread(message) && !(action.earlier && marksUnread(action.earlier));
       const unreadCount = (record.chat.unreadCount ?? (record.chat.unread ? 1 : 0)) + 1;
       return {
         ...withConversation(records, action.conversationId, {
@@ -252,24 +272,17 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
           },
           updatedAt: action.updatedAt,
         }),
-        droppedOldestMessages: droppedOldest,
+        message,
       };
     }
     case "answer-prompt": {
       const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
-      let found = false;
-      const messages = record.chat.messages.map((message) => {
-        if (message.id !== action.messageId || message.type !== "prompt") return message;
-        found = true;
-        return { ...message, answer: action.answer };
-      });
-      if (!found) return { records, status: "prompt_not_found" };
-      return withConversation(records, action.conversationId, {
-        ...record,
-        chat: { ...record.chat, messages },
-        updatedAt: action.updatedAt,
-      });
+      if (action.prompt?.type !== "prompt") return { records, status: "prompt_not_found" };
+      return {
+        ...withConversation(records, action.conversationId, { ...record, updatedAt: action.updatedAt }),
+        message: { ...action.prompt, answer: action.answer },
+      };
     }
     default:
       return assertNever(action);

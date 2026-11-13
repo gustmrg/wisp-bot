@@ -324,14 +324,13 @@ function wispRecordOf(row: Row): unknown {
 }
 
 /** A stored conversation row, without its members and sessions, as the record the repository validates. */
-function conversationRecordOf(row: Row): { chat: Row & { messages: unknown[] }; sessions: Row } & Row {
+function conversationRecordOf(row: Row): { chat: Row; sessions: Row } & Row {
   const lastActivityAt = optional(row.last_activity_at);
   const base = {
     id: row.id,
     kind: row.kind,
     notifyOnUpdatesEnabled: row.notify_on_updates_enabled === 1,
     preview: row.preview,
-    messages: [] as unknown[],
     ...unreadOf(row),
     ...(row.pinned === 1 ? { pinned: true } : {}),
     ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
@@ -491,10 +490,8 @@ export class ConversationStore {
     if (!Number.isInteger(minReader) || minReader > STORE_VERSION) {
       throw new Error("Unsupported conversation store version.");
     }
+    // Messages stay in the database: a transcript is read a page at a time (ADR 006).
     const { wisps, conversations } = this.readRecords();
-    for (const row of this.db.prepare("SELECT conversation_id, body FROM messages ORDER BY seq").iterate()) {
-      conversations[String(row.conversation_id)]?.chat.messages.push(JSON.parse(String(row.body)));
-    }
     return { initialized: this.getMeta("initialized") === "1", wisps, conversations };
   }
 
@@ -580,10 +577,7 @@ export class ConversationStore {
     this.db.exec("DELETE FROM conversations");
     this.db.exec("DELETE FROM wisps");
     for (const record of Object.values(state.wisps)) this.putWisp(record);
-    for (const record of Object.values(state.conversations)) {
-      this.putConversation(record);
-      this.putMessages(record.chat.id, record.chat.messages);
-    }
+    for (const record of Object.values(state.conversations)) this.putConversation(record);
     this.setInitialized(state.initialized);
   }
 
@@ -698,11 +692,22 @@ export class ConversationStore {
     }
   }
 
-  deleteOldestMessages(conversationId: string, count: number): void {
-    if (count <= 0) return;
+  /** Deletes all but a conversation's newest `keep` messages. */
+  keepNewestMessages(conversationId: string, keep: number): void {
     this.statement(
-      "DELETE FROM messages WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ? ORDER BY seq LIMIT ?)",
-    ).run(conversationId, count);
+      `DELETE FROM messages WHERE conversation_id = ? AND seq <= (
+        SELECT seq FROM messages WHERE conversation_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?)`,
+    ).run(conversationId, conversationId, keep);
+  }
+
+  /** The person's messages that were handed to a Wisp and never answered, oldest first. */
+  readQueuedOutgoingMessages(): Array<{ conversationId: string; messageId: string }> {
+    return this.db
+      .prepare(
+        "SELECT conversation_id, id FROM messages WHERE type = 'outgoing' AND json_extract(body, '$.status') = 'queued' ORDER BY seq",
+      )
+      .all()
+      .map((row) => ({ conversationId: String(row.conversation_id), messageId: String(row.id) }));
   }
 
   /** Deletes the conversation and, through foreign keys, everything in it. */
