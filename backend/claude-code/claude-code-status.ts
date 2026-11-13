@@ -53,7 +53,15 @@ export class ClaudeCodeStatusService {
   private readonly runner: (executable: string) => ClaudeCodeRunner;
   private readonly minimumVersion: () => Promise<string>;
   private readonly now: () => number;
-  private latest: { status: ClaudeCodeStatus; executable: string | undefined; checkedAt: number } | undefined;
+  private latest:
+    | {
+        status: ClaudeCodeStatus;
+        executable: string | undefined;
+        checkedAt: number;
+        /** The last check could not run `claude`, so `status` is from an earlier one. */
+        unconfirmed?: true;
+      }
+    | undefined;
   private pending: Promise<ClaudeCodeStatus> | undefined;
   private planUsage: ClaudeCodePlanUsageView | undefined;
 
@@ -90,7 +98,8 @@ export class ClaudeCodeStatusService {
 
   /** Checks again unless the latest result is recent; `force` always checks. */
   async refresh(force = false): Promise<ClaudeCodeStatus> {
-    const ttl = this.latest?.status.state === "ready" ? READY_TTL_MS : NOT_READY_TTL_MS;
+    const confirmedReady = this.latest?.status.state === "ready" && !this.latest.unconfirmed;
+    const ttl = confirmedReady ? READY_TTL_MS : NOT_READY_TTL_MS;
     if (!force && this.latest && this.now() - this.latest.checkedAt < ttl)
       return this.withPlanUsage(this.latest.status);
     this.pending ??= this.check().finally(() => {
@@ -103,11 +112,37 @@ export class ClaudeCodeStatusService {
     return status.state === "ready" && this.planUsage ? { ...status, planUsage: this.planUsage } : status;
   }
 
+  /**
+   * A `claude` that is there but does not answer, as on a busy or slow server,
+   * says nothing about its install or sign-in. A ready status then stands, and
+   * the next check comes soon: taking it for missing or signed out would leave
+   * every Claude Code Wisp without a model until its model is applied again.
+   */
   private async check(): Promise<ClaudeCodeStatus> {
     const executable = await this.find();
-    const status: ClaudeCodeStatus = executable
-      ? await detectClaudeCode(this.runner(executable), await this.minimumVersion())
-      : { state: "missing" };
+    if (!executable) return this.remember({ state: "missing" }, executable);
+    const run = this.runner(executable);
+    let unanswered = false;
+    const status = await detectClaudeCode(
+      async (args) => {
+        try {
+          return await run(args);
+        } catch (error) {
+          unanswered = true;
+          throw error;
+        }
+      },
+      await this.minimumVersion(),
+    );
+    const previous = this.latest;
+    if (unanswered && previous?.status.state === "ready" && previous.executable === executable) {
+      this.latest = { ...previous, checkedAt: this.now(), unconfirmed: true };
+      return previous.status;
+    }
+    return this.remember(status, executable);
+  }
+
+  private remember(status: ClaudeCodeStatus, executable: string | undefined): ClaudeCodeStatus {
     this.latest = { status, executable, checkedAt: this.now() };
     return status;
   }

@@ -38,4 +38,56 @@ describe("ClaudeCodeStatusService", () => {
     status.recordPlanUsage({ status: "rejected", windows: {} });
     expect(status.current()).toMatchObject({ planUsage: { limited: true, windows: [] } });
   });
+
+  it("keeps a ready status when a later check cannot run claude, and checks again soon", async () => {
+    const signedIn = JSON.stringify({ loggedIn: true, authMethod: "claude.ai", subscriptionType: "pro" });
+    let now = 0;
+    let versionChecks = 0;
+    let answer: (args: ReadonlyArray<string>) => { stdout: string; exitCode: number } = (args) =>
+      args[0] === "--version" ? { stdout: "2.1.303 (Claude Code)", exitCode: 0 } : { stdout: signedIn, exitCode: 0 };
+    const timedOut = (): never => {
+      throw new Error("spawn claude ETIMEDOUT");
+    };
+    const status = new ClaudeCodeStatusService({
+      find: async () => "/usr/local/bin/claude",
+      minimumVersion: async () => "2.1.276",
+      now: () => now,
+      runner: () => async (args) => {
+        if (args[0] === "--version") versionChecks += 1;
+        return answer(args);
+      },
+    });
+    expect(await status.refresh()).toMatchObject({ state: "ready" });
+
+    // A busy server: `claude --version` does not answer in time.
+    now += 61_000;
+    answer = timedOut;
+    expect(await status.refresh()).toMatchObject({ state: "ready" });
+    expect(status.current()).toMatchObject({ state: "ready" });
+
+    // The sign-in check alone not answering does not sign the person out either.
+    now += 6_000;
+    answer = (args) => (args[0] === "--version" ? { stdout: "2.1.303 (Claude Code)", exitCode: 0 } : timedOut());
+    expect(await status.refresh()).toMatchObject({ state: "ready" });
+    expect(versionChecks).toBe(3);
+
+    // An answer that says signed out is believed.
+    now += 6_000;
+    answer = (args) =>
+      args[0] === "--version"
+        ? { stdout: "2.1.303 (Claude Code)", exitCode: 0 }
+        : { stdout: JSON.stringify({ loggedIn: false, authMethod: "none" }), exitCode: 1 };
+    expect(await status.refresh()).toEqual({ state: "signed_out", version: "2.1.303" });
+  });
+
+  it("reports claude as missing when the first check cannot run it", async () => {
+    const status = new ClaudeCodeStatusService({
+      find: async () => "/usr/local/bin/claude",
+      minimumVersion: async () => "2.1.276",
+      runner: () => async () => {
+        throw new Error("spawn claude ETIMEDOUT");
+      },
+    });
+    expect(await status.refresh()).toEqual({ state: "missing" });
+  });
 });

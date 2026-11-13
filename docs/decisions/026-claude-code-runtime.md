@@ -280,6 +280,9 @@ How WebSearch is offered:
   server's service environment.
 - **Expired sign-in:** an expired or missing sign-in becomes a
   `configuration_required` error that names the command to run.
+- **Unanswered check:** a `claude` that is installed but does not answer a
+  status check, as on a busy server, is not taken for missing or signed out.
+  A ready status stands, and the check runs again within seconds.
 
 ### Usage
 
