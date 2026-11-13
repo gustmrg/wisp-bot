@@ -1317,7 +1317,7 @@ describe("SdkPiSessionFactory", () => {
       hasConfiguredAuth: () => true,
       getModel: () => ({ provider: "provider", id: "model" }),
     } as unknown as ModelRuntimeLike;
-    const host = { list: vi.fn(() => []), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+    const host = { list: vi.fn(() => []), create: vi.fn(), update: vi.fn(), delete: vi.fn(), settings: vi.fn() };
     const factory = new SdkPiSessionFactory(runtime, undefined, undefined, undefined, undefined, undefined, host);
     const wispTools = ["list_wisps", "create_wisp", "update_wisp", "delete_wisp"];
 

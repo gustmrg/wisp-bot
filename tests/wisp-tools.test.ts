@@ -15,7 +15,9 @@ function stored(id: string, name: string, soul = ""): Wisp {
   return { id, name, role: "", soul, appearance: DEFAULT_WISP_APPEARANCE };
 }
 
-function setup(options: { approve?: boolean } = {}) {
+const SONNET = { provider: "Anthropic", model: "Claude Sonnet" };
+
+function setup(options: { approve?: boolean; appModel?: boolean } = {}) {
   const wisps: Wisp[] = [stored("chief", "Chief"), stored("quill", "Quill", "# Quill\n\nWrites.")];
   const approvals: ToolAuthorizationRequest[] = [];
   let ids = 0;
@@ -37,6 +39,14 @@ function setup(options: { approve?: boolean } = {}) {
         1,
       );
     },
+    settings: async (wispId) =>
+      wispId === "quill"
+        ? {
+            model: { provider: "OpenAI", model: "GPT-5", thinkingLevel: "high" },
+            modelSource: "wisp",
+            fallback: { provider: "Anthropic", model: "Claude Haiku" },
+          }
+        : { model: options.appModel === false ? null : SONNET, modelSource: "app", fallback: null },
   };
   const tools = createWispTools({
     host,
@@ -126,12 +136,43 @@ describe("Wisp tools", () => {
     expect(approvals).toEqual([]);
   });
 
-  it("lists the Wisps, marks the caller, and reads one soul in full", async () => {
-    const { tool } = setup();
+  it("lists the Wisps with their models, marks the caller, and reads one Wisp's settings and soul in full", async () => {
+    const { wisps, tool } = setup();
+    wisps[1] = { ...wisps[1]!, memoryOff: true };
     const list = (await tool("list_wisps").execute("call-1", {})).content[0]!.text;
-    expect(list).toBe("Chief (you) (ID chief)\nQuill (ID quill)");
+    expect(list).toBe(
+      [
+        "Chief (you) (ID chief). Model: Claude Sonnet from Anthropic (the app's default)",
+        "Quill (ID quill). Model: GPT-5 from OpenAI (its own)",
+      ].join("\n"),
+    );
     const one = (await tool("list_wisps").execute("call-2", { wisp_id: "quill" })).content[0]!.text;
-    expect(one).toContain("# Quill\n\nWrites.");
+    expect(one).toBe(
+      [
+        "Quill (ID quill)",
+        "Model: GPT-5 from OpenAI (its own)",
+        "Reasoning: high",
+        "Fallback model: Claude Haiku from Anthropic",
+        "Memory: off",
+        "Soul:",
+        "# Quill\n\nWrites.",
+      ].join("\n"),
+    );
+  });
+
+  it("says when a Wisp has no model or fallback configured", async () => {
+    const { tool } = setup({ appModel: false });
+    const one = (await tool("list_wisps").execute("call-1", { wisp_id: "chief" })).content[0]!.text;
+    expect(one).toBe(
+      [
+        "Chief (you) (ID chief)",
+        "Model: none configured",
+        "Fallback model: none",
+        "Memory: on",
+        "Soul:",
+        "(empty)",
+      ].join("\n"),
+    );
   });
 
   it("rejects a color or body outside the palette before asking", async () => {
