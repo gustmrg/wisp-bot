@@ -243,6 +243,22 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     delete: async (wispId) => {
       await requireConversations().deleteWisp(wispId);
     },
+    settings: async (wispId) => {
+      const context = conversationRepository.getAgentContext(wispId);
+      const modelOverride = context.modelOverride ?? null;
+      const selection = modelOverride ?? (await modelService.getSelection());
+      const fallback = await modelService.getFallbackModel(modelOverride, context.fallback ?? null);
+      return {
+        model: selection
+          ? {
+              ...modelService.describeSelection(selection),
+              ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
+            }
+          : null,
+        modelSource: modelOverride ? "wisp" : "app",
+        fallback: fallback ? modelService.describeSelection(fallback) : null,
+      };
+    },
   };
   const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
     conversationService?.handleAgentEvent(event);
