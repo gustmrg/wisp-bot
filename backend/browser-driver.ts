@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 /** Playwright's version in the browser image; its Chromium comes with it, so the two always match. */
-export const PLAYWRIGHT_VERSION = "1.64.0";
+export const PLAYWRIGHT_VERSION = "1.65.1";
 
 /**
  * The Wisp browser image, built on the server from this file the first time a

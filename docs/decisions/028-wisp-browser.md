@@ -44,7 +44,7 @@ input. It is a setting of its own and does not need commands.**
   `[ref=eN]` names the elements the next action uses, cut at 40,000
   characters and marked as untrusted. A screenshot is an image for models that
   take images.
-- **The engine:** Playwright (`playwright-core` 1.64.0) and its own headless
+- **The engine:** Playwright (`playwright-core` 1.65.1) and its own headless
   Chromium shell, so the two always match. They are installed in a browser
   image built on the server from a Dockerfile in the code, like the sandbox
   image; nothing is added to the app or the server package.
