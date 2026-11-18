@@ -29,13 +29,22 @@ builds the team.**
 Managing Wisps is part of the app, like skills and jobs, not an external
 integration, so it needs no grant. Every Wisp gets:
 
-- `list_wisps`: names, roles and IDs, or one Wisp's soul in full;
+- `list_wisps`: names, roles, IDs and models, or one Wisp's settings and soul
+  in full;
 - `create_wisp`: name, role, soul, and optionally a palette color and a body;
 - `update_wisp`: only the fields that change;
 - `delete_wisp`: the Wisp, its conversation, files, skills and jobs.
 
 A new Wisp gets its own conversation with notifications on and the app's
 default model, as the create form's defaults do.
+
+`list_wisps` only reads, so it asks nothing. For each Wisp it names the model
+and its provider, and whether the model is the Wisp's own or the app's
+default. For one Wisp it adds the reasoning level, the fallback model and
+whether memory is on. A model that is not configured, or a fallback the Wisp
+does not have, is said so. It never shows a credential, and it leaves out the
+Wisp's integrations, permissions, skills and jobs: the tool says so, and the
+Wisp tells the person to look in the Wisp's settings (SWE-327).
 
 ### The person approves every change
 

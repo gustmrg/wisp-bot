@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 import { z } from "zod";
 
+import type { ThinkingLevel } from "../shared/contracts.js";
 import {
   WISP_NAME_MAX_LENGTH,
   WISP_ROLE_MAX_LENGTH,
@@ -32,6 +33,28 @@ export interface WispToolHost {
   update(wispId: string, changes: WispChanges): Promise<Wisp>;
   /** Deletes a Wisp with its conversation, files, skills and jobs. */
   delete(wispId: string): Promise<void>;
+  settings(wispId: string): Promise<WispSettings>;
+}
+
+/** A model by the names settings show for it. */
+export interface WispModel {
+  provider: string;
+  model: string;
+  /** Absent means "off". */
+  thinkingLevel?: ThinkingLevel;
+}
+
+/**
+ * What a Wisp runs with, as another Wisp may read it: names only, never a
+ * credential, and nothing about its integrations or permissions.
+ */
+export interface WispSettings {
+  /** The model the Wisp answers with; null when none is chosen or the app's cannot be used. */
+  model: WispModel | null;
+  /** Whether that model is the Wisp's own or the app's. */
+  modelSource: "wisp" | "app";
+  /** The model that answers when the Wisp's fails; null when it has none. */
+  fallback: WispModel | null;
 }
 
 export interface WispToolOptions {
@@ -44,6 +67,7 @@ export interface WispToolOptions {
 export const WISP_INSTRUCTIONS = [
   "## Wisps",
   "The user talks with Wisps: assistants like you, each with a name, a short role and a soul, the Markdown that defines who it is and how it works. You can create, change and delete the user's other Wisps with create_wisp, update_wisp and delete_wisp; list_wisps shows them.",
+  "list_wisps also shows the model each Wisp answers with, and one Wisp's reasoning level, fallback model, memory setting and soul. Answer questions about the Wisps' settings from it. It does not show a Wisp's integrations, permissions, skills or jobs: say that you cannot see those, and that the user finds them in the Wisp's settings.",
   "When the user wants a new Wisp, or a team of them, ask briefly what each should help with if it is not clear, then create them. Write each soul in the user's language, with sections for its identity and expertise, personality, how it works, and boundaries, so it stands alone: the new Wisp does not see this conversation.",
   "The user approves every creation, change and deletion in a card that shows it, so do not repeat a soul in the chat or ask for confirmation; call the tool directly and confirm in one short sentence. Only delete a Wisp when the user asked for it. You cannot change or delete yourself; the user does that in your settings.",
 ].join("\n");
@@ -140,7 +164,7 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
       name: "list_wisps",
       label: "List Wisps",
       description:
-        "List the user's Wisps with their IDs, names and roles. Pass wisp_id to read one Wisp's soul in full.",
+        "List the user's Wisps with their IDs, names, roles and models. Pass wisp_id to read one Wisp's settings (model, reasoning level, fallback model, memory) and its soul in full. Integrations, permissions and credentials are never shown.",
       parameters: LIST_WISPS_PARAMETERS,
       execute: async (_toolCallId, params) => {
         const wisps = host.list();
@@ -148,9 +172,26 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
           const wisp = wisps.find(({ id }) => id === params.wisp_id);
           if (!wisp)
             throw new WispBackendError("not_found", `No Wisp with ID ${JSON.stringify(params.wisp_id)} exists.`);
-          return text(`${describeWisp(wisp, context.wispId)}\nSoul:\n${wisp.soul || "(empty)"}`);
+          const settings = await host.settings(wisp.id);
+          return text(
+            [
+              describeWisp(wisp, context.wispId),
+              `Model: ${describeModel(settings)}`,
+              ...(settings.model ? [`Reasoning: ${settings.model.thinkingLevel ?? "off"}`] : []),
+              `Fallback model: ${settings.fallback ? modelName(settings.fallback) : "none"}`,
+              `Memory: ${wisp.memoryOff ? "off" : "on"}`,
+              "Soul:",
+              wisp.soul || "(empty)",
+            ].join("\n"),
+          );
         }
-        return text(wisps.map((wisp) => describeWisp(wisp, context.wispId)).join("\n"));
+        const lines = await Promise.all(
+          wisps.map(
+            async (wisp) =>
+              `${describeWisp(wisp, context.wispId)}. Model: ${describeModel(await host.settings(wisp.id))}`,
+          ),
+        );
+        return text(lines.join("\n"));
       },
     }),
     defineWispTool({
@@ -241,6 +282,15 @@ function colorValue(id: string): string {
 
 function describeWisp(wisp: Wisp, selfId: string): string {
   return `${wisp.name}${wisp.id === selfId ? " (you)" : ""} (ID ${wisp.id})${wisp.role ? `: ${wisp.role}` : ""}`;
+}
+
+function modelName({ model, provider }: WispModel): string {
+  return `${model} from ${provider}`;
+}
+
+function describeModel({ model, modelSource }: WispSettings): string {
+  if (!model) return "none configured";
+  return `${modelName(model)} (${modelSource === "wisp" ? "its own" : "the app's default"})`;
 }
 
 function text(value: string) {
