@@ -276,6 +276,11 @@ export class ConnectionManager {
     });
   }
 
+  /** This computer woke or changed network: the active connection checks it still works. */
+  checkConnection(): void {
+    this.session?.check();
+  }
+
   /** Retries the active connection now. */
   retry(): Promise<ConnectionsView> {
     return this.serialized(async () => {

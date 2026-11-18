@@ -64,7 +64,12 @@ async function setup() {
 
 function session(
   baseUrl: string,
-  overrides: { requestPairingCode?: () => Promise<string>; openTransport?: () => Promise<RemoteTransport> } = {},
+  overrides: {
+    requestPairingCode?: () => Promise<string>;
+    openTransport?: () => Promise<RemoteTransport>;
+    backoffMs?: () => number;
+    wakeCheck?: { answerMs: number; quietMs: number };
+  } = {},
 ) {
   let stored: DeviceCredentials | undefined;
   const phases: Array<[RemoteSessionPhase, string | undefined]> = [];
@@ -91,7 +96,8 @@ function session(
     onStatus: (phase, message) => phases.push([phase, message]),
     onEvent: (type, payload) => events.push([type, payload]),
     onReset: () => resets++,
-    backoffMs: () => 50,
+    backoffMs: overrides.backoffMs ?? (() => 50),
+    ...(overrides.wakeCheck ? { wakeCheck: overrides.wakeCheck } : {}),
   });
   cleanups.push(() => instance.stop());
   return {
@@ -486,5 +492,151 @@ describe("RemoteSession", () => {
     expect(failures.at(-1)).toEqual({ failure: "not_running", details: "connect failed" });
     await waitUntil(() => retries.length > 1, "a second retry");
     expect(retries.slice(0, 2)).toEqual([1, 2]);
+  });
+});
+
+/**
+ * Transports to a real server whose link can fail the ways sleep and network
+ * changes make it fail: refusing everything (`offline`), a tunnel that no
+ * longer carries anything (`kill`), or an event stream that stays open while
+ * nothing arrives (`freeze`).
+ */
+function flakyLink(baseUrl: string, directory: string) {
+  const link = { offline: false, opened: 0, closed: 0, streams: 0 };
+  type Stream = { controller: AbortController; frozen: boolean };
+  let current = { dead: false, streams: [] as Stream[] };
+  const openTransport = async (): Promise<RemoteTransport> => {
+    link.opened++;
+    const transport = { dead: false, streams: [] as Stream[] };
+    current = transport;
+    const linkFetch: typeof fetch = async (input, init) => {
+      if (link.offline) throw new TypeError("fetch failed");
+      if (transport.dead) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        });
+      }
+      if (!String(input).endsWith("/events")) return fetch(input, init);
+      link.streams++;
+      const stream: Stream = { controller: new AbortController(), frozen: false };
+      transport.streams.push(stream);
+      init?.signal?.addEventListener("abort", () => stream.controller.abort(), { once: true });
+      const response = await fetch(input, { ...init, signal: stream.controller.signal });
+      const reader = response.body!.getReader();
+      const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) return controller.close();
+            if (!stream.frozen) return controller.enqueue(value);
+          }
+        },
+        cancel: (reason) => reader.cancel(reason),
+      });
+      return new Response(body, { status: response.status, headers: response.headers });
+    };
+    return {
+      baseUrl,
+      fetch: linkFetch,
+      closed: new Promise(() => undefined),
+      close: () => {
+        link.closed++;
+      },
+      requestPairingCode: () => pairCode(directory),
+    };
+  };
+  const freeze = (): void => {
+    for (const stream of current.streams) stream.frozen = true;
+  };
+  return {
+    link,
+    openTransport,
+    freeze,
+    kill: () => {
+      current.dead = true;
+      freeze();
+    },
+    drop: () => {
+      for (const stream of current.streams) stream.controller.abort();
+    },
+  };
+}
+
+const wispChanges = (client: ReturnType<typeof session>): number =>
+  client.events.filter(([type]) => type === "wispsChanged").length;
+
+const createWisp = (client: ReturnType<typeof session>, id: string) =>
+  client.instance.call("createWisp", {
+    wisp: { id, name: id, role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE },
+    notifyOnUpdatesEnabled: true,
+  });
+
+describe("RemoteSession after the device wakes", () => {
+  it("retries at once instead of waiting out the delay", async () => {
+    const { server, directory } = await setup();
+    const { link, openTransport, drop } = flakyLink(server.url, directory);
+    let delay = 50;
+    const client = session("", { openTransport, backoffMs: () => delay });
+    client.instance.start();
+    await waitUntil(() => client.phase() === "connected", "the connection");
+
+    // The network goes away while the device sleeps; the next retry is far off.
+    delay = 600_000;
+    link.offline = true;
+    drop();
+    await waitUntil(() => client.phase() === "reconnecting", "the drop to be noticed");
+    link.offline = false;
+    client.instance.check();
+
+    await waitUntil(() => client.phase() === "connected", "the reconnect");
+    expect(client.resets()).toBe(1);
+  });
+
+  it("leaves a live stream alone, and reopens a silent one from its cursor without a reload", async () => {
+    const { server, directory } = await setup();
+    const { link, openTransport, freeze } = flakyLink(server.url, directory);
+    const client = session("", { openTransport, wakeCheck: { answerMs: 2_000, quietMs: 500 } });
+    const other = session(server.url, { requestPairingCode: () => pairCode(directory) });
+    other.instance.start();
+    await waitUntil(() => other.phase() === "connected", "the other device");
+    await other.instance.call("saveAiSettings", {
+      selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" },
+      apiKey: "test-key",
+    });
+    client.instance.start();
+    await waitUntil(() => client.phase() === "connected", "the connection");
+
+    // An event arrives while it checks: the stream is alive and stays.
+    client.instance.check();
+    await createWisp(other, "atlas");
+    await waitUntil(() => wispChanges(client) === 1, "the event");
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(link.streams).toBe(1);
+
+    // The stream looks open, but nothing reaches this device anymore.
+    freeze();
+    await createWisp(other, "nova");
+    client.instance.check();
+    await waitUntil(() => wispChanges(client) === 2, "the missed event");
+    expect(link.streams).toBe(2);
+    // The server answered, so the transport stays; the cursor replays what was missed.
+    expect(link.closed).toBe(0);
+    expect(client.phase()).toBe("connected");
+    expect(client.resets()).toBe(1);
+  });
+
+  it("replaces a transport the server no longer answers through", async () => {
+    const { server, directory } = await setup();
+    const { link, openTransport, kill } = flakyLink(server.url, directory);
+    const client = session("", { openTransport, wakeCheck: { answerMs: 200, quietMs: 60_000 } });
+    client.instance.start();
+    await waitUntil(() => client.phase() === "connected", "the connection");
+
+    kill();
+    client.instance.check();
+
+    await waitUntil(() => link.opened === 2 && client.phase() === "connected", "a new transport");
+    expect(link.closed).toBe(1);
+    expect(client.resets()).toBe(1);
   });
 });

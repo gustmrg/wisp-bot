@@ -22,6 +22,8 @@ export interface WebApiOptions {
   fetch?: typeof fetch;
   /** Asks the person for files to attach; resolves empty when dismissed. Defaults to the browser's file picker. */
   pickFiles?: (signal?: AbortSignal) => Promise<ReadonlyArray<File>>;
+  /** Calls back when the device wakes or changes network, so the connection checks it still works. */
+  watchWake?: (onWake: () => void) => void;
 }
 
 type Listener<T> = (value: T) => void;
@@ -152,6 +154,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
   });
   if (options.pairingCode && !loadSession()) linkCode = options.pairingCode;
   session.start(undefined, false);
+  options.watchWake?.(() => session.check());
 
   const ok = <T>(value: T): BackendResult<T> => ({ ok: true, value });
   const desktopOnly = async (): Promise<BackendResult<never>> => ({

@@ -85,6 +85,8 @@ export interface BackendHost {
    * passphrase, or to trust a host key. Without one, SSH runs in BatchMode.
    */
   startSshAskpass?: () => Promise<SshAskpass | undefined>;
+  /** Calls back when this computer wakes or changes network, until the returned function is called. */
+  watchWake?: (onWake: () => void) => () => void;
   /** Installs the server over SSH, naming the run `updateId` on the server; tests substitute a fake. */
   installServer?: (
     profile: SshConnectionProfile,
@@ -251,6 +253,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     await askpass?.close();
     throw error;
   }
+  const stopWatchingWake = host.watchWake?.(() => manager.checkConnection());
 
   return {
     remoteAccess,
@@ -262,6 +265,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       // Stop accepting renderer requests before the backend winds down.
       for (const registration of handlers) registration.dispose();
       unsubscribeUpdateState();
+      stopWatchingWake?.();
       sshTestController.abort();
       await manager.dispose();
       oauthRelay.closeAll();

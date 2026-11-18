@@ -103,6 +103,8 @@ export interface EventStreamHandlers {
   onEvent(id: string | undefined, type: RemoteEventType, payload: unknown): void;
   /** Where the stream stands when it starts, before any event. Older servers do not say. */
   onCursor(id: string): void;
+  /** Anything arrived, keep-alives included: the stream is alive. */
+  onActivity?(): void;
 }
 
 /** Speaks the Wisp server protocol for one paired device. */
@@ -130,8 +132,8 @@ export class RemoteClient {
     await this.options.credentials.save(undefined);
   }
 
-  async describe(): Promise<ServerDescriptor> {
-    return serverValueOf(await this.authorized("GET", "/server", undefined, CONNECT_TIMEOUT_MS)) as ServerDescriptor;
+  async describe(timeoutMs = CONNECT_TIMEOUT_MS): Promise<ServerDescriptor> {
+    return serverValueOf(await this.authorized("GET", "/server", undefined, timeoutMs)) as ServerDescriptor;
   }
 
   /** Runs one operation; transport failures throw `RemoteError`, operation failures return their result. */
@@ -205,7 +207,10 @@ export class RemoteClient {
         (message) => {
           handlers.onEvent(message.id, message.event as RemoteEventType, decodeRemoteJson(message.data || "null"));
         },
-        resetIdle,
+        () => {
+          resetIdle();
+          handlers.onActivity?.();
+        },
         handlers.onCursor,
       );
     } catch (error) {

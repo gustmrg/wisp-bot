@@ -105,10 +105,18 @@ export interface RemoteSessionOptions {
   onReset(): void;
   /** Delay before reconnect attempt `attempt` (from 0). */
   backoffMs?: (attempt: number) => number;
+  /**
+   * How a `check` decides: how long the server has to answer, and how long the
+   * event stream may then stay silent. The server sends a keep-alive every 20
+   * seconds, so the default allows one more.
+   */
+  wakeCheck?: { answerMs: number; quietMs: number };
 }
 
 const defaultBackoff = (attempt: number): number =>
   Math.min(30_000, 1_000 * 2 ** attempt) * (0.8 + Math.random() * 0.4);
+
+const DEFAULT_WAKE_CHECK = { answerMs: 5_000, quietMs: 25_000 };
 
 /**
  * Keeps one device connected to a Wisp server: opens the transport, pairs when
@@ -130,6 +138,16 @@ export class RemoteSession {
   private autoPair = false;
   private running: Promise<void> | undefined;
   private wake: (() => void) | undefined;
+  private attempt = 0;
+  // What the loop is waiting for: the next retry, or the person (pairing, a fatal error).
+  private waitingFor: "retry" | "user" | undefined;
+  // The open event stream, which a check may end so the loop reopens it.
+  private stream: AbortController | undefined;
+  // Why a check ended the stream, reported as the drop.
+  private interrupted: RemoteSessionFailure | undefined;
+  // Counts what arrived on the stream, keep-alives included.
+  private activity = 0;
+  private checking = false;
 
   constructor(private readonly options: RemoteSessionOptions) {}
 
@@ -149,6 +167,50 @@ export class RemoteSession {
     this.running = this.run().finally(() => {
       this.running = undefined;
     });
+  }
+
+  /**
+   * Call when the device wakes from sleep or its network changes: a stream
+   * can look open while nothing reaches it, and a retry may be waiting out a
+   * long delay. A waiting retry runs now. A connected session asks the server
+   * once: no answer replaces the transport, and a stream that stays silent
+   * after an answer is reopened from its cursor. A healthy connection is left
+   * alone, and only the event stream is ever repeated.
+   */
+  check(): void {
+    if (this.controller.signal.aborted) return;
+    if (this.waitingFor === "retry") {
+      this.attempt = 0;
+      this.wake?.();
+      return;
+    }
+    const client = this.client;
+    const stream = this.stream;
+    if (!this.connected || !client || !stream || this.checking) return;
+    this.checking = true;
+    void this.probe(client, stream).finally(() => {
+      this.checking = false;
+    });
+  }
+
+  private async probe(client: RemoteClient, stream: AbortController): Promise<void> {
+    const { answerMs, quietMs } = this.options.wakeCheck ?? DEFAULT_WAKE_CHECK;
+    const activity = this.activity;
+    try {
+      await client.describe(answerMs);
+    } catch (error) {
+      // Any answer, even an error, shows the transport works; only silence replaces it.
+      if (!(error instanceof RemoteError) || error.code !== "network" || this.stream !== stream) return;
+      this.transport?.close();
+      this.transport = undefined;
+      this.interrupted = failureOf(error) ?? { failure: "unreachable" };
+      stream.abort();
+      return;
+    }
+    await waitFor(quietMs, stream.signal);
+    if (this.stream !== stream || this.activity !== activity) return;
+    this.interrupted = {};
+    stream.abort();
   }
 
   /** Disconnects; the server keeps running every Wisp. */
@@ -276,7 +338,7 @@ export class RemoteSession {
 
   private async run(): Promise<void> {
     const signal = this.controller.signal;
-    let attempt = 0;
+    this.attempt = 0;
     while (!signal.aborted) {
       let waitForUser = false;
       try {
@@ -330,31 +392,25 @@ export class RemoteSession {
           const mismatch = protocolMismatch(this.options.serverName, server);
           if (mismatch) throw new FatalTransportError(mismatch, "version");
           this.options.onStage?.("events");
-          await client.streamEvents(
-            this.cursor,
-            {
-              onOpen: () => {
-                attempt = 0;
-                this.moved = false;
-                this.connected = true;
-                this.options.onStatus("connected");
-                if (!this.everConnected || this.cursor === undefined) {
-                  this.everConnected = true;
-                  this.options.onReset();
-                }
-              },
-              onEvent: (id, type, payload) => {
-                if (id) this.cursor = id;
-                if (type === "resync") this.options.onReset();
-                else if (type === "hostRequest") void this.answer(client, payload as HostRequest);
-                else this.options.onEvent(type, payload);
-              },
-              onCursor: (id) => {
-                this.cursor = id;
-              },
-            },
-            signal,
-          );
+          const stream = new AbortController();
+          const stopStream = (): void => stream.abort();
+          signal.addEventListener("abort", stopStream, { once: true });
+          this.stream = stream;
+          this.interrupted = undefined;
+          try {
+            await this.followEvents(client, stream.signal);
+          } finally {
+            this.stream = undefined;
+            signal.removeEventListener("abort", stopStream);
+            stream.abort();
+          }
+          const interrupted = this.interrupted;
+          this.interrupted = undefined;
+          if (interrupted && !signal.aborted) {
+            // A check found the stream dead: reopen it now, from its cursor.
+            this.disconnected("The connection to the server was interrupted. Reconnecting…", interrupted);
+            continue;
+          }
           // The server ended the stream: it is shutting down or revoked this device.
           this.disconnected("The server closed the connection. Reconnecting…");
         }
@@ -394,20 +450,56 @@ export class RemoteSession {
       }
       if (signal.aborted) break;
       if (waitForUser) {
+        this.waitingFor = "user";
         await new Promise<void>((resolve) => {
           this.wake = resolve;
         });
         this.wake = undefined;
-        attempt = 0;
+        this.waitingFor = undefined;
+        this.attempt = 0;
         continue;
       }
-      const delay = (this.options.backoffMs ?? defaultBackoff)(attempt++);
-      this.options.onRetry?.(attempt, delay);
+      const delay = (this.options.backoffMs ?? defaultBackoff)(this.attempt++);
+      this.options.onRetry?.(this.attempt, delay);
+      this.waitingFor = "retry";
       await this.sleep(delay);
+      this.waitingFor = undefined;
     }
     this.connected = false;
     this.transport?.close();
     this.transport = undefined;
+  }
+
+  /** Follows the event stream until it ends or `signal` ends it. */
+  private async followEvents(client: RemoteClient, signal: AbortSignal): Promise<void> {
+    await client.streamEvents(
+      this.cursor,
+      {
+        onOpen: () => {
+          this.attempt = 0;
+          this.moved = false;
+          this.connected = true;
+          this.options.onStatus("connected");
+          if (!this.everConnected || this.cursor === undefined) {
+            this.everConnected = true;
+            this.options.onReset();
+          }
+        },
+        onEvent: (id, type, payload) => {
+          if (id) this.cursor = id;
+          if (type === "resync") this.options.onReset();
+          else if (type === "hostRequest") void this.answer(client, payload as HostRequest);
+          else this.options.onEvent(type, payload);
+        },
+        onCursor: (id) => {
+          this.cursor = id;
+        },
+        onActivity: () => {
+          this.activity++;
+        },
+      },
+      signal,
+    );
   }
 
   private disconnected(message: string, failure?: RemoteSessionFailure): void {
@@ -428,6 +520,20 @@ export class RemoteSession {
       this.wake = undefined;
     });
   }
+}
+
+/** Resolves after `ms`, or as soon as `signal` ends. */
+function waitFor(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve();
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+    function done(): void {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    }
+  });
 }
 
 function failureOf(error: unknown): RemoteSessionFailure | undefined {

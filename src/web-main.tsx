@@ -1,5 +1,6 @@
 import { APP_METADATA } from "@/config/app-metadata";
 import { SLOW_OPENING_MS } from "@/lib/opening";
+import { watchBrowserWake } from "@/web/wake-signals";
 import { browserDeviceName, createWebWispApi, takePairingCode } from "@/web/web-api";
 
 // The browser app talks to the Wisp server that served it, through the same
@@ -13,6 +14,7 @@ Object.defineProperty(window, "wisp", {
       deviceName: browserDeviceName(navigator.userAgent),
       appVersion: APP_METADATA.version,
       ...(pairingCode ? { pairingCode } : {}),
+      watchWake: (onWake) => watchBrowserWake(onWake),
     }),
   ),
 });
