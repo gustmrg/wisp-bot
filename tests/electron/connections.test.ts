@@ -784,7 +784,9 @@ describe("desktop connections", () => {
       `sh -c 'PATH="$HOME/.local/bin:$PATH"; echo "Connected. Downloading the Wisp server…" >&2; d=$(mktemp -d) || exit 1; npm install --prefix "$d" --no-audit --no-fund --loglevel=error @gustmrg/wisp-server@1.0.0 >&2 && node "$d/node_modules/@gustmrg/wisp-server/server/cli.js" setup --json --no-pair --until-stdin-closes --port ${server.port} --update-id ${updateId}; s=$?; rm -rf "$d"; exit $s'`,
     ]);
     // Confirmed: the setup reported success and the server answers at this app's version.
-    expect((await app.view()).status.update).toMatchObject({ state: "confirmed", targetVersion: "1.0.0" });
+    await vi.waitFor(async () =>
+      expect((await app.view()).status.update).toMatchObject({ state: "confirmed", targetVersion: "1.0.0" }),
+    );
     expect(JSON.parse(await readFile(path.join(app.directory, "connections.json"), "utf8")).updates).toBeUndefined();
   });
 
@@ -820,7 +822,9 @@ describe("desktop connections", () => {
       process.env.FAKE_SSH_UPDATE = "completed";
       await app.invoke(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
       await app.waitForPhase("connected");
-      expect(await update()).toMatchObject({ state: "confirmed", targetVersion: "1.0.0" });
+      await vi.waitFor(async () =>
+        expect(await update()).toMatchObject({ state: "confirmed", targetVersion: "1.0.0" }),
+      );
 
       const ran = await commands();
       const setups = ran.filter((command) => command.includes("setup --json"));
