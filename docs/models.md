@@ -80,6 +80,9 @@ password or token.
   signed out, a Wisp on it shows why above its message box, with **Check
   again**. Once Claude Code is ready, its Wisps answer again without their
   model being chosen anew.
+- **Claude Code as the default model:** it stays the default while Claude
+  Code cannot run. **Settings → AI Model** says why, and the app opens as
+  usual instead of asking to set up a model again.
 - **Models:** `default`, `opus`, `sonnet`, and `haiku`. Claude Code resolves
   them to the newest model it knows. Fable is not offered, because it can bill
   usage credits instead of the plan. The reasoning level sets Claude Code's
