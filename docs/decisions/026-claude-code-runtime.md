@@ -146,6 +146,13 @@ itself checks nothing; its `package.json` names the CLI it was built with
   SDK's `package.json`. It is above the 2.1.248 that `--restricted` needs.
   An older `claude`, or none, makes the provider unavailable, and settings say
   to install it or run `claude update`. Newer versions are accepted.
+- **Why a Wisp cannot answer:** a Wisp whose model cannot run gets the same
+  message in its chat, above the message box, from the reason the conversation
+  model view gives (`unavailable`). Its **Check again** asks again, which
+  checks `claude` again.
+- **Recovery:** when a check finds Claude Code in another state, such as
+  ready after `claude update`, every Wisp applies its model again. Nobody has
+  to choose the model anew.
 - **Features, not versions:** the `capabilities` that `system/init` reports
   (such as `interrupt_receipt_v1`) decide whether an optional feature is used;
   without one, the conversation goes on without it.

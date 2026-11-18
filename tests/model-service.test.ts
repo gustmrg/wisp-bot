@@ -950,8 +950,9 @@ describe("ModelService with Claude Code", () => {
     await expect(service.validateConversationSelection(sonnet)).resolves.toBeUndefined();
   });
 
-  it("stops offering a saved Claude Code model while Claude Code cannot run", async () => {
+  it("stops offering a saved Claude Code model while Claude Code cannot run, and says why", async () => {
     const { service, setStatus } = await createClaudeCodeService(ready);
+    await expect(service.unavailableReason(null)).resolves.toBeUndefined();
     await service.save({ selection: sonnet });
 
     setStatus({ state: "outdated", version: "2.1.200", minimumVersion: "2.1.276" });
@@ -963,6 +964,16 @@ describe("ModelService with Claude Code", () => {
       code: "configuration_required",
       message: "Claude Code 2.1.200 is too old. Run `claude update` on the server's computer to get 2.1.276 or newer.",
     });
+    // A Wisp following the saved model, and one with a model of its own, are told what to fix.
+    await expect(service.unavailableReason(null)).resolves.toBe(
+      "Claude Code 2.1.200 is too old. Run `claude update` on the server's computer to get 2.1.276 or newer.",
+    );
+    await expect(service.unavailableReason({ providerId: "openrouter", modelId: "model-a" })).resolves.toBe(
+      "Configure an API key for this provider in AI Model settings.",
+    );
+
+    setStatus(ready);
+    await expect(service.unavailableReason(null)).resolves.toBeUndefined();
   });
 
   it("refuses unknown aliases and leaves Claude Code out without status support", async () => {

@@ -62,6 +62,7 @@ export function registerRuntimeHandlers(
       (id, model) => runtime.applyConversationModel(id, model),
       (id, fallback) => runtime.applyConversationFallback(id, fallback),
       (id) => runtime.abortConversation(id),
+      (id) => runtime.getConversationModel(id),
     ),
   ];
   return {

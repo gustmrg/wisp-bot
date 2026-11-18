@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type {
   AbortConversationView,
+  ConversationModelView,
   ModelSelection,
   SequencedConversationAgentEvent,
   WispFallback,
@@ -18,7 +19,7 @@ import { AgentRegistry } from "./agent-registry.js";
 import { CircleAgentFactory } from "./circle-conversation-agent.js";
 import { appendDecisionUsage, CircleRouter } from "./circle-router.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
-import type { ConversationAgentFactory } from "./conversation-agent.js";
+import { isCircleContext, type ConversationAgentFactory } from "./conversation-agent.js";
 import { normalizeWisp, normalizeWispChanges } from "./conversation-normalizer.js";
 import { ConversationRepository } from "./conversation-repository.js";
 import { ConversationService } from "./conversation-service.js";
@@ -126,6 +127,8 @@ export interface BackendRuntime {
   execution: ExecutionService;
   /** The built-in Wisp templates and the ones saved in this environment. */
   templates: WispTemplateStore;
+  /** A Wisp's model, and why it cannot answer when its model cannot run now. */
+  getConversationModel(conversationId: string): Promise<ConversationModelView>;
   /** Validates and saves a single Wisp's model override; null clears it. */
   applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void>;
   /** Validates and saves a single Wisp's fallback choice. */
@@ -574,6 +577,13 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     logger,
     ...(options.agentMode === "fake" ? { fetch: fakeTranscriptionFetch() } : {}),
   });
+  // Ready again after `claude update` or a sign-in, or no longer ready: Wisps re-apply their models (ADR 026).
+  const stopFollowingClaudeCode = claudeCodeStatus.onChange(() => {
+    void modelService
+      .getSelection()
+      .then((selection) => service.applyModel(selection))
+      .catch((error: unknown) => logger.warn("claude_code_reapply_failed", { code: sanitizeBackendError(error).code }));
+  });
   const activate = async (): Promise<void> => {
     await service.start(await modelService.getSelection());
     // Containers of Wisps deleted while the server was down; never blocks startup.
@@ -610,6 +620,14 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     transcription: transcriptionService,
     execution: executionService,
     templates: new WispTemplateStore(path.join(dataDirectory, "wisp-templates")),
+    getConversationModel: async (conversationId) => {
+      const view = service.getConversationModel(conversationId);
+      // A circle has no model of its own; each member's is shown in its own chat.
+      if (view.status !== "configuration_required") return view;
+      if (isCircleContext(conversationRepository.getAgentContext(conversationId))) return view;
+      const unavailable = await modelService.unavailableReason(view.override);
+      return unavailable ? { ...view, unavailable } : view;
+    },
     applyConversationModel: async (conversationId, model) => {
       if (model) {
         await modelService.validateConversationSelection(model);
@@ -630,6 +648,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     reapplySavedModel: async () => service.applyModel(await modelService.getSelection()),
     dispose: async () => {
       // Stop new work and integrations first, then the agents, which may still be settling their last turn.
+      stopFollowingClaudeCode();
       await jobs.dispose();
       await scheduler.dispose();
       queue.dispose();

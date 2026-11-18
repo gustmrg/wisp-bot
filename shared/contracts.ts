@@ -469,6 +469,8 @@ export interface ConversationModelView {
   /** The Wisp's fallback choice; a Wisp that never chose has the default for its model. */
   fallback: WispFallback;
   status: ConversationStatus;
+  /** Why the Wisp cannot answer while it needs configuration, when its chosen model cannot run now. */
+  unavailable?: string;
 }
 
 export type BackendErrorCode =

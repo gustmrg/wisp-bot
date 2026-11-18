@@ -64,6 +64,7 @@ export class ClaudeCodeStatusService {
     | undefined;
   private pending: Promise<ClaudeCodeStatus> | undefined;
   private planUsage: ClaudeCodePlanUsageView | undefined;
+  private readonly listeners = new Set<(status: ClaudeCodeStatus) => void>();
 
   constructor(options: ClaudeCodeStatusServiceOptions = {}) {
     this.find = options.find ?? (() => findClaudeCode());
@@ -89,6 +90,16 @@ export class ClaudeCodeStatusService {
           : [];
       }),
     };
+  }
+
+  /**
+   * Calls `listener` when a check finds Claude Code in a different state than
+   * the one before it, such as ready again after `claude update`; the first
+   * check is not a change. Returns a function that stops it.
+   */
+  onChange(listener: (status: ClaudeCodeStatus) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   /** The `claude` the latest check found. */
@@ -143,7 +154,9 @@ export class ClaudeCodeStatusService {
   }
 
   private remember(status: ClaudeCodeStatus, executable: string | undefined): ClaudeCodeStatus {
+    const previous = this.latest?.status.state;
     this.latest = { status, executable, checkedAt: this.now() };
+    if (previous && previous !== status.state) for (const listener of this.listeners) listener(status);
     return status;
   }
 }
