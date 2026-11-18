@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createConnection, createServer } from "node:net";
+import os from "node:os";
+import path from "node:path";
 
 import { RemoteError } from "../../client/remote-client.js";
 import {
@@ -17,6 +20,11 @@ const AUTHORIZE_TIMEOUT_MS = 30_000;
 const MAX_STDERR = 8 * 1024;
 // What the app shows of OpenSSH's own output, under "Technical details".
 const MAX_DETAILS = 2 * 1024;
+// The public keys OpenSSH tries by default, in its order.
+const DEFAULT_PUBLIC_KEYS = ["id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"];
+// What ssh-copy-id does on the server, for a computer without it (Windows).
+const AUTHORIZE_SHELL =
+  "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys";
 // Fixed commands: the remote shell sees no user input. ~/.local/bin is where
 // the server docs install wispctl, and it is often missing from the PATH of
 // non-interactive SSH sessions. Pairing reads the server's status first, which
@@ -420,12 +428,20 @@ export function sshFailure(
   return classify(stderr, profile, spawnError, questions);
 }
 
+/** Where advice about this computer's SSH keys applies; tests set it. */
+export interface SshComputer {
+  platform?: NodeJS.Platform;
+  /** Where OpenSSH keeps this user's keys, `~/.ssh` by default. */
+  sshDirectory?: string;
+}
+
 /** Turns what OpenSSH said about a failed connection into what to do about it. */
 export function classify(
   stderr: string,
   profile: SshConnectionProfile,
   spawnError: Error | undefined,
   questions?: SshQuestions,
+  computer: SshComputer = {},
 ): TransportError {
   const { host } = profile;
   const details = detailsOf(stderr);
@@ -454,7 +470,7 @@ export function classify(
     );
   }
   if (/Permission denied/i.test(stderr)) {
-    return new FatalTransportError(explainDenied(stderr, profile, questions), "auth", details);
+    return new FatalTransportError(explainDenied(stderr, profile, questions, computer), "auth", details);
   }
   if (/Could not resolve hostname/i.test(stderr)) {
     return new TransportError(
@@ -489,7 +505,12 @@ export function classify(
  * Why the server turned this computer away. OpenSSH names the user it tried,
  * which may come from ~/.ssh/config, and the methods the server accepts.
  */
-function explainDenied(stderr: string, profile: SshConnectionProfile, questions?: SshQuestions): string {
+function explainDenied(
+  stderr: string,
+  profile: SshConnectionProfile,
+  questions: SshQuestions | undefined,
+  computer: SshComputer,
+): string {
   const match = /(?:(\S+)@\S+: )?Permission denied \(([^)]*)\)/i.exec(stderr);
   const user = match?.[1] ?? profile.user;
   const target = user ? `${user}@${profile.host}` : profile.host;
@@ -497,13 +518,28 @@ function explainDenied(stderr: string, profile: SshConnectionProfile, questions?
   const methods = (match?.[2] ?? "").split(",");
   const password = methods.includes("password") || methods.includes("keyboard-interactive");
   const port = profile.sshPort ? `-p ${profile.sshPort} ` : "";
+  const test = `To test the way Wisp connects, run \`ssh -o BatchMode=yes ${port}${target} true\`.`;
+  if ((computer.platform ?? process.platform) === "win32" && !questions?.interactive) {
+    // Windows has no ssh-copy-id, and Wisp cannot ask OpenSSH's questions there yet.
+    const directory = computer.sshDirectory ?? path.join(os.homedir(), ".ssh");
+    const key = DEFAULT_PUBLIC_KEYS.map((name) => path.join(directory, name)).find((file) => existsSync(file));
+    const authorize = (file: string): string => `\`type "${file}" | ssh ${port}${target} "${AUTHORIZE_SHELL}"\``;
+    return [
+      `${target} did not accept an SSH key from this computer.`,
+      "On Windows, Wisp cannot ask for a password or a key passphrase yet, so it uses keys that need neither.",
+      key
+        ? `Add this computer's public key to the server in PowerShell with ${authorize(key)}, then retry. A key with a passphrase works once \`ssh-add\` has loaded it into the OpenSSH Authentication Agent.`
+        : `This computer has no SSH key in ${directory} yet. Create one in PowerShell with \`ssh-keygen -t ed25519\`, add it to the server with ${authorize(path.join(directory, "id_ed25519.pub"))}, then retry.`,
+      test,
+    ].join(" ");
+  }
   return [
     `${target} did not accept an SSH key from this computer.`,
     ...(password && !questions?.interactive
       ? ["Your terminal may ask for a password, but Wisp cannot ask here, so it can only use SSH keys."]
       : []),
     `Add this computer's public key to ~/.ssh/authorized_keys${user ? ` for ${user}` : ""} on ${profile.host} (for example with \`ssh-copy-id ${port}${target}\`), then retry.`,
-    `To test the way Wisp connects, run \`ssh -o BatchMode=yes ${port}${target} true\`.`,
+    test,
   ].join(" ");
 }
 

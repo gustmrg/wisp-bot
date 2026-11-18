@@ -27,8 +27,44 @@ Remove **Wisp Bot** from **Settings → Apps → Installed apps**. Your data sta
 ## Known limitations
 
 - **Launch at login** is not available yet.
-- SSH connections cannot ask for a password or a key passphrase. Use a key that loads without a prompt, such as one in the OpenSSH agent, and connect once with `ssh` in a terminal first to accept the host key. See [remote server](remote-server.md).
+- SSH connections cannot ask for a password or a key passphrase. Set up a key first, as in [SSH on Windows](#ssh-on-windows).
 - Running commands in a Wisp's container needs Docker Desktop or Podman.
+
+## SSH on Windows
+
+Wisp uses the OpenSSH client that comes with Windows. On Windows it cannot
+ask for a password, a key passphrase, or whether to trust a host key yet. Set
+up a key once in PowerShell before you add an SSH connection:
+
+1. Create a key, if `%USERPROFILE%\.ssh` has none. Press Enter at the
+   passphrase prompt to leave it empty, or see step 4.
+
+   ```powershell
+   ssh-keygen -t ed25519
+   ```
+
+2. Add it to the server. Windows has no `ssh-copy-id`; this does the same.
+   You type the server's password once:
+
+   ```powershell
+   type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh user@host "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+   ```
+
+   Add `-p <port>` after `ssh` when SSH does not listen on port 22. This also
+   asks you to trust the server's host key the first time.
+3. Check that it works the way Wisp connects. It should print nothing and ask
+   nothing:
+
+   ```powershell
+   ssh -o BatchMode=yes user@host true
+   ```
+
+4. For a key with a passphrase, start the **OpenSSH Authentication Agent**
+   service (set it to **Automatic** in **Services**) and load the key with
+   `ssh-add`. Wisp can then use it without asking.
+
+When a server turns the key away, the connection screen shows these commands
+for your key and server.
 
 ## Credential storage
 
