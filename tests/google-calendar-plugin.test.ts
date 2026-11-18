@@ -56,7 +56,7 @@ describe("Google Calendar plugin", () => {
       tokenEndpoint: "https://oauth2.googleapis.com/token",
       revocationEndpoint: "https://oauth2.googleapis.com/revoke",
       scopes: [...GOOGLE_CALENDAR_SCOPES],
-      authorizationParams: { access_type: "offline", prompt: "consent" },
+      authorizationParams: { access_type: "offline", prompt: "consent select_account" },
     });
     const fetchFn = vi.fn(async () => Response.json({ id: "me@example.com" })) as unknown as typeof fetch;
     await expect(googleCalendar.oauth!.account!(TOKEN, fetchFn, new AbortController().signal)).resolves.toBe(

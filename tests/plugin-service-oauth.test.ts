@@ -46,7 +46,13 @@ function fakeTokenServer() {
   return { fetchFn, requests, answers, grant };
 }
 
-async function setup({ signInBrowser }: { signInBrowser?: () => Promise<SignInBrowser> } = {}) {
+async function setup({
+  signInBrowser,
+  secondPlugin = false,
+}: {
+  signInBrowser?: () => Promise<SignInBrowser>;
+  secondPlugin?: boolean;
+} = {}) {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-plugin-oauth-"));
   directories.push(dataDirectory);
   const encryption: EncryptionService = {
@@ -73,12 +79,19 @@ async function setup({ signInBrowser }: { signInBrowser?: () => Promise<SignInBr
     testConnection: async (credential) => `Connected with ${credential}`,
     oauth: OAUTH,
   };
+  // A second sign-in plugin sharing the same OAuth provider, like Google's plugins.
+  const second: PluginAdapter = {
+    id: "gmail",
+    tools: [spec("gmail_search_messages", "read")],
+    testConnection: async (credential) => `Connected with ${credential}`,
+    oauth: OAUTH,
+  };
   const tokens = fakeTokenServer();
   const service = new PluginService({
     dataDirectory,
     encryption,
     authorizationBroker: { authorize: vi.fn(async () => undefined) },
-    adapters: [adapter],
+    adapters: secondPlugin ? [adapter, second] : [adapter],
     resolveWisp: (id) => `session-${id}`,
     openExternal: async (url) => {
       opened.push(url);
@@ -218,6 +231,54 @@ describe("PluginService browser sign-in", () => {
     expect(
       service.getAccess({ conversationId: "one" }).grants.find(({ pluginId }) => pluginId === "linear"),
     ).toMatchObject({ access: "none" });
+  });
+
+  it("keeps each plugin's own account when another plugin of the same provider signs in with a different one", async () => {
+    const { service, tokens, opened, approve } = await setup({ secondPlugin: true });
+    const plugin = async (id: string) => (await service.getView()).plugins.find((entry) => entry.id === id)!;
+    tokens.grant("access-1");
+    let signIn = service.startSignIn({ pluginId: "linear", clientId: "client-1" });
+    await approve();
+    await signIn;
+    tokens.grant("other-access");
+    signIn = service.startSignIn({ pluginId: "gmail", clientId: "client-1" });
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    await approve();
+    await signIn;
+    const { revision } = service.getAccess({ conversationId: "one" });
+    await service.saveAccess({
+      conversationId: "one",
+      revision,
+      grants: [
+        { pluginId: "linear", access: "write" },
+        { pluginId: "gmail", access: "read" },
+      ],
+    });
+
+    expect(await plugin("linear")).toMatchObject({ configured: true, account: "me@example.com" });
+    expect(await plugin("gmail")).toMatchObject({ configured: true, account: "other@example.com" });
+
+    // Signing linear in with gmail's account changes only linear.
+    tokens.grant("other-again");
+    signIn = service.startSignIn({ pluginId: "linear" });
+    await vi.waitFor(() => expect(opened).toHaveLength(3));
+    await approve();
+    await signIn;
+    expect(await plugin("linear")).toMatchObject({ account: "other@example.com" });
+    expect(await plugin("gmail")).toMatchObject({ configured: true, account: "other@example.com" });
+    expect(service.getAccess({ conversationId: "one" }).grants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ pluginId: "linear", access: "none" }),
+        expect.objectContaining({ pluginId: "gmail", access: "read" }),
+      ]),
+    );
+    await expect(service.testConnection({ pluginId: "gmail" })).resolves.toEqual({
+      message: "Connected with other-access",
+    });
+
+    await service.remove({ pluginId: "linear" });
+    expect(await plugin("linear")).toMatchObject({ configured: false });
+    expect(await plugin("gmail")).toMatchObject({ configured: true, account: "other@example.com" });
   });
 
   it.each([
