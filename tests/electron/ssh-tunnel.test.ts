@@ -251,10 +251,13 @@ describe("openSshTunnel", () => {
   });
 
   it("says which user the server turned away, and how to authorize this computer's key", () => {
+    const linux = { platform: "linux" as const };
     const message = classify(
       "gustavo@home-server: Permission denied (publickey,password).\n",
       profile(1),
       undefined,
+      undefined,
+      linux,
     ).message;
     // The user OpenSSH used, which ~/.ssh/config may set, wins over the profile's.
     expect(message).toContain("gustavo@home-server did not accept an SSH key from this computer.");
@@ -263,10 +266,42 @@ describe("openSshTunnel", () => {
     expect(message).toContain("`ssh-copy-id -p 2222 gustavo@home-server`");
     expect(message).toContain("`ssh -o BatchMode=yes -p 2222 gustavo@home-server true`");
 
-    const keysOnly = classify("Permission denied (publickey).", { ...profile(1), sshPort: undefined }, undefined);
+    const keysOnly = classify(
+      "Permission denied (publickey).",
+      { ...profile(1), sshPort: undefined },
+      undefined,
+      undefined,
+      linux,
+    );
     expect(keysOnly).toBeInstanceOf(FatalTransportError);
     expect(keysOnly.message).not.toMatch(/password/);
     expect(keysOnly.message).toContain("`ssh-copy-id wisp@home-server`");
+  });
+
+  it("on Windows, says how to create and authorize a key from PowerShell, since ssh-copy-id is missing", async () => {
+    const sshDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-ssh-dir-"));
+    cleanups.push(() => rm(sshDirectory, { recursive: true, force: true }));
+    const windows = { platform: "win32" as const, sshDirectory };
+    const denied = "gustavo@home-server: Permission denied (publickey,password).\n";
+    const append = `"mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"`;
+
+    const noKey = classify(denied, profile(1), undefined, undefined, windows).message;
+    expect(noKey).toContain(`This computer has no SSH key in ${sshDirectory} yet.`);
+    expect(noKey).toContain("`ssh-keygen -t ed25519`");
+    expect(noKey).toContain(
+      `\`type "${path.join(sshDirectory, "id_ed25519.pub")}" | ssh -p 2222 gustavo@home-server ${append}\``,
+    );
+    expect(noKey).not.toContain("ssh-copy-id");
+
+    // The key OpenSSH tries first among the ones there.
+    await writeFile(path.join(sshDirectory, "id_rsa.pub"), "ssh-rsa AAAA test\n");
+    const withKey = classify(denied, { ...profile(1), sshPort: undefined }, undefined, undefined, windows).message;
+    expect(withKey).not.toContain("no SSH key");
+    expect(withKey).toContain(
+      `\`type "${path.join(sshDirectory, "id_rsa.pub")}" | ssh gustavo@home-server ${append}\``,
+    );
+    expect(withKey).toMatch(/passphrase.*`ssh-add`/);
+    expect(withKey).toContain("`ssh -o BatchMode=yes gustavo@home-server true`");
   });
 
   it("asks to trust a new host key through askpass, then remembers it", async () => {
