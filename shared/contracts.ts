@@ -1,4 +1,4 @@
-import type { ClaudeCodeStatusView } from "./claude-code.js";
+import type { ClaudeCodeStatusView, ClaudeCodeUpdateView } from "./claude-code.js";
 import type { ContextRequest, ContextView } from "./context-policy.js";
 import type {
   PluginSettingsView,
@@ -154,6 +154,7 @@ export const WISP_IPC_CHANNELS = {
   startProviderSignIn: "wisp:settings:ai:sign-in",
   cancelProviderSignIn: "wisp:settings:ai:sign-in:cancel",
   finishProviderSignIn: "wisp:settings:ai:sign-in:finish",
+  updateClaudeCode: "wisp:settings:ai:claude-code:update",
   getConversationState: "wisp:conversations:get",
   initializeConversations: "wisp:conversations:initialize",
   createWisp: "wisp:wisps:create",
@@ -414,6 +415,8 @@ export interface AiSettingsView {
   providerSignIn?: ProviderSignInView | null;
   /** Whether this server's Claude Code can run Wisps (ADR 026); missing from servers before Claude Code. */
   claudeCode?: ClaudeCodeStatusView;
+  /** How Wisp can update the server's `claude`; missing without one, and from servers before updates. */
+  claudeCodeUpdate?: ClaudeCodeUpdateView;
   /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
   catalogError: string | null;
 }
@@ -472,6 +475,8 @@ export interface ConversationModelView {
   status: ConversationStatus;
   /** Why the Wisp cannot answer while it needs configuration, when its chosen model cannot run now. */
   unavailable?: string;
+  /** The provider of that model, such as `claude-code`, whose settings fix it. */
+  unavailableProviderId?: string;
 }
 
 export type BackendErrorCode =
@@ -921,6 +926,8 @@ export interface WispApi {
   removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
   startProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   cancelProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
+  /** Starts updating the server's `claude`; `claudeCodeUpdate` reports it until it ends. */
+  updateClaudeCode(): Promise<BackendResult<AiSettingsView>>;
   finishProviderSignIn(request: FinishProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
   /** Marks a new environment's store as set up; it starts with no Wisps or conversations. */

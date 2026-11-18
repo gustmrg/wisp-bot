@@ -967,12 +967,14 @@ describe("ModelService with Claude Code", () => {
       message: "Claude Code 2.1.200 is too old. Run `claude update` on the server's computer to get 2.1.276 or newer.",
     });
     // A Wisp following the saved model, and one with a model of its own, are told what to fix.
-    await expect(service.unavailableReason(null)).resolves.toBe(
-      "Claude Code 2.1.200 is too old. Run `claude update` on the server's computer to get 2.1.276 or newer.",
-    );
-    await expect(service.unavailableReason({ providerId: "openrouter", modelId: "model-a" })).resolves.toBe(
-      "Configure an API key for this provider in AI Model settings.",
-    );
+    await expect(service.unavailableReason(null)).resolves.toEqual({
+      providerId: CLAUDE_CODE_PROVIDER,
+      message: "Claude Code 2.1.200 is too old. Run `claude update` on the server's computer to get 2.1.276 or newer.",
+    });
+    await expect(service.unavailableReason({ providerId: "openrouter", modelId: "model-a" })).resolves.toEqual({
+      providerId: "openrouter",
+      message: "Configure an API key for this provider in AI Model settings.",
+    });
 
     setStatus(ready);
     await expect(service.unavailableReason(null)).resolves.toBeUndefined();

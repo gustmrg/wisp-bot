@@ -43,6 +43,8 @@ import { ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-fact
 import { CLAUDE_CODE_FALLBACK_DIRECTORY } from "./claude-code/claude-code-usage-log.js";
 import { ClaudeCodeProcesses } from "./claude-code/claude-code-processes.js";
 import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
+import { ClaudeCodeActivity } from "./claude-code/claude-code-activity.js";
+import { ClaudeCodeUpdateService } from "./claude-code/claude-code-update.js";
 import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
 import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
 import { PluginService } from "./plugin-service.js";
@@ -188,6 +190,8 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
   const claudeCodeStatus = new ClaudeCodeStatusService(
     options.agentMode === "fake" ? { find: async () => undefined } : {},
   );
+  const claudeCodeActivity = new ClaudeCodeActivity();
+  const claudeCodeUpdate = new ClaudeCodeUpdateService({ status: claudeCodeStatus, activity: claudeCodeActivity });
   const modelService = await ModelService.create({
     dataDirectory,
     encryption,
@@ -195,6 +199,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     openExternal: options.openExternal,
     ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
     claudeCode: claudeCodeStatus,
+    claudeCodeUpdate,
   });
   const toolPolicyStore = new ToolPolicyStore(path.join(dataDirectory, "tool-policy.json"));
   await toolPolicyStore.load();
@@ -382,6 +387,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
       return { name: model.name || model.id, session };
     },
     processes: new ClaudeCodeProcesses(),
+    activity: claudeCodeActivity,
   });
   const sessionFactory = new RoutingSessionFactory(piSessionFactory, claudeCodeSessionFactory);
   const runtimeEvents = new RuntimeEventLog({
@@ -626,7 +632,9 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
       if (view.status !== "configuration_required") return view;
       if (isCircleContext(conversationRepository.getAgentContext(conversationId))) return view;
       const unavailable = await modelService.unavailableReason(view.override);
-      return unavailable ? { ...view, unavailable } : view;
+      return unavailable
+        ? { ...view, unavailable: unavailable.message, unavailableProviderId: unavailable.providerId }
+        : view;
     },
     applyConversationModel: async (conversationId, model) => {
       if (model) {

@@ -115,6 +115,9 @@ function completeBridge(): WispApi {
     finishProviderSignIn: async () => {
       throw new Error("not called");
     },
+    updateClaudeCode: async () => {
+      throw new Error("not called");
+    },
     getConversationState: async () => {
       throw new Error("not called");
     },

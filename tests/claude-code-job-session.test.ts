@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ClaudeCodeActivity } from "../backend/claude-code/claude-code-activity.js";
 import { ClaudeCodeJobSession } from "../backend/claude-code/claude-code-job-session.js";
 import type { ClaudeCodeQueryOptions } from "../backend/claude-code/claude-code-launch.js";
 import type { ClaudeCodeQuery } from "../backend/claude-code/claude-code-session.js";
@@ -39,9 +40,10 @@ function queryAnswering(answer: (text: string) => unknown[] | Error, onInterrupt
   return { query, sent, closed, started: () => started };
 }
 
-function session(query: ClaudeCodeQuery) {
+function session(query: ClaudeCodeQuery, activity?: ClaudeCodeActivity) {
   return new ClaudeCodeJobSession({
     query,
+    ...(activity ? { activity } : {}),
     toolNames: ["web_search", "skip_delivery"],
     queryOptions: async () => ({ persistSession: false }) as ClaudeCodeQueryOptions,
   });
@@ -49,8 +51,13 @@ function session(query: ClaudeCodeQuery) {
 
 describe("ClaudeCodeJobSession", () => {
   it("runs one turn, delivers its reply, and reports its usage", async () => {
-    const fake = queryAnswering(() => [result()]);
-    const run = session(fake.query);
+    const activity = new ClaudeCodeActivity();
+    let busy = false;
+    const fake = queryAnswering(() => {
+      busy = activity.busy;
+      return [result()];
+    });
+    const run = session(fake.query, activity);
     expect(fake.started()).toBe(false);
 
     await run.prompt("Check the blog for new posts.", new AbortController().signal);
@@ -62,6 +69,8 @@ describe("ClaudeCodeJobSession", () => {
     expect(run.getActiveToolNames()).toEqual(["web_search", "skip_delivery"]);
     expect(run.sessionFile).toBeUndefined();
     expect(fake.closed).toHaveBeenCalled();
+    expect(busy).toBe(true);
+    expect(activity.busy).toBe(false);
   });
 
   it("turns a failed run into an error the person can act on", async () => {

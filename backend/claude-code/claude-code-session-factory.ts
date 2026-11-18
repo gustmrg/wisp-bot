@@ -11,6 +11,7 @@ import { CONTEXT_SETTINGS_FILE, loadContextSettings, saveContextSettings } from 
 import type { ConversationAgentContext } from "../conversation-agent.js";
 import type { RuntimeSession } from "../runtime-session.js";
 import { defaultToolRevision, type JobSessionSpec, type WispSessionBuilder } from "../wisp-session-plan.js";
+import type { ClaudeCodeActivity } from "./claude-code-activity.js";
 import { ClaudeCodeJobSession } from "./claude-code-job-session.js";
 import { claudeCodeEnvironment, claudeCodeQueryOptions, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
 import { purgeClaudeCodeProject, type ClaudeCodeProcesses } from "./claude-code-processes.js";
@@ -68,6 +69,8 @@ export interface ClaudeCodeSessionFactoryOptions {
   searchHistory?: (conversationId: string, query: string) => Promise<string>;
   /** Tracks the processes, so a deleted Wisp's data is purged once they exited. */
   processes?: ClaudeCodeProcesses;
+  /** Counts running turns, so `claude` is not updated under one (ADR 047). */
+  activity?: ClaudeCodeActivity;
   /** Deletes what Claude Code keeps for a workspace; injected by tests. */
   purgeProject?: (executable: string, workspaceDirectory: string, env: Record<string, string>) => Promise<void>;
   /** Deletes one Claude Code session of a workspace: the Agent SDK's `deleteSession`; injected by tests. */
@@ -123,6 +126,7 @@ export class ClaudeCodeSessionFactory {
     const settingsPath = path.join(context.configDirectory, CONTEXT_SETTINGS_FILE);
     return new ClaudeCodeSession({
       query: prepared.query,
+      ...(this.options.activity ? { activity: this.options.activity } : {}),
       sessionId: saved.sessionId ?? randomUUID(),
       resume: saved.sessionId !== null,
       state: { lastActivityAt: saved.lastActivityAt, lastRenewedAt: saved.lastRenewedAt, tokens: saved.tokens },
@@ -165,6 +169,7 @@ export class ClaudeCodeSessionFactory {
     const effort = claudeCodeEffort(selection.thinkingLevel ?? "off");
     return new ClaudeCodeJobSession({
       query: prepared.query,
+      ...(this.options.activity ? { activity: this.options.activity } : {}),
       toolNames: prepared.toolNames,
       queryOptions: () =>
         prepared.queryOptions({ model: prepared.model.id, ...(effort ? { effort } : {}), session: null }),

@@ -22,6 +22,7 @@ export const RUNTIME_OPERATIONS = [
   "startProviderSignIn",
   "cancelProviderSignIn",
   "finishProviderSignIn",
+  "updateClaudeCode",
   "getPluginSettings",
   "savePluginSettings",
   "savePluginDefaults",

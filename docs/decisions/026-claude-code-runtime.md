@@ -145,7 +145,8 @@ itself checks nothing; its `package.json` names the CLI it was built with
 - **Minimum:** the `claudeCodeVersion` of the SDK Wisp ships, read from the
   SDK's `package.json`. It is above the 2.1.248 that `--restricted` needs.
   An older `claude`, or none, makes the provider unavailable, and settings say
-  to install it or run `claude update`. Newer versions are accepted.
+  to install it or run `claude update`, or update it from the app
+  ([ADR 047](047-updating-claude-code.md)). Newer versions are accepted.
 - **Why a Wisp cannot answer:** a Wisp whose model cannot run gets the same
   message in its chat, above the message box, from the reason the conversation
   model view gives (`unavailable`). Its **Check again** asks again, which

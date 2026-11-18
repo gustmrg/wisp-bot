@@ -195,6 +195,7 @@ interface ChatPanelProps {
   /** Opens a Wisp's own conversation with its settings, from a mention of it in a circle. */
   onOpenWisp?: (wispId: string) => void;
   onConfigure?: () => void;
+  onOpenProviders?: () => void;
   voice?: VoiceInputSettings;
   onConfigureVoice?: () => void;
   onRetry: (messageId: string | undefined) => void;
@@ -232,6 +233,7 @@ function ChatPanel({
   onOpenDetails,
   onOpenWisp,
   onConfigure,
+  onOpenProviders,
   voice,
   onConfigureVoice,
   onRetry,
@@ -778,6 +780,7 @@ function ChatPanel({
         error={error}
         acknowledging={acknowledging}
         onConfigure={onConfigure}
+        onOpenProviders={onOpenProviders}
         voice={voice}
         voiceShortcutEnabled={!hidden}
         onConfigureVoice={onConfigureVoice}

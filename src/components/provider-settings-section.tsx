@@ -93,6 +93,21 @@ function ProviderSettingsSection() {
   }, [load]);
 
   // A sign-in completes in the browser, so the view is reloaded until it ends.
+  // An update runs on the server in the background, so the view is reloaded until it ends.
+  const updating = view?.claudeCodeUpdate?.running === true;
+  useEffect(() => {
+    if (!updating) return;
+    const timer = setInterval(() => {
+      void window.wisp
+        .getAiSettings()
+        .then((result) => {
+          if (result.ok) setView(result.value);
+        })
+        .catch(() => undefined);
+    }, SIGN_IN_POLL_MS);
+    return () => clearInterval(timer);
+  }, [updating]);
+
   const signInWaiting = view?.providerSignIn?.status === "waiting";
   useEffect(() => {
     if (!signInWaiting) return;
@@ -260,7 +275,23 @@ function ProviderCredentialForm({
   const [error, setError] = useState<string | null>(null);
 
   if (entry.id === CLAUDE_CODE_PROVIDER) {
-    return <ClaudeCodeStatus status={view.claudeCode} onCheckAgain={onCheckAgain} />;
+    return (
+      <ClaudeCodeStatus
+        status={view.claudeCode}
+        {...(view.claudeCodeUpdate ? { update: view.claudeCodeUpdate } : {})}
+        onCheckAgain={onCheckAgain}
+        onUpdate={async () => {
+          try {
+            const result = await window.wisp.updateClaudeCode();
+            if (!result.ok) return result.error.message;
+            onViewChange(result.value);
+            return null;
+          } catch {
+            return "Could not update Claude Code.";
+          }
+        }}
+      />
+    );
   }
 
   // Servers from before decision models have no way to save a key on its own.

@@ -11,6 +11,7 @@ import {
   type ClaudeCodeContextState,
   type ClaudeCodeSessionOptions,
 } from "../backend/claude-code/claude-code-session.js";
+import { ClaudeCodeActivity } from "../backend/claude-code/claude-code-activity.js";
 import type { ClaudeCodeQueryOptions } from "../backend/claude-code/claude-code-launch.js";
 import type { PiAgentEvent } from "../backend/pi-event-translator.js";
 import type { RuntimeSession } from "../backend/runtime-session.js";
@@ -112,6 +113,7 @@ function createSession(
     resume?: boolean;
     now?: () => Date;
     fallback?: ClaudeCodeSessionOptions["fallback"];
+    activity?: ClaudeCodeActivity;
   } = {},
 ) {
   const processes: FakeProcess[] = [];
@@ -146,6 +148,7 @@ function createSession(
     ...(options.state ? { state: options.state } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.fallback ? { fallback: options.fallback } : {}),
+    ...(options.activity ? { activity: options.activity } : {}),
   });
   const events: PiAgentEvent[] = [];
   session.subscribe((event) => events.push(event));
@@ -158,7 +161,15 @@ afterEach(() => {
 
 describe("ClaudeCodeSession", () => {
   it("runs a turn as Pi's agent events and keeps one process across turns", async () => {
-    const { session, processes, launches, events, onSessionSaved } = createSession();
+    const activity = new ClaudeCodeActivity();
+    const busy: boolean[] = [];
+    const { session, processes, launches, events, onSessionSaved } = createSession({
+      activity,
+      answer: (process, text) => {
+        busy.push(activity.busy);
+        process.push(delta(`echo:${text}`), result());
+      },
+    });
 
     await session.prompt("hello");
     await session.prompt("again");
@@ -182,6 +193,9 @@ describe("ClaudeCodeSession", () => {
     ]);
     expect(session.isIdle).toBe(true);
     expect(session.getActiveToolNames()).toEqual(["read", "run_command"]);
+    // Each turn counts as running while it runs; the process left open between turns does not.
+    expect(busy).toEqual([true, true]);
+    expect(activity.busy).toBe(false);
   });
 
   it("hands each SDK message, as it arrives, to the runtime events listeners", async () => {

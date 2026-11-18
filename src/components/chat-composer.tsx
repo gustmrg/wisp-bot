@@ -31,6 +31,7 @@ import { formatScheduledTime, schedulePresets } from "@/lib/scheduled-time";
 import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { readComposerDraft, saveComposerDraft } from "@/lib/composer-drafts";
+import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ChatView } from "@/chat-data";
@@ -74,6 +75,8 @@ export interface ChatComposerProps {
   error?: string;
   acknowledging: boolean;
   onConfigure?: () => void;
+  /** Opens **Settings → Providers**, where Claude Code is checked and updated. */
+  onOpenProviders?: () => void;
   voice?: VoiceInputSettings;
   /** Listen for the voice input shortcut; off while the composer is not on screen. */
   voiceShortcutEnabled?: boolean;
@@ -96,6 +99,7 @@ export function ChatComposer({
   error,
   acknowledging,
   onConfigure,
+  onOpenProviders,
   voice = DEFAULT_VOICE_SETTINGS,
   voiceShortcutEnabled = true,
   onConfigureVoice,
@@ -693,6 +697,15 @@ export function ChatComposer({
                 onClick={unavailable.checkAgain}
               >
                 {unavailable.checking ? "Checking…" : "Check again"}
+              </button>
+            ) : null}
+            {unavailable.providerId === CLAUDE_CODE_PROVIDER && onOpenProviders ? (
+              <button
+                type="button"
+                className="font-medium text-primary underline underline-offset-2"
+                onClick={onOpenProviders}
+              >
+                Claude Code settings
               </button>
             ) : null}
             {onConfigure ? (
