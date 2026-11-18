@@ -57,6 +57,8 @@ describe("ClaudeCodeStatusService", () => {
         return answer(args);
       },
     });
+    const changes: string[] = [];
+    status.onChange(({ state }) => changes.push(state));
     expect(await status.refresh()).toMatchObject({ state: "ready" });
 
     // A busy server: `claude --version` does not answer in time.
@@ -78,6 +80,13 @@ describe("ClaudeCodeStatusService", () => {
         ? { stdout: "2.1.303 (Claude Code)", exitCode: 0 }
         : { stdout: JSON.stringify({ loggedIn: false, authMethod: "none" }), exitCode: 1 };
     expect(await status.refresh()).toEqual({ state: "signed_out", version: "2.1.303" });
+
+    // Signing in again is a change too, so Wisps can apply their models again.
+    now += 6_000;
+    answer = (args) =>
+      args[0] === "--version" ? { stdout: "2.1.303 (Claude Code)", exitCode: 0 } : { stdout: signedIn, exitCode: 0 };
+    expect(await status.refresh()).toMatchObject({ state: "ready" });
+    expect(changes).toEqual(["signed_out", "ready"]);
   });
 
   it("reports claude as missing when the first check cannot run it", async () => {

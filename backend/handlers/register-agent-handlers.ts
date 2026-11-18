@@ -39,6 +39,8 @@ export class AgentIpcController {
       await registry.abort(id);
       return { followUps: [] };
     },
+    private readonly loadModel: (id: string) => Promise<ConversationModelView> = async (id) =>
+      registry.getModelView(id),
   ) {
     this.registry = registry;
   }
@@ -87,7 +89,7 @@ export class AgentIpcController {
   }
 
   async getModel(payload: unknown): Promise<BackendResult<ConversationModelView>> {
-    return toResult(async () => this.registry.getModelView(parseConversationRequest(payload).conversationId));
+    return toResult(() => this.loadModel(parseConversationRequest(payload).conversationId));
   }
 
   async dispose(payload: unknown): Promise<EmptyResult> {
@@ -106,8 +108,9 @@ export function registerAgentHandlers(
   saveModel?: (id: string, model: ModelSelection | null) => Promise<void>,
   saveFallback?: (id: string, fallback: WispFallback) => Promise<void>,
   stop?: (id: string) => Promise<AbortConversationView>,
+  loadModel?: (id: string) => Promise<ConversationModelView>,
 ): { dispose: () => void } {
-  const controller = new AgentIpcController(registry, saveModel, saveFallback, stop);
+  const controller = new AgentIpcController(registry, saveModel, saveFallback, stop, loadModel);
   // The controller already returns BackendResults, so only the sender check is added here.
   return registerAuthorizedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],

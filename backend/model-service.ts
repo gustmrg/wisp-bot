@@ -763,6 +763,22 @@ export class ModelService {
     }
   }
 
+  /**
+   * Why the model a conversation answers with, its own or else the saved one,
+   * cannot run now, in words the person can act on; undefined when it can or
+   * none is chosen. Checking Claude Code may run `claude` again.
+   */
+  async unavailableReason(override: ModelSelection | null): Promise<string | undefined> {
+    const selection = override ?? (await this.settings.getSelection());
+    if (!selection) return undefined;
+    try {
+      await this.validateConversationSelection(selection);
+      return undefined;
+    } catch (error) {
+      return error instanceof WispBackendError ? error.message : undefined;
+    }
+  }
+
   private offersSubscriptionSignIn(providerId: string): boolean {
     const provider = this.runtime.getProvider(providerId);
     return SUBSCRIPTION_SIGN_IN_PROVIDERS.has(providerId) && provider?.auth.oauth?.isSubscription === true;

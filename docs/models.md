@@ -76,6 +76,10 @@ password or token.
   Code must be at least the version the Agent SDK Wisp ships was built with;
   `claude update` brings an older one up to date. **Check again** reads the
   status after a fix.
+- **Wisps that cannot answer:** while Claude Code is outdated, missing, or
+  signed out, a Wisp on it shows why above its message box, with **Check
+  again**. Once Claude Code is ready, its Wisps answer again without their
+  model being chosen anew.
 - **Models:** `default`, `opus`, `sonnet`, and `haiku`. Claude Code resolves
   them to the newest model it knows. Fable is not offered, because it can bill
   usage credits instead of the plan. The reasoning level sets Claude Code's

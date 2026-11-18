@@ -22,6 +22,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useModelVision } from "@/hooks/use-model-image-input";
+import { useModelUnavailable } from "@/hooks/use-model-unavailable";
 import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { useWorkspaceFileSearch } from "@/hooks/use-workspace-file-search";
@@ -132,6 +133,7 @@ export function ChatComposer({
   const emptyCircle = chat.kind === "circle" && !chat.members.length;
   const canSend = (status === "idle" || working) && !acknowledging && !emptyCircle;
   const vision = useModelVision(chat.kind === "wisp" ? chat.id : null);
+  const unavailable = useModelUnavailable(chat.kind === "wisp" ? chat.id : null, status);
   const visionHint = vision.imageInput === false ? missingVisionHint(attachments, vision.imageModel) : null;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // The + menu opens from the composer's edge, so it clears the box and any text above its button.
@@ -682,7 +684,17 @@ export function ChatComposer({
           "Add Wisps to this circle in its settings to talk with them."
         ) : needsConfiguration ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span>Choose a provider and model before sending a message.</span>
+            <span>{unavailable.reason ?? "Choose a provider and model before sending a message."}</span>
+            {unavailable.reason ? (
+              <button
+                type="button"
+                className="font-medium text-primary underline underline-offset-2 disabled:no-underline disabled:opacity-60"
+                disabled={unavailable.checking}
+                onClick={unavailable.checkAgain}
+              >
+                {unavailable.checking ? "Checking…" : "Check again"}
+              </button>
+            ) : null}
             {onConfigure ? (
               <ComposerTooltip message="Configure AI model">
                 <button
