@@ -27,8 +27,10 @@ import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-cr
 import type { SignInBrowser } from "./oauth-redirect.js";
 import { CLAUDE_CODE_MODELS, CLAUDE_CODE_PROVIDER_NAME, claudeCodeModel } from "./claude-code/claude-code-models.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
+import type { ClaudeCodeUpdateService } from "./claude-code/claude-code-update.js";
 
 type ClaudeCodeStatusSource = Pick<ClaudeCodeStatusService, "current" | "refresh">;
+type ClaudeCodeUpdateSource = Pick<ClaudeCodeUpdateService, "view" | "start">;
 
 const MAX_API_KEY_LENGTH = 20_000;
 const MODEL_REFRESH_TIMEOUT_MS = 10_000;
@@ -82,6 +84,8 @@ interface ModelServiceOptions {
   signInBrowser?: () => Promise<SignInBrowser>;
   /** Whether Claude Code can run Wisps; without it, the `claude-code` provider is not offered (ADR 026). */
   claudeCode?: ClaudeCodeStatusSource;
+  /** Updates the server's `claude` (ADR 047). */
+  claudeCodeUpdate?: ClaudeCodeUpdateSource;
 }
 
 export interface CreateModelServiceOptions {
@@ -90,6 +94,7 @@ export interface CreateModelServiceOptions {
   /** Allow the runtime to use the network for model catalogs. Defaults to true. */
   allowModelNetwork?: boolean;
   claudeCode?: ClaudeCodeStatusSource;
+  claudeCodeUpdate?: ClaudeCodeUpdateSource;
   openExternal?: (url: string) => Promise<void>;
   signInBrowser?: () => Promise<SignInBrowser>;
 }
@@ -162,6 +167,7 @@ export class ModelService {
   private readonly signInBrowser: ModelServiceOptions["signInBrowser"];
   private signIn: ProviderSignIn | undefined;
   private readonly claudeCode: ClaudeCodeStatusSource | undefined;
+  private readonly claudeCodeUpdate: ClaudeCodeUpdateSource | undefined;
 
   constructor(options: ModelServiceOptions) {
     this.runtime = options.runtime;
@@ -172,6 +178,7 @@ export class ModelService {
     this.openExternal = options.openExternal;
     this.signInBrowser = options.signInBrowser;
     this.claudeCode = options.claudeCode;
+    this.claudeCodeUpdate = options.claudeCodeUpdate;
   }
 
   static async create(options: CreateModelServiceOptions): Promise<ModelService> {
@@ -202,6 +209,7 @@ export class ModelService {
       ...(options.openExternal ? { openExternal: options.openExternal } : {}),
       ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
       ...(options.claudeCode ? { claudeCode: options.claudeCode } : {}),
+      ...(options.claudeCodeUpdate ? { claudeCodeUpdate: options.claudeCodeUpdate } : {}),
     });
     // Restore saved credentials and cached catalog entries offline, so the app
     // is usable without waiting on the network. The availability pass that
@@ -296,6 +304,7 @@ export class ModelService {
       providers.sort(compareByName);
     }
 
+    const claudeCodeUpdate = claudeCode ? await this.claudeCodeUpdate?.view() : undefined;
     const savedSelection = await this.settings.getSelection();
     // A Claude Code model stays chosen while Claude Code cannot run: it is fixed on the server, and Wisps say why.
     const selection =
@@ -332,8 +341,16 @@ export class ModelService {
       decisionProviders: decisionProviders.sort(compareByName),
       providerSignIn: this.signInView(),
       ...(claudeCode ? { claudeCode } : {}),
+      ...(claudeCodeUpdate ? { claudeCodeUpdate } : {}),
       catalogError: errors.length > 0 ? errors.join("\n") : null,
     };
+  }
+
+  /** Starts updating the server's `claude` with the installer that owns it (ADR 047). */
+  async updateClaudeCode(): Promise<AiSettingsView> {
+    if (!this.claudeCodeUpdate) throw new WispBackendError("unsupported", "This server cannot update Claude Code.");
+    await this.claudeCodeUpdate.start();
+    return this.getView();
   }
 
   async save(request: SaveAiSettingsRequest): Promise<AiSettingsView> {
@@ -764,17 +781,22 @@ export class ModelService {
 
   /**
    * Why the model a conversation answers with, its own or else the saved one,
-   * cannot run now, in words the person can act on; undefined when it can or
-   * none is chosen. Checking Claude Code may run `claude` again.
+   * cannot run now, in words the person can act on, with its provider;
+   * undefined when it can or none is chosen. Checking Claude Code may run
+   * `claude` again.
    */
-  async unavailableReason(override: ModelSelection | null): Promise<string | undefined> {
+  async unavailableReason(
+    override: ModelSelection | null,
+  ): Promise<{ providerId: string; message: string } | undefined> {
     const selection = override ?? (await this.settings.getSelection());
     if (!selection) return undefined;
     try {
       await this.validateConversationSelection(selection);
       return undefined;
     } catch (error) {
-      return error instanceof WispBackendError ? error.message : undefined;
+      return error instanceof WispBackendError
+        ? { providerId: selection.providerId, message: error.message }
+        : undefined;
     }
   }
 

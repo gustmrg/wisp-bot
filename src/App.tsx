@@ -349,6 +349,7 @@ function Workspace({
                 onOpenDetails={openChatDetails}
                 onOpenWisp={openWisp}
                 onConfigure={() => showSettings("model")}
+                onOpenProviders={() => showSettings("providers")}
                 voice={{
                   deviceId: workspace.preferences.microphone,
                   providerId: workspace.preferences.voiceProvider,

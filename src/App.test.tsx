@@ -175,6 +175,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     startProviderSignIn: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     cancelProviderSignIn: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     finishProviderSignIn: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
+    updateClaudeCode: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     getConversationState: vi.fn(async () => current()),
     initializeConversations: vi.fn(async () => {
       state = conversationState(true);

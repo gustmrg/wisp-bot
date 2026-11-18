@@ -1,6 +1,7 @@
 import type { SessionReportUsage } from "../../shared/contracts.js";
 import { WispBackendError } from "../backend-error.js";
 import type { RuntimeJobSession } from "../runtime-session.js";
+import type { ClaudeCodeActivity } from "./claude-code-activity.js";
 import { ClaudeCodeEventConverter, type ClaudeCodeTurnResult } from "./claude-code-events.js";
 import { claudeCodeUserMessage, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
 import { describeFailure, type ClaudeCodeQuery, type ClaudeCodeQueryHandle } from "./claude-code-session.js";
@@ -18,6 +19,8 @@ export interface ClaudeCodeJobSessionOptions {
   /** The run's query options: the job's tools and skills, and no session to keep. */
   queryOptions: () => Promise<ClaudeCodeQueryOptions>;
   toolNames: ReadonlyArray<string>;
+  /** Counts the run as a running turn, so `claude` is not updated under it (ADR 047). */
+  activity?: ClaudeCodeActivity;
 }
 
 /**
@@ -43,6 +46,15 @@ export class ClaudeCodeJobSession implements RuntimeJobSession {
   }
 
   async prompt(text: string, signal: AbortSignal): Promise<void> {
+    const endActivity = this.options.activity?.begin();
+    try {
+      await this.run(text, signal);
+    } finally {
+      endActivity?.();
+    }
+  }
+
+  private async run(text: string, signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
     const queryOptions = await this.options.queryOptions();
     signal.throwIfAborted();

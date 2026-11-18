@@ -76,9 +76,15 @@ password or token.
   Code must be at least the version the Agent SDK Wisp ships was built with;
   `claude update` brings an older one up to date. **Check again** reads the
   status after a fix.
+- **Updating:** **Update Claude Code** in the same place updates it on the
+  server's computer, with the native installer or npm that installed it
+  ([ADR 047](decisions/047-updating-claude-code.md)). It waits until no
+  Claude Code Wisp is answering, and can take a few minutes. Other installs,
+  and npm installs that need administrator rights, show the command to run
+  there instead.
 - **Wisps that cannot answer:** while Claude Code is outdated, missing, or
   signed out, a Wisp on it shows why above its message box, with **Check
-  again**. Once Claude Code is ready, its Wisps answer again without their
+  again** and **Claude Code settings**. Once Claude Code is ready, its Wisps answer again without their
   model being chosen anew.
 - **Claude Code as the default model:** it stays the default while Claude
   Code cannot run. **Settings → AI Model** says why, and the app opens as

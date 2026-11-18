@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { ProviderSignInView, ProviderSummary } from "../../shared/contracts";
 import { ManualSignInForm } from "@/components/manual-sign-in";
 import {
@@ -14,6 +16,7 @@ import {
   claudeCodeUnavailableMessage,
   type ClaudeCodePlanUsageView,
   type ClaudeCodeStatusView,
+  type ClaudeCodeUpdateView,
 } from "../../shared/claude-code";
 
 /**
@@ -95,12 +98,28 @@ const CLAUDE_CODE_SETUP_URL = "https://code.claude.com/docs/en/setup";
  */
 export function ClaudeCodeStatus({
   status,
+  update,
   onCheckAgain,
+  onUpdate,
 }: {
   status: ClaudeCodeStatusView | undefined;
+  /** How Wisp can update `claude`; without it, or without `onUpdate`, updating is not offered. */
+  update?: ClaudeCodeUpdateView;
   onCheckAgain: () => void;
+  /** Starts an update; resolves with an error message, or null. */
+  onUpdate?: () => Promise<string | null>;
 }) {
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const ready = status?.state === "ready" ? status : undefined;
+  const installed = status !== undefined && status.state !== "missing" && status.state !== "checking";
+  const canUpdate = installed && onUpdate && update && update.method !== "manual";
+
+  async function handleUpdate(): Promise<void> {
+    if (!onUpdate) return;
+    setUpdateError(null);
+    setUpdateError(await onUpdate());
+  }
+
   const plan = ready?.plan ? `${ready.plan.charAt(0).toUpperCase()}${ready.plan.slice(1)} ` : "";
   return (
     <div className="flex flex-col gap-2 px-3.5 py-3.5">
@@ -115,12 +134,53 @@ export function ClaudeCodeStatus({
               : claudeCodeUnavailableMessage(status)}
           </SettingsRowDescription>
         </SettingsRowCopy>
-        {ready ? null : (
-          <Button type="button" variant="secondary" className="shrink-0" onClick={onCheckAgain}>
-            Check again
-          </Button>
-        )}
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {ready || update?.running ? null : (
+            <Button type="button" variant="secondary" onClick={onCheckAgain}>
+              Check again
+            </Button>
+          )}
+          {canUpdate ? (
+            <Button
+              type="button"
+              variant={status?.state === "outdated" ? "default" : "secondary"}
+              disabled={update.running}
+              onClick={() => void handleUpdate()}
+            >
+              {update.running ? "Updating…" : "Update Claude Code"}
+            </Button>
+          ) : null}
+        </div>
       </div>
+      {update?.running ? (
+        <p role="status" className="m-0 text-xs leading-relaxed text-dim">
+          Updating Claude Code on the server's computer. This can take a few minutes.
+        </p>
+      ) : update?.last ? (
+        <p
+          role={update.last.ok ? "status" : "alert"}
+          className={`m-0 text-xs leading-relaxed ${update.last.ok ? "text-dim" : "text-destructive"}`}
+        >
+          {update.last.message}
+        </p>
+      ) : null}
+      {updateError ? (
+        <p role="alert" className="m-0 text-xs leading-relaxed text-destructive">
+          {updateError}
+        </p>
+      ) : null}
+      {installed && update?.method === "manual" && status?.state === "outdated" ? (
+        <p className="m-0 text-xs leading-relaxed text-dim">
+          Wisp cannot update this install.{" "}
+          {update.command ? (
+            <>
+              Run <code>{update.command}</code> on the server's computer.
+            </>
+          ) : (
+            "Update it the way it was installed."
+          )}
+        </p>
+      ) : null}
       {status?.state === "missing" ? (
         <p className="m-0 text-xs leading-relaxed text-dim">
           Install it on the computer that runs Wisp by following{" "}

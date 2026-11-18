@@ -41,6 +41,7 @@ const REQUIRED_WISP_METHODS = [
   "startProviderSignIn",
   "cancelProviderSignIn",
   "finishProviderSignIn",
+  "updateClaudeCode",
   "getConversationState",
   "initializeConversations",
   "createWisp",

@@ -61,6 +61,7 @@ export function registerModelSettingsHandlers(
       WISP_IPC_CHANNELS.cancelProviderSignIn,
       (payload) => modelService.cancelSignIn(parseProviderSignInRequest(payload).providerId),
     ],
+    [WISP_IPC_CHANNELS.updateClaudeCode, () => modelService.updateClaudeCode()],
     [
       WISP_IPC_CHANNELS.finishProviderSignIn,
       (payload) => {

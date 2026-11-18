@@ -7,6 +7,7 @@ import type { ContextSettings } from "../context-session.js";
 import type { RuntimeSession } from "../runtime-session.js";
 import type { PiAgentEvent } from "../pi-event-translator.js";
 import { isRetryableProviderError } from "../provider-error.js";
+import type { ClaudeCodeActivity } from "./claude-code-activity.js";
 import { ClaudeCodeEventConverter, isMissingSession, type ClaudeCodeTurnResult } from "./claude-code-events.js";
 import { claudeCodeUserMessage, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
 import type { WispToolObserver } from "./wisp-mcp-server.js";
@@ -72,6 +73,8 @@ export interface ClaudeCodeSessionOptions {
   recentTranscript?: () => Promise<string>;
   /** Told the outcome of each turn: usage, plan usage, the model the alias resolved to. */
   onTurnResult?: (result: ClaudeCodeTurnResult, converter: ClaudeCodeEventConverter) => void;
+  /** Counts running turns, so `claude` is not updated under one (ADR 047). */
+  activity?: ClaudeCodeActivity;
   idleMs?: number;
 }
 
@@ -202,6 +205,7 @@ export class ClaudeCodeSession implements RuntimeSession {
     if (this.turn) throw new WispBackendError("invalid_request", "The conversation is already processing a request.");
     options.signal?.throwIfAborted();
     const { turn, end } = this.beginTurn();
+    const endActivity = this.options.activity?.begin();
     const message = this.notes.length ? `${this.notes.join("\n\n")}\n\n${text}` : text;
     this.notes = [];
     this.emit({ type: "agent_start" });
@@ -230,6 +234,7 @@ export class ClaudeCodeSession implements RuntimeSession {
       this.emit({ type: "agent_settled" });
     } finally {
       end();
+      endActivity?.();
     }
   }
 

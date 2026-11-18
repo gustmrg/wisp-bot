@@ -193,6 +193,14 @@ other, because they share files: a script one member leaves runs with the
 access of whichever member runs it. People in a circle with commands trust its
 members with each other's access, and the setting says so.
 
+One command runs on the server itself, outside any container: updating
+Claude Code from **Settings → Providers → Claude Code**
+([ADR 047](decisions/047-updating-claude-code.md)). A person starts it from an
+authorized client, never a Wisp, and the request carries no command, path, or
+argument. The server picks a fixed `claude update` or `npm install` command
+for the installer the `claude` path proves, runs it as the server's user, and
+does nothing for an install it cannot prove.
+
 ## Browser
 
 A Wisp has a browser only when **Use a browser** is on in its **Commands &

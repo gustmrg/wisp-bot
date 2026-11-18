@@ -21,6 +21,19 @@ export type ClaudeCodeStatusView =
     };
 
 /**
+ * How Wisp can update the server's `claude` (ADR 047): with the native
+ * installer or npm that owns it, or not at all, when the person updates it.
+ */
+export interface ClaudeCodeUpdateView {
+  method: "native" | "npm" | "manual";
+  /** For a manual update, the command for the installer Wisp recognized. */
+  command?: string;
+  running: boolean;
+  /** The last update since the server started. */
+  last?: { ok: boolean; message: string; finishedAt: string };
+}
+
+/**
  * How much of the plan's usage limits the latest Claude Code turn reported
  * as used, for each window: a fraction from 0 to 1, and when it resets.
  */
