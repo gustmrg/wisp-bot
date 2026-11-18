@@ -29,4 +29,13 @@ describe("missingSetup", () => {
   it("treats a default whose provider is no longer offered as missing", () => {
     expect(missingModelSetup(view({ providerId: "gone", modelId: "test-model" }, true))).toEqual(["default-model"]);
   });
+
+  it("keeps a Claude Code default set up while Claude Code cannot run", () => {
+    const claudeCode = { providerId: "claude-code", modelId: "sonnet" };
+    const unavailable = {
+      ...view(claudeCode, true),
+      providers: [{ id: "claude-code", name: "Claude Code", credentialConfigured: false, models: [] }],
+    };
+    expect(missingModelSetup(unavailable)).toEqual([]);
+  });
 });

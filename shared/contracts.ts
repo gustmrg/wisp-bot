@@ -397,6 +397,7 @@ export interface DecisionProviderSummary {
 }
 
 export interface AiSettingsView {
+  /** The global model; a Claude Code one stays while Claude Code cannot run, which `claudeCode` says. */
   selection: ModelSelection | null;
   /** `decision` is missing from servers before decision models. */
   auxiliary: Record<Exclude<AuxiliaryTask, "decision">, AuxiliaryModelView> & { decision?: AuxiliaryModelView };

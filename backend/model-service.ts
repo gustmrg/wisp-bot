@@ -297,12 +297,11 @@ export class ModelService {
     }
 
     const savedSelection = await this.settings.getSelection();
+    // A Claude Code model stays chosen while Claude Code cannot run: it is fixed on the server, and Wisps say why.
     const selection =
       savedSelection &&
       this.isValidSelection(savedSelection) &&
-      (savedSelection.providerId === CLAUDE_CODE_PROVIDER
-        ? claudeCode?.state === "ready"
-        : credentialProviders.has(savedSelection.providerId))
+      (savedSelection.providerId === CLAUDE_CODE_PROVIDER || credentialProviders.has(savedSelection.providerId))
         ? savedSelection
         : null;
     const errors = [this.catalogRefreshError, this.networkRefreshError, this.runtime.getError()].filter(

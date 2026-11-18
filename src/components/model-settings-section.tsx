@@ -26,7 +26,7 @@ import {
   parseModelOptionValue,
   unavailableModelOption,
 } from "@/lib/model-choice";
-import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code";
+import { CLAUDE_CODE_PROVIDER, claudeCodeUnavailableMessage } from "../../shared/claude-code";
 
 interface ModelSettingsSectionProps {
   onOpenProviders: () => void;
@@ -160,6 +160,11 @@ function DefaultModelSettings({
             {selection ? null : (
               <SettingsRowDescription>Wisps can't respond until you choose one.</SettingsRowDescription>
             )}
+            {selection?.providerId === CLAUDE_CODE_PROVIDER && view.claudeCode && view.claudeCode.state !== "ready" ? (
+              <SettingsRowDescription>
+                {claudeCodeUnavailableMessage(view.claudeCode)} See Settings → Providers.
+              </SettingsRowDescription>
+            ) : null}
             {model && !model.input.includes("image") ? <NoImageInputNote /> : null}
             {error ? (
               <span role="alert" className="text-xs leading-relaxed text-destructive">

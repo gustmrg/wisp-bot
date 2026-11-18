@@ -958,8 +958,10 @@ describe("ModelService with Claude Code", () => {
     setStatus({ state: "outdated", version: "2.1.200", minimumVersion: "2.1.276" });
 
     await expect(service.getSelection()).resolves.toBeNull();
-    const provider = (await service.getView()).providers.find(({ id }) => id === CLAUDE_CODE_PROVIDER);
-    expect(provider?.credentialConfigured).toBe(false);
+    const view = await service.getView();
+    // Still the chosen default, so a restart does not ask to set up a model again.
+    expect(view.selection).toEqual(sonnet);
+    expect(view.providers.find(({ id }) => id === CLAUDE_CODE_PROVIDER)?.credentialConfigured).toBe(false);
     await expect(service.validateConversationSelection(sonnet)).rejects.toMatchObject({
       code: "configuration_required",
       message: "Claude Code 2.1.200 is too old. Run `claude update` on the server's computer to get 2.1.276 or newer.",
