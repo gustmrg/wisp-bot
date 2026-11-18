@@ -42,7 +42,11 @@ Tailscale provide reachability; neither replaces pairing.
 the latest 5,000 stay in memory for replay. A client with an unknown or
 too-old cursor gets `resync` and reloads state, which the backend persists in
 full. The server publishes events as they happen, in one order, so a client
-never sees one event after a later one.
+never sees one event after a later one. The stream carries a keep-alive every
+20 seconds. A client reopens the stream from its cursor after 45 seconds
+without data. When the device wakes or changes network, the client first asks
+the server: no answer within 5 seconds replaces the transport, and an answer
+followed by 25 silent seconds reopens only the stream.
 
 **Encrypted credentials without a desktop keychain.** Credentials are encrypted
 with AES-256-GCM under a 32-byte key file outside the data directory. The

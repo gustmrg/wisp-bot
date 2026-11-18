@@ -488,7 +488,13 @@ address, enter a code from `wispctl pair` when asked.
 The app reopens the last connection on its next start, and starts its local
 server only while **This computer** is chosen. If the server cannot be
 reached, a banner says so and the app reconnects with backoff; Wisps on the
-server keep working meanwhile. A device that was revoked asks to pair again
+server keep working meanwhile. When the computer wakes from sleep or moves to
+another network or VPN, the app checks the connection right away instead of
+waiting for the next retry. If the server does not answer within 5 seconds,
+the app opens a new SSH tunnel. If the server answers but no updates arrive
+for 25 seconds, the app reopens only the updates. Updates missed in between
+are replayed without reloading, and nothing you sent is sent again. A healthy
+connection is left alone. A device that was revoked asks to pair again
 and never pairs again on its own. Pairing credentials are kept with the
 system keychain; without one, the app pairs again after every restart.
 
@@ -663,6 +669,9 @@ The browser app is the same Wisp with a few differences:
   [OAuth sign-in from another computer](#oauth-sign-in-from-another-computer).
 - Voice input works over HTTPS. iPhones record `audio/mp4`, which the voice
   providers accept.
+- When the page comes back after the phone slept or switched apps, or the
+  phone changes network, the app checks the connection right away, like the
+  desktop app does after sleep. Going offline alone does not close it.
 - A service worker caches only the app's files, never conversations or API
   responses, so the app opens without a network and reconnects when it can.
   A new server version is picked up on the next launch.
