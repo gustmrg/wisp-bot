@@ -5,6 +5,8 @@ import { type Fields, requestJson } from "./shared.js";
  * Google's OAuth endpoints for the plugins that sign in with the user's own
  * Google Cloud client. `access_type=offline` and `prompt=consent` make Google
  * return a refresh token on every sign-in, including a repeated one.
+ * `select_account` shows the account chooser even with one Google session in
+ * the browser, so each Google plugin can sign in with a different account.
  */
 export function googleOAuth(scopes: ReadonlyArray<string>, account: PluginOAuthConfig["account"]): PluginOAuthConfig {
   return {
@@ -12,7 +14,7 @@ export function googleOAuth(scopes: ReadonlyArray<string>, account: PluginOAuthC
     tokenEndpoint: "https://oauth2.googleapis.com/token",
     revocationEndpoint: "https://oauth2.googleapis.com/revoke",
     scopes,
-    authorizationParams: { access_type: "offline", prompt: "consent" },
+    authorizationParams: { access_type: "offline", prompt: "consent select_account" },
     account,
   };
 }

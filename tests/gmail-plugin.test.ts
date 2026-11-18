@@ -74,7 +74,7 @@ afterEach(() => {
 describe("Gmail plugin", () => {
   it("reads mail and writes drafts, and has no tool that sends", () => {
     expect(gmail.oauth?.scopes).toEqual([...GMAIL_SCOPES]);
-    expect(gmail.oauth?.authorizationParams).toEqual({ access_type: "offline", prompt: "consent" });
+    expect(gmail.oauth?.authorizationParams).toEqual({ access_type: "offline", prompt: "consent select_account" });
     expect(gmail.tools.map(({ name, access }) => [name, access])).toEqual([
       ["gmail_search_messages", "read"],
       ["gmail_read_message", "read"],

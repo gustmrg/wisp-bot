@@ -340,6 +340,13 @@ server runs on [another computer](remote-server.md#oauth-sign-in-from-another-co
 The client secret of a Desktop app is not confidential, but Wisp stores it
 encrypted with the tokens anyway and never shows it to Wisps.
 
+Each Google plugin signs in on its own, so Gmail, Google Calendar, and Google
+Drive can use different Google accounts. Google asks which account to use on
+every sign-in, even with one account open in the browser. The plugin's page
+shows the account it uses. Signing in again or removing one plugin leaves the
+others connected. An **Internal** app accepts only accounts of its
+organization; use an **External** app for accounts from different places.
+
 ## Google Calendar
 
 With **Read only**, a Wisp can list your calendars
