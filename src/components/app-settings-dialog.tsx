@@ -614,21 +614,6 @@ function AppSettingsDialog({
                     onChange={() => onPreferencesChange({ ...preferences, wispColors: !preferences.wispColors })}
                   />
                 </SettingsRow>
-                {mobile ? (
-                  <SettingsRow>
-                    <SettingsRowCopy>
-                      <SettingsRowTitle>Wisps row</SettingsRowTitle>
-                      <SettingsRowDescription>
-                        Show every Wisp in a row above your conversations. Each Wisp's conversation stays in the list.
-                      </SettingsRowDescription>
-                    </SettingsRowCopy>
-                    <PreferenceSwitch
-                      label="Wisps row"
-                      checked={preferences.wispsRow}
-                      onChange={() => onPreferencesChange({ ...preferences, wispsRow: !preferences.wispsRow })}
-                    />
-                  </SettingsRow>
-                ) : null}
                 <SettingsRow>
                   <SettingsRowCopy>
                     <SettingsRowTitle>Conversation order</SettingsRowTitle>

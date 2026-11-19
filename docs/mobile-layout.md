@@ -63,20 +63,16 @@ See [ADR 039](decisions/039-small-approval-cards-on-a-phone.md).
 
 ## Conversation list
 
-The list starts with a greeting for the time of day, the title Wisps, and
-buttons for search and creating a Wisp. Under them, a row of every Wisp, in
-its color, shows at a glance which are waiting for the person, working,
-failed, or unread, in that order; tapping one opens its conversation. The
-light at the top of the list comes from the busiest Wisps' colors.
+The list starts with the title Wisps and buttons for search and creating a
+Wisp. The conversations follow right after, so a small phone shows most of
+them without scrolling (see
+[ADR 048](decisions/048-simpler-mobile-conversation-list.md)). The filters
+All, Unread with its count, and Active sit above them. Tapping **Wisps** in
+the bottom bar while on the list goes back to All and scrolls to the top.
 
-**Approving from the list.** When a Wisp is waiting for an approval, the one
-asked last sits above the conversations: who asks, what it wants to do, the
-request in one or two lines, and the time left. Deny and Allow once answer it
-there. A job or a skill must be read in full first, so it offers Review
-instead. Tapping the card opens a sheet from the bottom with the whole
-request and every answer the chat offers, including Always allow and Always
-block, and a way into the conversation. When more are waiting, "N more
-waiting" opens the Approvals tab.
+**Approvals on the list.** While approvals wait, one line sits above the
+conversations: "Atlas is waiting for your approval", or "3 approvals
+waiting". Tapping it opens the Approvals tab, where each one is answered.
 
 The list reads like a messaging app. The latest activity comes first, on the
 phone and on the desktop sidebar alike. Each row shows the Wisp's

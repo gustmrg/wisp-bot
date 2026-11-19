@@ -193,11 +193,11 @@ describe("Sidebar approvals", () => {
         approvals={approvals}
         currentUser={currentUser}
         width={280}
-        onResolveApproval={vi.fn()}
+        onOpenApprovals={vi.fn()}
         {...callbacks}
       />,
     );
-    expect(screen.queryByRole("region", { name: "Needs you" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /waiting for your approval/ })).not.toBeInTheDocument();
     expect(screen.getByText("Waiting for your approval")).toBeVisible();
   });
 
@@ -386,29 +386,6 @@ describe("Sidebar on mobile", () => {
 
     await user.click(screen.getByRole("button", { name: "Unread 1" }));
     expect(within(list).getAllByRole("button")).toHaveLength(1);
-  });
-
-  it("leaves out the row of Wisps when the person hides it", () => {
-    const { rerender } = render(
-      <Sidebar mobile activeChatId="" chats={chats} currentUser={currentUser} width={280} {...callbacks} />,
-    );
-    expect(screen.getByRole("navigation", { name: "Your Wisps" })).toBeInTheDocument();
-
-    rerender(
-      <Sidebar
-        mobile
-        showWispsRow={false}
-        activeChatId=""
-        chats={chats}
-        currentUser={currentUser}
-        width={280}
-        {...callbacks}
-      />,
-    );
-    expect(screen.queryByRole("navigation", { name: "Your Wisps" })).not.toBeInTheDocument();
-    // Every Wisp stays reachable through its conversation.
-    const list = screen.getByRole("navigation", { name: "Wisps and circles" });
-    expect(within(list).getAllByRole("button")).toHaveLength(3);
   });
 
   it("counts the unread messages in the badge, up to 99+", () => {

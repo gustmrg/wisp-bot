@@ -296,7 +296,6 @@ function Workspace({
               mobile={mobile}
               collapsed={sidebarCollapsed}
               onToggleCollapsed={toggleSidebar}
-              showWispsRow={workspace.preferences.wispsRow}
               order={workspace.preferences.chatListOrder}
               hidden={mobile && (mobilePage !== "list" || detailsOpen)}
               statuses={workspace.statuses}
@@ -322,7 +321,6 @@ function Workspace({
               onOpenTemplates={() => showSettings("templates")}
               onManageConnections={() => showSettings("connections")}
               onOpenApprovals={showApprovals}
-              onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
               onResizeStart={sidebarPanel.onResizeStart}
               onSelectChat={selectChat}
               onChatAction={applyChatAction}

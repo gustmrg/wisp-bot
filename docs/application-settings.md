@@ -34,7 +34,7 @@ each panel's title shows the server's name or **This device**. **General** and
 | Panel | Settings | Saved |
 | --- | --- | --- |
 | **General** | **Name**, **About you** | Environment |
-| **General** | **Theme**, **Wisp colors**, **Wisps row**, **Conversation order**, **Reply speed**, **Tools in circles**, **Time format** | Device |
+| **General** | **Theme**, **Wisp colors**, **Conversation order**, **Reply speed**, **Tools in circles**, **Time format** | Device |
 | **General** | **Timezone** | Device, and reported to the environment |
 | **General** | **Launch at login** | This computer's system |
 | **Connections** | Saved servers and their pairing | Device |
