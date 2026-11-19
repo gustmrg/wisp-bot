@@ -1,62 +1,31 @@
-import { useState } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, ShieldAlertIcon } from "lucide-react";
 
-import type { ChatId, ChatViewCollection } from "@/chat-data";
-import { ApprovalSheet, ApprovalSummary } from "@/components/approval-summary";
+import type { ChatViewCollection } from "@/chat-data";
 import { pendingApprovals } from "@/components/mobile-approvals";
-import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import { chatName } from "@/lib/chat-schema";
+import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 interface NeedsYouProps {
   chats: ChatViewCollection;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
-  onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
-  onOpenChat: (chatId: ChatId) => void;
-  /** Opens the Approvals tab, where the rest wait; without it they are not pointed to. */
-  onOpenApprovals?: () => void;
+  onOpenApprovals: () => void;
 }
 
-/**
- * The approval asked last, at the top of the mobile list, so it can be answered without opening
- * the conversation. Tapping it shows everything about the request.
- */
-export function NeedsYou({ chats, approvals, onResolve, onOpenChat, onOpenApprovals }: NeedsYouProps) {
-  const [reviewingId, setReviewingId] = useState<string | null>(null);
+/** One line at the top of the mobile list while approvals wait; they are answered on the Approvals tab (ADR 048). */
+export function NeedsYou({ chats, approvals, onOpenApprovals }: NeedsYouProps) {
   const pending = pendingApprovals(chats, approvals);
-  const request = pending[0];
-  const reviewing = pending.find(({ approvalId }) => approvalId === reviewingId);
-  const reviewingChat = reviewing ? chats[reviewing.conversationId] : undefined;
-  if (!request && !reviewing) return null;
-
-  const sheet =
-    reviewing && reviewingChat ? (
-      <ApprovalSheet
-        chat={reviewingChat}
-        request={reviewing}
-        onResolve={(decision) => onResolve(reviewing, decision)}
-        onClose={() => setReviewingId(null)}
-        onOpenChat={onOpenChat}
-      />
-    ) : null;
-
-  if (!request) return sheet;
-  const more = pending.length - 1;
+  const latest = pending[0];
+  if (!latest) return null;
+  const label =
+    pending.length === 1
+      ? `${chatName(chats[latest.conversationId]!)} is waiting for your approval`
+      : `${pending.length} approvals waiting`;
 
   return (
-    <section className="needs-you" aria-label="Needs you">
-      <ApprovalSummary
-        chat={chats[request.conversationId]!}
-        request={request}
-        stacked={more > 0}
-        onResolve={(decision) => onResolve(request, decision)}
-        onReview={() => setReviewingId(request.approvalId)}
-      />
-      {more > 0 && onOpenApprovals ? (
-        <button type="button" className="needs-you-more" onClick={onOpenApprovals}>
-          {`${more} more waiting`}
-          <ChevronRightIcon aria-hidden="true" />
-        </button>
-      ) : null}
-      {sheet}
-    </section>
+    <button type="button" className="needs-you" onClick={onOpenApprovals}>
+      <ShieldAlertIcon aria-hidden="true" />
+      <span>{label}</span>
+      <ChevronRightIcon aria-hidden="true" />
+    </button>
   );
 }

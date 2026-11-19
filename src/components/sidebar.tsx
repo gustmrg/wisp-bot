@@ -18,13 +18,12 @@ import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateChatDialog } from "@/components/create-chat-dialog";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { NeedsYou } from "@/components/needs-you";
-import { WispOrbs } from "@/components/wisp-orbs";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { WispTemplateEntry } from "../../shared/wisp-template";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
-import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { messagePreview } from "../../shared/workspace";
 import type { CurrentUser } from "@/config/app-metadata";
 import { useClock } from "@/hooks/use-clock";
@@ -51,8 +50,6 @@ interface SidebarProps {
   collapsed?: boolean;
   /** Folds or unfolds the desktop list; without it there is no button to. */
   onToggleCollapsed?: () => void;
-  /** On mobile, shows every Wisp in a row above the conversations. */
-  showWispsRow?: boolean;
   /** Latest activity first, or fixed in creation order; pinned conversations come first either way. */
   order?: ChatListOrder;
   statuses?: Record<string, ManagedConversationStatus>;
@@ -78,10 +75,8 @@ interface SidebarProps {
   onOpenTemplates?: () => void;
   /** Opens the connections in Settings; without it, Settings opens where it does for the profile. */
   onManageConnections?: () => void;
-  /** Opens the mobile Approvals tab. */
+  /** Opens the mobile Approvals tab; without it the list does not point to waiting approvals. */
   onOpenApprovals?: () => void;
-  /** Answers an approval from the mobile list; without it the list does not offer to. */
-  onResolveApproval?: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
   /** Without it the list has no menu, as in component tests that do not need it. */
@@ -98,13 +93,6 @@ const toolButton =
 const unreadIndicator =
   "unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]";
 
-/** "Good morning", "Good afternoon", or "Good evening", by the hour where the person is. */
-function greeting(now: Date, timeZone: string, name: string): string {
-  const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(now));
-  const part = hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 18 ? "afternoon" : "evening";
-  return name ? `Good ${part}, ${name}` : `Good ${part}`;
-}
-
 function Sidebar({
   activeChatId,
   chats,
@@ -114,7 +102,6 @@ function Sidebar({
   hidden = false,
   collapsed = false,
   onToggleCollapsed,
-  showWispsRow = true,
   order = "recent",
   statuses = {},
   activity = {},
@@ -131,13 +118,13 @@ function Sidebar({
   onOpenTemplates,
   onManageConnections,
   onOpenApprovals,
-  onResolveApproval,
   onResizeStart,
   onSelectChat,
   onChatAction,
 }: SidebarProps) {
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
   const [menuChatId, setMenuChatId] = useState<ChatId | null>(null);
+  const asideRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const listRef = useRef<HTMLElement>(null);
   const rail = !mobile && collapsed;
@@ -179,6 +166,7 @@ function Sidebar({
   return (
     <>
       <aside
+        ref={asideRef}
         hidden={hidden}
         className={cn(
           "workspace-sidebar relative z-[2] flex min-h-0 flex-none flex-col overflow-hidden bg-sidebar",
@@ -192,12 +180,9 @@ function Sidebar({
         {mobile ? (
           <>
             <header className="mobile-list-header">
-              <div>
-                <p className="mobile-list-greeting">{greeting(now, timeZone, currentUser.givenName)}</p>
-                <h1 ref={titleRef} tabIndex={-1}>
-                  Wisps
-                </h1>
-              </div>
+              <h1 ref={titleRef} tabIndex={-1}>
+                Wisps
+              </h1>
             </header>
             <button
               className="mobile-list-search"
@@ -208,24 +193,8 @@ function Sidebar({
             >
               <SearchIcon aria-hidden="true" />
             </button>
-            {showWispsRow ? (
-              <WispOrbs
-                chats={chats}
-                statuses={statuses}
-                approvals={approvals}
-                failedChats={failedChats}
-                order={order}
-                onSelectChat={onSelectChat}
-              />
-            ) : null}
-            {onResolveApproval ? (
-              <NeedsYou
-                chats={chats}
-                approvals={approvals}
-                onResolve={onResolveApproval}
-                onOpenChat={onSelectChat}
-                onOpenApprovals={onOpenApprovals}
-              />
+            {onOpenApprovals ? (
+              <NeedsYou chats={chats} approvals={approvals} onOpenApprovals={onOpenApprovals} />
             ) : null}
           </>
         ) : rail ? (
@@ -265,7 +234,7 @@ function Sidebar({
           <div className="mobile-list-filters" role="group" aria-label="Filter conversations">
             {(
               [
-                ["all", `All ${allChatIds.length}`],
+                ["all", "All"],
                 ["unread", `Unread ${unreadCount}`],
                 ["active", "Active"],
               ] as const
@@ -453,7 +422,10 @@ function Sidebar({
         {mobile ? (
           <MobileNavigation
             current="wisps"
-            onConversations={() => setFilter("all")}
+            onConversations={() => {
+              setFilter("all");
+              asideRef.current?.scrollTo?.({ top: 0, behavior: "smooth" });
+            }}
             onApprovals={onOpenApprovals}
             onSettings={onOpenSettings}
             unreadCount={unreadCount}

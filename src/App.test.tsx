@@ -800,8 +800,7 @@ describe("Mobile workspace", () => {
     state.statuses.beta = "working";
     exposeApi(createApi(state));
     render(<App />);
-    await screen.findByRole("button", { name: "All 2" });
-    await user.click(screen.getByRole("button", { name: "Unread 1" }));
+    await user.click(await screen.findByRole("button", { name: "Unread 1" }));
     const list = screen.getByRole("navigation", { name: "Wisps and circles" });
     expect(within(list).getAllByRole("button")).toHaveLength(1);
     expect(within(list).getByRole("button", { name: /Atlas/ })).toBeVisible();
@@ -821,7 +820,7 @@ describe("Mobile workspace", () => {
     const api = createApi(conversationState(true, { atlas }));
     exposeApi(api);
     render(<App />);
-    await screen.findByRole("button", { name: "All 1" });
+    await screen.findByRole("button", { name: /Atlas/ });
     await user.click(
       within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("button", { name: "Settings" }),
     );

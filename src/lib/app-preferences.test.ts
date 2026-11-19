@@ -45,7 +45,6 @@ describe("normalizePreferences", () => {
       normalizePreferences({
         theme: "dark",
         wispColors: false,
-        wispsRow: false,
         announcedVersion: "0.26.0",
         launchAtLogin: true,
         notificationSounds: false,
@@ -64,7 +63,6 @@ describe("normalizePreferences", () => {
       ...DEFAULT_PREFERENCES,
       theme: "dark",
       wispColors: false,
-      wispsRow: false,
       announcedVersion: "0.26.0",
       launchAtLogin: true,
       notificationSounds: false,

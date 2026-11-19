@@ -19,8 +19,6 @@ function accentStyle(chat: ChatView): CSSProperties | undefined {
 interface ApprovalSummaryProps {
   chat: ChatView;
   request: ToolApprovalRequest;
-  /** More approvals wait behind this one, so it shows the edge of another card. */
-  stacked?: boolean;
   onResolve: (decision: ToolApprovalDecision) => void;
   onReview: () => void;
 }
@@ -29,17 +27,12 @@ interface ApprovalSummaryProps {
  * An approval on a phone, small enough for several to fit on screen: who asks, what for, the
  * request in one or two lines, and the two answers it takes most often. Tapping it shows the rest.
  */
-export function ApprovalSummary({ chat, request, stacked = false, onResolve, onReview }: ApprovalSummaryProps) {
+export function ApprovalSummary({ chat, request, onResolve, onReview }: ApprovalSummaryProps) {
   const now = useClock(1_000);
   const name = approvalWispName(chat, request);
   const remaining = Math.max(0, Math.ceil((Date.parse(request.expiresAt) - now.getTime()) / 1_000));
   return (
-    <article
-      className="approval-summary"
-      data-stacked={stacked || undefined}
-      aria-label={`${name}: ${request.summary}`}
-      style={accentStyle(chat)}
-    >
+    <article className="approval-summary" aria-label={`${name}: ${request.summary}`} style={accentStyle(chat)}>
       <button
         type="button"
         className="approval-summary-details"

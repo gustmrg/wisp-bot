@@ -6,6 +6,9 @@
 - Scope: How pending tool approvals are shown and answered in the mobile layout
 - Related: [mobile layout](../mobile-layout.md#bottom-bar-and-approvals),
   [ADR 015](015-mobile-bottom-bar.md), [ADR 023](023-wisp-permissions.md)
+- Superseded in part by [ADR 048](048-simpler-mobile-conversation-list.md):
+  the conversation list no longer shows a card, only a line that opens the
+  Approvals tab. The Approvals screen and the chat keep these cards.
 
 ## Context
 

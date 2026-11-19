@@ -66,7 +66,8 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 24px 21px 12px;
+    /* The right side leaves room for the search and create buttons. */
+    padding: 24px 78px 12px 21px;
   }
 
   .mobile-list-header h1 {
@@ -80,13 +81,8 @@
     color: var(--text-dim);
     font-size: 12px;
   }
-  .mobile-list-header .mobile-list-greeting {
-    margin: 0 0 2px;
-    font-size: 14px;
-  }
   .mobile-list-header,
   .mobile-list-search,
-  .wisp-orbs,
   .needs-you,
   .mobile-list-filters,
   .conversation-list {
@@ -147,21 +143,6 @@
     z-index: 1;
     margin: 0;
     padding: 0;
-  }
-  .mobile-list-header {
-    padding-right: 78px;
-  }
-  .sidebar-search {
-    height: 46px;
-    margin: 8px 20px 14px;
-    padding: 0 13px;
-    border-radius: 12px;
-    background: var(--muted);
-    font-size: 14px;
-  }
-  .sidebar-search svg {
-    width: 18px;
-    height: 18px;
   }
   .mobile-list-filters {
     display: flex;
@@ -950,18 +931,12 @@
 @media (max-width: 360px) {
   .mobile-list-header {
     padding-left: 16px;
-    padding-right: 16px;
   }
   .conversation-list-item {
     gap: 8px;
   }
   .conversation-list-item strong {
     font-size: 14px;
-  }
-  .conversation-avatar > svg,
-  .conversation-avatar > img {
-    width: 43px;
-    height: 43px;
   }
   .chat-heading h1 {
     font-size: 14px;
