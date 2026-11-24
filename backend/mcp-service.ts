@@ -27,6 +27,7 @@ import type { GitForges } from "./egress-proxy.js";
 import {
   McpConnection,
   McpSessionExpiredError,
+  McpTransportError,
   type McpConnectionAuth,
   type McpConnectionOptions,
   type McpSdkTool,
@@ -185,6 +186,10 @@ export class McpService {
           ...(this.isSignInPending(server.serverId) ? { signInPending: true } : {}),
           ...this.manualSignIn(server.serverId),
           state: this.connectionState(server, signedIn.has(server.serverId)),
+          ...(this.connectionState(server, signedIn.has(server.serverId)) === "unavailable" &&
+          server.lastConnection?.message
+            ? { unavailableReason: server.lastConnection.message }
+            : {}),
           lastDiscoveredAt: server.snapshot?.discoveredAt ?? null,
           tools: (server.snapshot?.tools ?? []).map((tool) => ({
             name: tool.name,
@@ -716,6 +721,7 @@ export class McpService {
     const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     this.running.set(controller, { conversationId, sessionId, serverId });
     let dispatched = false;
+    let startedAt: number | undefined;
     // The reviewed definition, captured before the approval wait.
     const reviewedGeneration = this.state.servers[serverId]?.configGeneration;
     const reviewedFingerprint = tool.fingerprint;
@@ -757,6 +763,7 @@ export class McpService {
       // pending must never receive the approved dispatch.
       this.assertToolUnchanged(serverId, reviewedGeneration, reviewedFingerprint);
       if (files.length) await expandFileArguments(files, workspaceDirectory!);
+      startedAt = Date.now();
       const connection = await untilAborted(this.pooledConnection(sessionId, serverId), combinedSignal);
       dispatched = true;
       const result = await connection.callTool(tool.name, args, { signal: combinedSignal }).catch(async (error) => {
@@ -775,8 +782,21 @@ export class McpService {
           "The MCP tool call was interrupted; the change may already have been applied.",
         );
       }
-      if (error instanceof WispBackendError && error.code === "internal_error" && !dispatched) {
-        await this.noteConnection(this.state.servers[serverId], "unavailable").catch(() => undefined);
+      const failedToConnect = error instanceof WispBackendError && error.code === "internal_error" && !dispatched;
+      if (startedAt !== undefined && (failedToConnect || error instanceof McpTransportError)) {
+        const server = this.state.servers[serverId];
+        this.options.logger?.warn("mcp_call_failed", {
+          server: serverName,
+          host: server ? hostOf(server.endpoint) : "unknown",
+          tool: tool.name,
+          stage: dispatched ? "call" : "connect",
+          durationMs: Date.now() - startedAt,
+          reason: error instanceof McpTransportError ? `${error.message} (${error.detail})` : (error as Error).message,
+        });
+        // A slow answer says nothing about whether the server is reachable.
+        if (failedToConnect || (error as McpTransportError).kind !== "timeout") {
+          await this.noteConnection(server, "unavailable", (error as Error).message).catch(() => undefined);
+        }
       }
       throw safeMcpError(error, combinedSignal);
     } finally {

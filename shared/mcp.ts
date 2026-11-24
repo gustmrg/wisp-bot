@@ -41,6 +41,8 @@ export interface McpServerSummary {
   authMode: McpAuthMode;
   enabled: boolean;
   state: McpConnectionState;
+  /** Why the last connection or call failed, while the server is unavailable. */
+  unavailableReason?: string;
   headerConfigured: boolean;
   /** Header name is configuration, not a secret, and is safe to display. */
   headerName?: string;

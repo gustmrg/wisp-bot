@@ -153,6 +153,17 @@ mechanism, or credential revokes every Wisp's grants, cancels pending calls,
 and closes live clients; removal also deletes stored secrets. Corrupt
 configuration recovers with every server disabled and every Wisp denied.
 
+When a call cannot reach the server, the Wisp gets the cause instead of a
+generic failure: a connection that timed out (often a firewall, VPN, or
+Tailscale rule), an address that could not be found, a refused connection, a
+rejected TLS certificate, or an HTTP error such as 401 or 403. The server turns
+**Unavailable** in **Settings → MCP servers**, with the same cause under its
+name, until a call succeeds again. A call that only answers too slowly does not
+change its state. The server's `backend.log` records each failure as
+`mcp_call_failed`, with the server's name, the endpoint's host, the time spent,
+and the error code or HTTP status. Response bodies and headers are never read
+into these messages, so no credential appears in them.
+
 OAuth token refresh never removes Wisp access; replacing the account or
 endpoint does.
 

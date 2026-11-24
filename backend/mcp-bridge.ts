@@ -316,7 +316,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, action: string):
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new WispBackendError("internal_error", `The MCP server did not ${action} in time.`, true)),
+      () => reject(new McpTransportError("timeout", `The MCP server did not ${action} in time.`, `${action} timeout`)),
       timeoutMs,
     );
   });
@@ -376,6 +376,102 @@ export class McpSessionExpiredError extends WispBackendError {
   }
 }
 
+/**
+ * How a request failed on its way to or from the server: `unreachable` never
+ * got an answer (network, DNS, TLS), `rejected` got an HTTP error, and
+ * `timeout` got no answer in time from a server that may still be working.
+ */
+export type McpTransportFailureKind = "unreachable" | "rejected" | "timeout";
+
+/** A transport failure, with a message a person can act on and a secret-free detail for the log. */
+export class McpTransportError extends WispBackendError {
+  constructor(
+    readonly kind: McpTransportFailureKind,
+    message: string,
+    /** The error code or HTTP status behind the message, such as `UND_ERR_CONNECT_TIMEOUT` or `HTTP 403`. */
+    readonly detail: string,
+  ) {
+    super("internal_error", message, true);
+    this.name = "McpTransportError";
+  }
+}
+
+const NETWORK_FAILURES: ReadonlyArray<{ codes: RegExp; kind: McpTransportFailureKind; message: string }> = [
+  {
+    codes: /^(UND_ERR_CONNECT_TIMEOUT|ETIMEDOUT)$/,
+    kind: "unreachable",
+    message:
+      "The MCP server did not accept the connection in time. A firewall, VPN, or Tailscale rule may be blocking the way to it.",
+  },
+  {
+    codes: /^(ENETUNREACH|EHOSTUNREACH)$/,
+    kind: "unreachable",
+    message: "The MCP server could not be reached: there is no network route to it.",
+  },
+  {
+    codes: /^(ENOTFOUND|EAI_AGAIN)$/,
+    kind: "unreachable",
+    message: "The MCP server's address could not be found. Check the address and this computer's DNS.",
+  },
+  {
+    codes: /^ECONNREFUSED$/,
+    kind: "unreachable",
+    message: "The MCP server refused the connection. It may be stopped or listening on another port.",
+  },
+  {
+    codes: /^(ECONNRESET|EPIPE|UND_ERR_SOCKET|UND_ERR_CLOSED)$/,
+    kind: "unreachable",
+    message: "The connection to the MCP server closed before it answered.",
+  },
+  {
+    codes: /CERT|TLS|SSL|SELF_SIGNED|UNABLE_TO_VERIFY/,
+    kind: "unreachable",
+    message: "The MCP server's TLS certificate was not accepted.",
+  },
+  {
+    codes: /^(UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT|REQUEST_TIMEOUT)$/,
+    kind: "timeout",
+    message: "The MCP server did not answer in time.",
+  },
+];
+
+/**
+ * Recognizes why a request failed from the error fetch or the SDK raised.
+ * Fetch wraps the network error in `cause`, sometimes as an AggregateError
+ * of one error per address tried. Response bodies and headers are never
+ * read, so neither the message nor the detail can carry a credential.
+ */
+export function transportFailure(error: unknown): McpTransportError | undefined {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === "number") return httpFailure(status);
+  if (error instanceof Error && error.name === "UnauthorizedError") return httpFailure(401);
+  for (const code of errorCodes(error)) {
+    const known = NETWORK_FAILURES.find(({ codes }) => codes.test(code));
+    if (known) return new McpTransportError(known.kind, known.message, code);
+  }
+  return undefined;
+}
+
+function httpFailure(status: number): McpTransportError {
+  const message =
+    status === 401
+      ? "The MCP server did not accept the credentials (HTTP 401). Check the connection's authentication."
+      : status === 403
+        ? "The MCP server denied access (HTTP 403)."
+        : `The MCP server answered with an error (HTTP ${status}).`;
+  return new McpTransportError("rejected", message, `HTTP ${status}`);
+}
+
+function errorCodes(error: unknown, depth = 0): string[] {
+  if (!error || typeof error !== "object" || depth > 4) return [];
+  const { code, cause, errors } = error as { code?: unknown; cause?: unknown; errors?: unknown };
+  return [
+    ...(typeof code === "string" ? [code] : []),
+    ...errorCodes(cause, depth + 1),
+    ...(Array.isArray(errors) ? errors.flatMap((inner) => errorCodes(inner, depth + 1)) : []),
+  ];
+}
+
 function isSessionExpired(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const { status } = error as { status?: unknown };
@@ -397,11 +493,15 @@ function toConnectionError(error: unknown): WispBackendError {
   if (error instanceof Error && error.name === "AbortError") {
     return new WispBackendError("aborted", "The MCP request was cancelled.");
   }
-  return new WispBackendError("internal_error", "The MCP server could not complete the request.", true);
+  return (
+    transportFailure(error) ??
+    new WispBackendError("internal_error", "The MCP server could not complete the request.", true)
+  );
 }
 
-/** The cause behind a connection error, for the log; the user sees only the generic message. */
+/** The cause behind a connection error, for the log; an unrecognized one reaches the user only as the generic message. */
 function describeFailure(error: unknown, failure: WispBackendError): string {
+  if (failure instanceof McpTransportError) return `${failure.message} (${failure.detail})`;
   if (error === failure || !(error instanceof Error)) return failure.message;
   return `${failure.message} (${error.name}: ${error.message})`;
 }
@@ -411,7 +511,7 @@ function toToolError(error: unknown, signal: AbortSignal | undefined): WispBacke
   if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
     return new WispBackendError("aborted", "The MCP request was cancelled.");
   }
-  return new WispBackendError("internal_error", "The MCP tool call failed.", true);
+  return transportFailure(error) ?? new WispBackendError("internal_error", "The MCP tool call failed.", true);
 }
 
 function truncateUtf8(value: string, maxCharacters: number): string {
