@@ -1,0 +1,81 @@
+name: Publish server
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish to npm (for example, v0.29.0 or v0.30.0-beta.1).
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-server-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # Publishes the headless server to npm independently of the desktop release.
+  # Desktop installs use the server archives on GitHub Releases; npm serves
+  # manual `npx @gustmrg/wisp-server setup` installs and development builds.
+  # Authenticates with the package's npm trusted publisher (OIDC).
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # trusted publishing and provenance
+    steps:
+      - name: Validate release tag
+        id: release
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::Tag $TAG is not a supported release or beta tag (expected vX.Y.Z or vX.Y.Z-beta.N)."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ steps.release.outputs.tag }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          # Leave token auth unconfigured so npm can use OIDC.
+          # Skip actions/setup-node's npm cache to avoid colliding with CI on
+          # the newly bumped package-lock.json hash.
+      - name: Verify package version matches tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$PKG_VERSION" != "$VERSION" ]]; then
+            echo "::error::Tag $TAG does not match package.json version $PKG_VERSION."
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run package:server
+      # Trusted publishing needs npm 11.5.1 or later; Node.js 22 ships npm 10.
+      - run: npm install --global npm@^11.5.1
+      - name: Publish to npm
+        working-directory: release/server
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          # A prerelease must not become what `npx @gustmrg/wisp-server` runs.
+          DIST_TAG=latest
+          if [[ "$VERSION" == *-* ]]; then DIST_TAG=beta; fi
+          if [[ "$(npm view "@gustmrg/wisp-server@$VERSION" version --prefer-online 2>/dev/null)" == "$VERSION" ]]; then
+            echo "@gustmrg/wisp-server $VERSION is already on npm."
+            exit 0
+          fi
+          if ! npm publish --provenance --access public --tag "$DIST_TAG"; then
+            echo "::error::@gustmrg/wisp-server $VERSION was not published. Check the package's trusted publisher on npm (workflow: publish-server.yml), then re-run this workflow."
+            exit 1
+          fi
