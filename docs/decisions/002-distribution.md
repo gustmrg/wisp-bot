@@ -34,7 +34,7 @@ Rejected alternatives:
 - Product name: `Wisp Bot`
 - Version source: the exact `package.json` version; release tag must equal `v<version>`.
 - Artifact pattern: `Wisp-Bot-${version}-${os}-${arch}.${ext}`.
-- Icons: checked-in `build/icon.icns` and `build/icon.ico`, derived from the same source artwork; installer defaults are forbidden for releases.
+- Icons: checked-in `build/icon.icns` (macOS), `build/icons/` (Linux), and `build/icon-mac.png` (Windows; electron-builder converts it to `.ico`), all from the same padded artwork so every platform shows the same shape; installer defaults are forbidden for releases.
 - Channels: `beta` and `stable`. Prerelease versions such as `0.2.0-beta.1` publish only to beta. Stable versions never consume beta metadata.
 - Downgrades are disabled in the updater.
 
