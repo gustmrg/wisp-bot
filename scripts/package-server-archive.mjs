@@ -16,14 +16,17 @@ import { chmod, cp, mkdir, open, readdir, readFile, rm, stat, writeFile } from "
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Node.js 22 LTS. Raise it with each 22.x security release; the minimum glibc is 2.28. */
-const NODE_VERSION = "22.23.4";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** Node.js 22 LTS, read from `.node-version`. Raise it with each 22.x security release; the minimum glibc is 2.28. */
+const NODE_VERSION = (await readFile(path.join(root, ".node-version"), "utf8")).trim();
+if (!/^\d+\.\d+\.\d+$/.test(NODE_VERSION)) {
+  throw new Error(`Invalid Node.js version in .node-version: ${NODE_VERSION}`);
+}
 /** The ELF machine of each processor, to catch a native module built for another one. */
 const ELF_MACHINE = { x64: 62, arm64: 183 };
 /** Claude Code's own binaries: the server runs the `claude` installed on its machine instead. */
 const LEFT_OUT = [/^@anthropic-ai\/claude-agent-sdk-/];
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const release = path.join(root, "release");
 const arch = argument("--arch") ?? process.arch;
 if (!(arch in ELF_MACHINE)) throw new Error(`Server archives are built for x64 and arm64, not ${arch}.`);
@@ -112,6 +115,8 @@ await writeFile(
 await rm(output, { force: true });
 execFileSync("tar", ["-czf", output, "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "-C", staging, name]);
 await rm(staging, { recursive: true, force: true });
+const digest = sha256(await readFile(output));
+await writeFile(`${output}.sha256`, `${digest}  ${name}.tar.gz\n`);
 const { size } = await stat(output);
 console.log(`Packaged ${path.relative(root, output)} (${(size / 1024 / 1024).toFixed(1)} MB, Node.js ${NODE_VERSION})`);
 

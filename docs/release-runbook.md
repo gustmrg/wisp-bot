@@ -26,11 +26,10 @@ The Windows installer is not code-signed. SmartScreen warns on its first launch,
    While a beta is out, a release must sort above it, or beta installs would never update to it. With `0.19.0-beta.2` out, `patch` (`0.18.1`) fails and names `0.19.0` instead, so release `minor`.
 3. The workflow:
    1. resolves the version on top of `main`, and fails if its tag already exists or if any install already runs a higher version;
-   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree, while it packages macOS (on `macos-15`), Linux (on `ubuntu-latest`), and Windows (on `windows-latest`) at the same time;
+   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree, while it builds and smoke-tests both Linux server archives and packages macOS (on `macos-15`), Linux (on `ubuntu-latest`), and Windows (on `windows-latest`);
    3. commits `chore(release): prepare vX.Y.Z` to `main` and pushes it with the `vX.Y.Z` tag in one atomic push;
-   4. drafts the GitHub release with notes generated since the previous release, every artifact, every update feed, the SBOM, and `SHA256SUMS.txt`;
-   5. publishes the server to npm and waits until npm serves it (see [The server package on npm](#the-server-package-on-npm));
-   6. publishes the draft, which is when installs can see the update.
+   4. creates the GitHub release as a draft, uploads every artifact, update feed, server archive, SBOM, and `SHA256SUMS.txt`, and publishes it immediately so installs never see a partial release;
+   5. pushing the `vX.Y.Z` tag triggers the separate **Publish server** workflow to publish `@gustmrg/wisp-server` to npm without blocking the desktop release (see [The server package on npm](#the-server-package-on-npm)).
 4. Download the artifacts and check them against `SHA256SUMS.txt`.
 
 `main` only takes pull requests. The release job pushes with the write deploy key stored in the `RELEASE_DEPLOY_KEY` secret, and **Deploy keys** are the only bypass actor of the `main` ruleset. If that secret or the bypass is missing, the push is rejected with `GH013: Repository rule violations` and nothing is committed or tagged. To rotate the key, add a new write deploy key, replace the secret, then delete the old key.
@@ -56,21 +55,19 @@ To package locally, `npm run dist` builds installers for the current OS and `npm
 
 ## The server package on npm
 
-`@gustmrg/wisp-server` is the headless server that `npx @gustmrg/wisp-server setup` installs, and that the desktop app installs on a machine over SSH. The app always installs its own version, so every release publishes the matching one; a version missing from npm makes **Install the Wisp server** fail with "is not published on npm".
+`@gustmrg/wisp-server` is the headless server that `npx @gustmrg/wisp-server setup` installs by hand, and that development desktop builds install over SSH. Packaged desktop releases install the matching [server archive](#server-archives) from GitHub Releases instead, so publishing to npm does not block the desktop release.
 
-The **publish-server** job builds `npm run package:server` from the release tag, updates npm to 11.5.1 or later, and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one. The package's page on npm shows `server/README.md`.
+The separate **Publish server** workflow (`.github/workflows/publish-server.yml`) runs automatically whenever **Desktop release** pushes a `vX.Y.Z` or `vX.Y.Z-beta.N` tag, and can also be run manually with a tag input. It verifies that `package.json` matches the tag, builds `npm run package:server`, updates npm to 11.5.1 or later, and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one. The package's page on npm shows `server/README.md`.
 
-npm takes a few minutes to process a new version, and until then installing it fails with `ETARGET`. So the job then waits, for up to 10 minutes, until npm serves the version and its dist-tag points to it. The release is done only when that step passes; until then, do not update servers from the app.
-
-The job runs while the GitHub release is still a draft, which the updater does not see, and the last job, **publish-release**, publishes the draft only after it passes. So no install updates to a version whose server npm cannot serve yet. If the job fails, the tag and the draft stay as they are: fix the cause and re-run the failed jobs. A re-run skips the publish when the version is already on npm, since npm refuses a version published twice, and only waits for it.
+If the workflow fails, the desktop release and server archives are already live: fix the cause and re-run **Publish server** (or dispatch it with the release tag). A re-run exits cleanly when the version is already on npm, since npm refuses a version published twice.
 
 ### Authentication
 
-npm authenticates the job with **trusted publishing**: an OIDC identity of this repository's `release.yml`, with no secret to store or renew. npm only lets a package that already exists use it, so the first version is published with a token:
+npm authenticates the job with **trusted publishing**: an OIDC identity of this repository's `publish-server.yml`, with no secret to store or renew. npm only lets a package that already exists use it, so the first version is published with a token:
 
 1. The account `gustmrg` owns the `@gustmrg` scope. Turn on two-factor authentication for it.
 2. **First release only:** on npmjs.com, create a granular access token (**Access Tokens → Generate New Token**) with read and write access to packages, **Bypass 2FA** checked (CI cannot answer a 2FA prompt), and a short expiration. Store it as the repository secret `NPM_TOKEN`, then run the release.
-3. Once the version is on npm, open the package's **Settings → Trusted Publisher**, choose GitHub Actions, and enter the repository `gustmrg/wisp-bot` and the workflow `release.yml`. Then delete the `NPM_TOKEN` secret and revoke the token on npm.
+3. Once the version is on npm, open the package's **Settings → Trusted Publisher**, choose GitHub Actions, and enter the repository `gustmrg/wisp-bot` and the workflow `publish-server.yml`. Then delete the `NPM_TOKEN` secret and revoke the token on npm.
 
 Later releases need nothing else. npm prefers the OIDC identity when it is available, so a token left behind is unused, but it remains a credential that can publish; revoke it.
 
@@ -89,18 +86,9 @@ in clean containers without Node.js, from Debian 10 (glibc 2.28) to Ubuntu
 24.04: the runtime check, `setup --no-service`, the server with fake agents,
 its health check, the browser app, `wispctl status` and `wispctl pair`.
 
-The desktop packaging jobs wait for both archives and write their SHA-256
-into the app (`scripts/server-archive-hashes.mjs` →
-`dist-electron/server-archives.json`). The app checks the archive a server
-downloads against these hashes, so an archive must never be rebuilt or
-replaced after its app was packaged: re-run the whole release instead.
+The desktop packaging jobs wait for both archives' `.sha256` files and write their SHA-256 into the app (`scripts/server-archive-hashes.mjs` → `dist-electron/server-archives.json`). The app checks the archive a server downloads against these hashes, so an archive must never be rebuilt or replaced after its app was packaged: re-run the whole release instead.
 
-The archives go into the draft with the desktop files and are listed in
-`SHA256SUMS.txt`, so they become public together with the app. A beta's
-archives are part of its prerelease. To check one by hand, build it with
-`npm run package:server-archive` and run the smoke script as its header says.
-Raise `NODE_VERSION` in the archive script with each Node.js 22 security
-release.
+The archives go into the GitHub release with the desktop files and are listed in `SHA256SUMS.txt`, so they become public together with the app. A beta's archives are part of its prerelease. To check one by hand, build it with `npm run package:server-archive` and run the smoke script as its header says. Raise the version in `.node-version` with each Node.js 22 security release; CI, release workflows, and the archive script all read it.
 
 ## In-app updates
 

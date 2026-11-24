@@ -20,6 +20,7 @@
     "dev:renderer": "cross-env VITE_CONFIG_NATIVE_IGNORE_WARNING=true vite --configLoader bundle",
     "dev:electron": "wait-on tcp:127.0.0.1:5173 && npm run build:electron && cross-env ELECTRON_RUN_AS_NODE= VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:server && npm run build:web",
+    "build:desktop": "npm run build:renderer && npm run build:electron && npm run build:web",
     "build:renderer": "cross-env VITE_CONFIG_NATIVE_IGNORE_WARNING=true vite build --configLoader bundle",
     "build:electron": "tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --publish never",
