@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EncryptionService } from "../../backend/encrypted-credential-store.js";
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
-import { disposeWithin, refreshModelCatalog } from "../../backend/runtime.js";
+import { disposeWithin, refreshModelCatalog, scheduleModelCatalogRefresh } from "../../backend/runtime.js";
 import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
@@ -190,6 +190,26 @@ describe("disposeWithin", () => {
       const outcome = disposeWithin(() => new Promise<void>(() => undefined), 5_000);
       await vi.advanceTimersByTimeAsync(5_000);
       await expect(outcome).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("scheduleModelCatalogRefresh", () => {
+  it("refreshes at once, then on every interval until stopped", () => {
+    vi.useFakeTimers();
+    try {
+      const refresh = vi.fn(async () => undefined);
+      const stop = scheduleModelCatalogRefresh(refresh, 1_000);
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(2_000);
+      expect(refresh).toHaveBeenCalledTimes(3);
+
+      stop();
+      vi.advanceTimersByTime(5_000);
+      expect(refresh).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
