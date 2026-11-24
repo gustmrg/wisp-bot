@@ -17,6 +17,12 @@ and refreshes it over the network in the background (for at most ten seconds),
 so an offline or slow connection never delays the window; a refresh failure is
 shown in these settings.
 
+New models do not need an app update. Pi adds them from its online catalog,
+which the backend checks at startup and then every hour while it runs. Pi
+fetches only the providers it has not checked in the last four hours, so a new
+model appears within about five hours, also on a server that is never
+restarted. Reopen these settings to see it.
+
 These settings pick a provider first and then one of its models, because the
 provider also decides which API key the page edits, and every provider in the
 catalog is listed whether or not it has a key yet. The other model pickers

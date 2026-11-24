@@ -606,6 +606,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
       .then((selection) => service.applyModel(selection))
       .catch((error: unknown) => logger.warn("claude_code_reapply_failed", { code: sanitizeBackendError(error).code }));
   });
+  let stopCatalogRefresh = (): void => undefined;
   const activate = async (): Promise<void> => {
     await service.start(await modelService.getSelection());
     // Containers of Wisps deleted while the server was down; never blocks startup.
@@ -613,9 +614,12 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     await queue.start();
     scheduler.start();
     jobs.start();
-    // Startup used the cached catalog; network updates land after the host is ready.
+    // Startup used the cached catalog; network updates land after the host is ready, and keep
+    // landing while it runs, so a server that is never restarted still sees new models.
     if (options.allowModelNetwork ?? true) {
-      void refreshModelCatalog(modelService, (selection) => service.applyModel(selection), logger);
+      stopCatalogRefresh = scheduleModelCatalogRefresh(() =>
+        refreshModelCatalog(modelService, (selection) => service.applyModel(selection), logger),
+      );
     }
   };
   const prepare = async (): Promise<void> => {
@@ -673,6 +677,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     dispose: async () => {
       // Stop new work and integrations first, then the agents, which may still be settling their last turn.
       stopFollowingClaudeCode();
+      stopCatalogRefresh();
       await jobs.dispose();
       await scheduler.dispose();
       queue.dispose();
@@ -696,6 +701,25 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
 
 async function fakeJobRun(job: { title: string }): Promise<JobRunOutcome> {
   return { kind: "message", text: `## ${job.title}\n\nThis is a test result from the fake agent.` };
+}
+
+/**
+ * How often a running backend checks for catalog updates. Pi fetches only the
+ * providers it has not checked in the last four hours, so most checks send
+ * nothing, and a new model appears within about five hours.
+ */
+export const MODEL_CATALOG_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Refreshes the catalog now and then every `intervalMs`; returns a function that stops it. */
+export function scheduleModelCatalogRefresh(
+  refresh: () => Promise<void>,
+  intervalMs = MODEL_CATALOG_CHECK_INTERVAL_MS,
+): () => void {
+  void refresh();
+  const timer = setInterval(() => void refresh(), intervalMs);
+  // Never keeps a process alive that is otherwise done.
+  timer.unref?.();
+  return () => clearInterval(timer);
 }
 
 /**
