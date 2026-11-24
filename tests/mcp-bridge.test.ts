@@ -166,8 +166,77 @@ describe("McpConnection", () => {
     );
     expect(onConnectFailed).toHaveBeenCalledWith({
       endpoint: "https://example.com/mcp",
-      reason: "The MCP server did not connect in time.",
+      reason: "The MCP server did not connect in time. (connect timeout)",
     });
+  });
+
+  it("names the network cause of a failed connect instead of a generic error", async () => {
+    const { sdk } = fakeSdk({
+      connect: () => {
+        throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect"), { code: "ENOTFOUND" }) });
+      },
+    });
+    const onConnectFailed = vi.fn();
+    const connection = new McpConnection({ sdk, onConnectFailed });
+    await expect(connection.connect("https://example.com/mcp", { mode: "none" })).rejects.toMatchObject({
+      kind: "unreachable",
+      message: expect.stringContaining("address could not be found"),
+    });
+    expect(onConnectFailed.mock.calls[0]![0].reason).toContain("(ENOTFOUND)");
+  });
+
+  it.each([
+    {
+      name: "a TCP connect timeout behind a firewall rule",
+      error: new TypeError("fetch failed", {
+        cause: Object.assign(new Error("Connect Timeout Error"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
+      }),
+      kind: "unreachable",
+      message: "did not accept the connection in time",
+      detail: "UND_ERR_CONNECT_TIMEOUT",
+    },
+    {
+      name: "a refusal from every address tried",
+      error: new TypeError("fetch failed", {
+        cause: new AggregateError([Object.assign(new Error("refused"), { code: "ECONNREFUSED" })]),
+      }),
+      kind: "unreachable",
+      message: "refused the connection",
+      detail: "ECONNREFUSED",
+    },
+    {
+      name: "an untrusted certificate",
+      error: new TypeError("fetch failed", { cause: Object.assign(new Error("cert"), { code: "CERT_HAS_EXPIRED" }) }),
+      kind: "unreachable",
+      message: "TLS certificate",
+      detail: "CERT_HAS_EXPIRED",
+    },
+    {
+      name: "an HTTP error whose body echoes the credential",
+      error: Object.assign(new Error("Error POSTing to endpoint: Authorization: Bearer sk-live-secret"), {
+        status: 403,
+      }),
+      kind: "rejected",
+      message: "denied access (HTTP 403)",
+      detail: "HTTP 403",
+    },
+    {
+      name: "a request the server never answered",
+      error: Object.assign(new Error("Request timed out"), { code: "REQUEST_TIMEOUT" }),
+      kind: "timeout",
+      message: "did not answer in time",
+      detail: "REQUEST_TIMEOUT",
+    },
+  ])("explains a call that failed on $name", async ({ error, kind, message, detail }) => {
+    const { sdk, clients } = fakeSdk();
+    const connection = new McpConnection({ sdk });
+    await connection.connect("https://example.com/mcp", { mode: "none" });
+    clients[0]!.callTool = vi.fn(async () => {
+      throw error;
+    });
+    const failure = await connection.callTool("search", {}).catch((caught: unknown) => caught);
+    expect(failure).toMatchObject({ code: "internal_error", kind, detail, message: expect.stringContaining(message) });
+    expect(`${(failure as Error).message} ${JSON.stringify(failure)}`).not.toContain("sk-live-secret");
   });
 
   it("drops a session the server no longer knows so the pool can reopen it", async () => {

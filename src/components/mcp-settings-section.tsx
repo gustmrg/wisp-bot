@@ -329,6 +329,9 @@ function McpServerCard({
             {server.enabled ? "" : " · disabled"}
             {wispCount !== undefined ? ` · ${wispCount === 1 ? "1 Wisp" : `${wispCount} Wisps`} with access` : ""}
           </span>
+          {server.unavailableReason ? (
+            <span className="mt-1 block text-2xs text-destructive">{server.unavailableReason}</span>
+          ) : null}
         </span>
       ) : (
         <span className="min-w-0 flex-1">
@@ -633,6 +636,7 @@ export function McpServerForm({
             {server.tools.length ? ` · ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}` : ""}
           </p>
         ) : null}
+        {server?.unavailableReason ? <p className="text-destructive">{server.unavailableReason}</p> : null}
         {preset ? null : (
           <Field>
             <FieldLabel htmlFor={`${formId}-name`}>Name</FieldLabel>

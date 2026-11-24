@@ -8,7 +8,12 @@ import { getToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalo
 import { McpOAuthProvider, type McpSignInBrowser } from "../backend/mcp-oauth.js";
 import { McpSecretStore } from "../backend/mcp-secret-store.js";
 import { McpService, type McpServiceOptions } from "../backend/mcp-service.js";
-import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../backend/mcp-bridge.js";
+import {
+  McpTransportError,
+  type McpConnection,
+  type McpConnectionAuth,
+  type McpConnectionOptions,
+} from "../backend/mcp-bridge.js";
 import type { McpSettingsView } from "../shared/mcp.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import type { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
@@ -849,6 +854,59 @@ describe("McpService", () => {
 
     expect(warn).toHaveBeenCalledWith("mcp_connect_failed", { host: "mcp.example.com", reason: "offline" });
     expect(JSON.stringify(warn.mock.calls)).not.toContain("private-team");
+  });
+
+  it("marks a server unreachable during a call as unavailable, logs why, and recovers on the next success", async () => {
+    const warn = vi.fn();
+    const unreachable = new McpTransportError(
+      "unreachable",
+      "The MCP server did not accept the connection in time.",
+      "UND_ERR_CONNECT_TIMEOUT",
+    );
+    const calls: ConnectionFixture = { outcome: "connected", tools: [TOOL], result: unreachable };
+    const { service } = await createService({ logger: { warn } }, [{ outcome: "connected", tools: [TOOL] }, calls]);
+    const { serverId, server } = await addServer(service, {
+      endpoint: "https://mcp.example.com/v1/mcp?workspace=private-team",
+    });
+    await grantAccess(service, "wisp-a", serverId);
+    const definition = await firstDefinition(service);
+
+    await expect(definition.execute("call-1", { query: "x" })).rejects.toMatchObject({
+      message: unreachable.message,
+    });
+    const failed = (await service.getView()).servers[0]!;
+    expect(failed).toMatchObject({ state: "unavailable", unavailableReason: unreachable.message });
+    expect(warn).toHaveBeenCalledWith("mcp_call_failed", {
+      server: server.name,
+      host: "mcp.example.com",
+      tool: "search",
+      stage: "call",
+      durationMs: expect.any(Number),
+      reason: `${unreachable.message} (UND_ERR_CONNECT_TIMEOUT)`,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("private-team");
+
+    delete calls.result;
+    await definition.execute("call-2", { query: "x" });
+    const recovered = (await service.getView()).servers[0]!;
+    expect(recovered.state).toBe("connected");
+    expect(recovered.unavailableReason).toBeUndefined();
+  });
+
+  it("keeps a server that answers too slowly marked as connected", async () => {
+    const slow = new McpTransportError("timeout", "The MCP server did not answer in time.", "REQUEST_TIMEOUT");
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL], result: slow },
+    ];
+    const { service } = await createService({}, connections);
+    const { serverId } = await addServer(service);
+    await grantAccess(service, "wisp-a", serverId);
+
+    await expect((await firstDefinition(service)).execute("call-1", { query: "x" })).rejects.toMatchObject({
+      message: slow.message,
+    });
+    expect((await service.getView()).servers[0]!.state).toBe("connected");
   });
 
   it("rediscovers on save only when the connection has no tools", async () => {
