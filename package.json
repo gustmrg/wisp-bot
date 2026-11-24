@@ -164,7 +164,7 @@
       "syncDesktopName": true
     },
     "win": {
-      "icon": "build/icon.ico",
+      "icon": "build/icon-mac.png",
       "target": [
         {
           "target": "nsis",
