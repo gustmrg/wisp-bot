@@ -1,0 +1,59 @@
+name: Warden
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "server/package.json"
+      - ".github/workflows/warden.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warden-inventory
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Generate dependency inventory
+        run: |
+          docker run --rm -v "$PWD":/src:ro aquasec/trivy:0.58.1 fs \
+            --quiet --scanners "" --include-dev-deps --list-all-pkgs \
+            --format json /src > inventory.json
+
+      # Ephemeral tailnet node; requires a Tailscale OAuth client scoped to tag:warden-ci
+      # and an ACL grant allowing tag:warden-ci to reach only Warden's host and port.
+      - name: Connect to tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:warden-ci
+
+      - name: Send inventory to Warden
+        env:
+          WARDEN_URL: ${{ secrets.WARDEN_URL }}
+          WARDEN_TOKEN: ${{ secrets.WARDEN_TOKEN }}
+        run: |
+          if [[ -z "$WARDEN_URL" ]]; then
+            echo "::error::Secret WARDEN_URL is not set."
+            exit 1
+          fi
+          if [[ -z "$WARDEN_TOKEN" ]]; then
+            echo "::error::Secret WARDEN_TOKEN is not set."
+            exit 1
+          fi
+          curl -fsS --max-time 300 -X POST "${WARDEN_URL%/}/api/v1/ingest" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $WARDEN_TOKEN" \
+            -H "X-Commit: ${{ github.sha }}" \
+            --data-binary @inventory.json
