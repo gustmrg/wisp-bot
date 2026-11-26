@@ -524,6 +524,7 @@ export class ConversationService {
       await this.repository.delete(conversation.id).catch(() => undefined);
       throw error;
     }
+    this.publishWisps();
     return this.getState();
   }
 
@@ -562,6 +563,7 @@ export class ConversationService {
       if (changesAgents) {
         await this.registry.updateContext(this.repository.getCircleAgentContext(conversationId)).catch(() => undefined);
       }
+      this.publishWisps();
     }
     afterLeft?.();
     if (leaving.length) this.onCircleMembersLeft();
@@ -747,6 +749,7 @@ export class ConversationService {
     this.work.delete(conversationId);
     afterDeleted?.();
     this.onConversationsRemoved();
+    if (circle) this.publishWisps();
     return this.getState();
   }
 

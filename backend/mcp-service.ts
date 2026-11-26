@@ -506,6 +506,14 @@ export class McpService {
     return this.getView();
   }
 
+  /**
+   * Non-secret display names of configured MCP servers by ID, for Wisp
+   * inspection (ADR 049). Never exposes endpoints, headers, or credentials.
+   */
+  getServerNames(): ReadonlyMap<string, string> {
+    return new Map(Object.values(this.state.servers).map(({ serverId, name }) => [serverId, name]));
+  }
+
   getAccess(value: unknown): WispMcpAccessView {
     const { conversationId } = parseMcpConversation(value);
     const sessionId = this.options.resolveWisp(conversationId);

@@ -16,11 +16,16 @@ import {
   USE_SKILL_PARAMETERS,
 } from "../backend/wisp-session-plan.js";
 import {
+  ASK_WISP_PARAMETERS,
+  CREATE_CIRCLE_PARAMETERS,
   CREATE_WISP_PARAMETERS,
   DELETE_WISP_PARAMETERS,
+  LIST_CIRCLES_PARAMETERS,
   LIST_WISPS_PARAMETERS,
+  UPDATE_CIRCLE_PARAMETERS,
   UPDATE_WISP_PARAMETERS,
 } from "../backend/wisp-tools.js";
+import { THINKING_LEVELS } from "../shared/contracts.js";
 import { WISP_NAME_MAX_LENGTH, WISP_ROLE_MAX_LENGTH, WISP_SOUL_MAX_LENGTH } from "../shared/conversations.js";
 import { MAX_JOB_INSTRUCTIONS_LENGTH, MAX_JOB_SKILLS, MAX_JOB_TITLE_LENGTH, MAX_JOB_TOOLS } from "../shared/jobs.js";
 import {
@@ -46,6 +51,83 @@ const WISP_FIELDS = {
   },
   color: { type: "string", enum: WISP_COLORS.map(({ id }) => id), description: "The Wisp's color." },
   body: { type: "string", enum: [...WISP_BODIES], description: "The shape of the Wisp's body." },
+  memory_off: {
+    type: "boolean",
+    description: "Set true to turn saved memory off for this Wisp, or false to turn memory on.",
+  },
+  model: {
+    description: "Optional model override { provider, model, thinking_level? }, or null to use the app default model.",
+    anyOf: [
+      {
+        type: "object",
+        properties: {
+          provider: {
+            type: "string",
+            minLength: 1,
+            maxLength: 128,
+            description: "Provider ID, such as anthropic, openai, or claude-code.",
+          },
+          model: {
+            type: "string",
+            minLength: 1,
+            maxLength: 256,
+            description: "Model ID for that provider.",
+          },
+          thinking_level: {
+            type: "string",
+            enum: [...THINKING_LEVELS],
+            description: "Optional reasoning level supported by the model, such as off, low, medium, or high.",
+          },
+        },
+        required: ["provider", "model"],
+        additionalProperties: false,
+      },
+      { type: "null" },
+    ],
+  },
+  fallback: {
+    description:
+      'Optional fallback model: "app" for the app default fallback, "none" for no fallback, or { provider, model }.',
+    anyOf: [
+      { type: "string", enum: ["app", "none"] },
+      {
+        type: "object",
+        properties: {
+          provider: {
+            type: "string",
+            minLength: 1,
+            maxLength: 128,
+            description: "Fallback provider ID (must differ from the primary model's provider).",
+          },
+          model: {
+            type: "string",
+            minLength: 1,
+            maxLength: 256,
+            description: "Fallback model ID.",
+          },
+        },
+        required: ["provider", "model"],
+        additionalProperties: false,
+      },
+    ],
+  },
+};
+
+const CIRCLE_FIELDS = {
+  name: { type: "string", minLength: 1, maxLength: 100, description: "The circle's name." },
+  description: { type: "string", maxLength: 10_000, description: "What the circle works on, shown to its members." },
+  member_ids: {
+    type: "array",
+    items: { type: "string", minLength: 1 },
+    minItems: 1,
+    maxItems: 100,
+    description: "IDs of existing Wisps in the circle.",
+  },
+  responder: {
+    type: "string",
+    enum: ["lead", "auto"],
+    description: 'Who answers a message with no @mention: "lead" (default) or "auto" (decision model).',
+  },
 };
 
 const SCHEDULE = {
@@ -120,6 +202,7 @@ const object = (properties: object, required?: string[]) => ({
 
 const CASES: Array<[string, z.ZodType, object]> = [
   ["list_wisps", LIST_WISPS_PARAMETERS, object({ wisp_id: { type: "string", minLength: 1 } })],
+  ["list_circles", LIST_CIRCLES_PARAMETERS, object({})],
   ["create_wisp", CREATE_WISP_PARAMETERS, object(WISP_FIELDS, ["name", "soul"])],
   [
     "update_wisp",
@@ -127,6 +210,53 @@ const CASES: Array<[string, z.ZodType, object]> = [
     object({ wisp_id: { type: "string", minLength: 1 }, ...WISP_FIELDS }, ["wisp_id"]),
   ],
   ["delete_wisp", DELETE_WISP_PARAMETERS, object({ wisp_id: { type: "string", minLength: 1 } }, ["wisp_id"])],
+  [
+    "create_circle",
+    CREATE_CIRCLE_PARAMETERS,
+    object(
+      {
+        ...CIRCLE_FIELDS,
+        lead_id: {
+          type: "string",
+          minLength: 1,
+          description: "Optional Wisp ID of the circle's lead; must be in member_ids. Defaults to the first member.",
+        },
+      },
+      ["name", "member_ids"],
+    ),
+  ],
+  [
+    "update_circle",
+    UPDATE_CIRCLE_PARAMETERS,
+    object(
+      {
+        circle_id: { type: "string", minLength: 1 },
+        ...CIRCLE_FIELDS,
+        lead_id: {
+          type: "string",
+          minLength: 1,
+          description: "Optional Wisp ID of the circle's lead; must be in the circle's members.",
+        },
+      },
+      ["circle_id"],
+    ),
+  ],
+  [
+    "ask_wisp",
+    ASK_WISP_PARAMETERS,
+    object(
+      {
+        wisp_id: { type: "string", minLength: 1, description: "The ID of the Wisp to consult (from list_wisps)." },
+        message: {
+          type: "string",
+          minLength: 1,
+          maxLength: 10_000,
+          description: "A clear, self-contained question or request for the target Wisp. Never include secrets.",
+        },
+      },
+      ["wisp_id", "message"],
+    ),
+  ],
   ["schedule_job", SCHEDULE_JOB_PARAMETERS, object(JOB_FIELDS, ["title", "instructions", "schedule"])],
   ["list_jobs", LIST_JOBS_PARAMETERS, object({})],
   [

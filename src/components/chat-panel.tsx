@@ -689,13 +689,13 @@ function ChatPanel({
             })}
             {/* These belong to the newest messages, so a window opened elsewhere in the transcript omits them. */}
             {!attached ? null : mobile ? (
-              <ApprovalSummaries requests={approvals} chatOf={() => chat} onResolve={onResolveApproval} />
+              <ApprovalSummaries requests={approvals} chatOf={() => chat} wisps={wisps} onResolve={onResolveApproval} />
             ) : (
               approvals.map((request) => (
                 <ToolApprovalCard
                   key={request.approvalId}
                   request={request}
-                  wispName={approvalWispName(chat, request)}
+                  wispName={approvalWispName(chat, request, wisps)}
                   onResolve={(decision) => onResolveApproval(request, decision)}
                 />
               ))

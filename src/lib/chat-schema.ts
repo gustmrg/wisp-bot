@@ -21,10 +21,17 @@ export function chatName(chat: ChatView): string {
   return chat.kind === "wisp" ? chat.wisp.name : chat.name;
 }
 
-/** Who asks for an approval: in a circle, the member the request names (ADR 011). */
-export function approvalWispName(chat: ChatView, request: { wispId?: string }): string {
-  if (chat.kind === "circle" && request.wispId) {
-    return chat.members.find(({ id }) => id === request.wispId)?.name ?? chat.name;
+/** Who asks for an approval: the Wisp the request names (in a circle or consultation), or the chat's own Wisp. */
+export function approvalWispName(
+  chat: ChatView,
+  request: { wispId?: string },
+  wisps?: Readonly<WispCollection>,
+): string {
+  if (request.wispId) {
+    if (wisps?.[request.wispId]) return wisps[request.wispId]!.name;
+    if (chat.kind === "circle") {
+      return chat.members.find(({ id }) => id === request.wispId)?.name ?? chat.name;
+    }
   }
   return chatName(chat);
 }

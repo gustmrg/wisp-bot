@@ -123,6 +123,7 @@ export class ToolAuthorizationBroker {
   private readonly audit: ToolAuditSink;
   private readonly wispPolicies: WispToolPolicySource;
   private readonly unattended = new AsyncLocalStorage<UnattendedGrant>();
+  private readonly approvalRoute = new AsyncLocalStorage<string>();
 
   constructor(
     store: ToolPolicyStore,
@@ -196,47 +197,62 @@ export class ToolAuthorizationBroker {
     return this.unattended.run(grant, run);
   }
 
+  /**
+   * Routes approval cards triggered within `run` to `conversationId` (such as
+   * the conversation calling `ask_wisp`), while keeping each action's own
+   * `wispId` so permissions, attribution, and audit logs stay with the acting
+   * Wisp (ADR 049).
+   */
+  routeApprovals<T>(conversationId: string, run: () => Promise<T>): Promise<T> {
+    return this.approvalRoute.run(conversationId, run);
+  }
+
   authorize(action: ToolAuthorizationRequest, signal?: AbortSignal): Promise<void> {
     const actionId = this.createId();
+    const routedConversationId = this.approvalRoute.getStore();
+    const effectiveAction =
+      routedConversationId && routedConversationId !== action.conversationId
+        ? { ...action, conversationId: routedConversationId }
+        : action;
     if (signal?.aborted) {
-      this.auditDecision(actionId, action, "ask", "cancelled", "system", "cancelled");
+      this.auditDecision(actionId, effectiveAction, "ask", "cancelled", "system", "cancelled");
       return Promise.reject(new WispBackendError("aborted", "The tool action was cancelled."));
     }
-    let behavior = evaluateToolPolicy(this.store.get(), action.category, action.scope.kind);
+    let behavior = evaluateToolPolicy(this.store.get(), effectiveAction.category, effectiveAction.scope.kind);
     let everything = false;
     if (behavior !== "block") {
       // A Block rule is final; otherwise the Wisp's own permissions may answer.
-      const wisp = this.readWispPolicy(action.wispId);
-      behavior = applyWispToolPolicy(behavior, wisp, action.category, action.scope.kind);
-      everything = behavior === "ask" && allowsEverything(wisp, action.category);
+      const wisp = this.readWispPolicy(effectiveAction.wispId);
+      behavior = applyWispToolPolicy(behavior, wisp, effectiveAction.category, effectiveAction.scope.kind);
+      everything = behavior === "ask" && allowsEverything(wisp, effectiveAction.category);
     }
     if (everything) {
-      this.auditDecision(actionId, action, behavior, "allow_everything", "user", "allowed");
+      this.auditDecision(actionId, effectiveAction, behavior, "allow_everything", "user", "allowed");
       return Promise.resolve();
     }
     if (behavior === "allow") {
-      this.auditDecision(actionId, action, behavior, "allow", "policy", "allowed");
+      this.auditDecision(actionId, effectiveAction, behavior, "allow", "policy", "allowed");
       return Promise.resolve();
     }
     if (behavior === "block") {
-      this.auditDecision(actionId, action, behavior, "block", "policy", "blocked");
+      this.auditDecision(actionId, effectiveAction, behavior, "block", "policy", "blocked");
       return Promise.reject(new WispBackendError("tool_blocked", "This tool action is blocked by policy."));
     }
     const unattended = this.unattended.getStore();
     if (unattended) {
       // Skill, memory, job and Wisp changes are reviewed one by one, so no grant covers them.
       const approved =
-        unattended.conversationId === action.conversationId &&
-        action.category !== "save_skill" &&
-        action.category !== "save_memory" &&
-        action.category !== "schedule_job" &&
-        action.category !== "manage_wisp" &&
-        unattended.approvedTools.has(action.toolName);
+        unattended.conversationId === effectiveAction.conversationId &&
+        effectiveAction.category !== "save_skill" &&
+        effectiveAction.category !== "save_memory" &&
+        effectiveAction.category !== "schedule_job" &&
+        effectiveAction.category !== "manage_wisp" &&
+        unattended.approvedTools.has(effectiveAction.toolName);
       if (approved) {
-        this.auditDecision(actionId, action, behavior, "allow", "user", "allowed");
+        this.auditDecision(actionId, effectiveAction, behavior, "allow", "user", "allowed");
         return Promise.resolve();
       }
-      this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
+      this.auditDecision(actionId, effectiveAction, behavior, "block", "system", "blocked");
       return Promise.reject(
         new WispBackendError(
           "tool_blocked",
@@ -245,43 +261,47 @@ export class ToolAuthorizationBroker {
       );
     }
     const integrationTool =
-      (action.category === "integration_call" || action.category === "external_write") &&
-      action.scope.kind === "integration";
-    if (integrationTool && action.alwaysAllowed) {
+      (effectiveAction.category === "integration_call" || effectiveAction.category === "external_write") &&
+      effectiveAction.scope.kind === "integration";
+    if (integrationTool && effectiveAction.alwaysAllowed) {
       // The user's earlier "Always allow" for this tool or integration and Wisp answers the prompt.
-      this.auditDecision(actionId, action, behavior, "allow_always", "user", "allowed");
+      this.auditDecision(actionId, effectiveAction, behavior, "allow_always", "user", "allowed");
       return Promise.resolve();
     }
-    const rememberApproval = integrationTool ? action.rememberApproval : undefined;
-    const rememberIntegration = integrationTool ? action.rememberIntegration : undefined;
+    const rememberApproval = integrationTool ? effectiveAction.rememberApproval : undefined;
+    const rememberIntegration = integrationTool ? effectiveAction.rememberIntegration : undefined;
     const windowId = this.selectWindowId();
     if (windowId === null) {
-      this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
+      this.auditDecision(actionId, effectiveAction, behavior, "block", "system", "blocked");
       return Promise.reject(new WispBackendError("tool_blocked", "This tool action requires an open approval window."));
     }
 
     const approvalId = actionId;
     const expiresAt = new Date(this.now().getTime() + this.approvalTtlMs).toISOString();
-    const metadata = getToolMetadata(action.toolName);
+    const metadata = getToolMetadata(effectiveAction.toolName);
     const request: ToolApprovalRequest = {
       approvalId,
-      conversationId: action.conversationId,
-      // Only a circle names its Wisp: in a Wisp's own conversation it is the conversation's.
-      ...(action.wispId === action.conversationId ? {} : { wispId: action.wispId }),
-      toolCallId: safeId(action.toolCallId),
-      toolName: safeToolName(action.toolName),
+      conversationId: effectiveAction.conversationId,
+      // Only a circle or consultation names its Wisp: in a Wisp's own conversation it is the conversation's.
+      ...(effectiveAction.wispId === effectiveAction.conversationId ? {} : { wispId: effectiveAction.wispId }),
+      toolCallId: safeId(effectiveAction.toolCallId),
+      toolName: safeToolName(effectiveAction.toolName),
       ...(metadata?.mcpServerId ? { toolLabel: metadata.label } : {}),
-      category: action.category,
-      scope: { kind: action.scope.kind, display: sanitizeSummary(action.scope.value) },
-      summary: sanitizeSummary(action.summary),
-      ...(action.preview ? { preview: sanitizePreview(action.preview) } : {}),
-      ...(action.job && action.category === "schedule_job" ? { job: sanitizeJob(action.job) } : {}),
-      ...(action.wisp && action.category === "manage_wisp" ? { wisp: sanitizeWisp(action.wisp) } : {}),
+      category: effectiveAction.category,
+      scope: { kind: effectiveAction.scope.kind, display: sanitizeSummary(effectiveAction.scope.value) },
+      summary: sanitizeSummary(effectiveAction.summary),
+      ...(effectiveAction.preview ? { preview: sanitizePreview(effectiveAction.preview) } : {}),
+      ...(effectiveAction.job && effectiveAction.category === "schedule_job"
+        ? { job: sanitizeJob(effectiveAction.job) }
+        : {}),
+      ...(effectiveAction.wisp && effectiveAction.category === "manage_wisp"
+        ? { wisp: sanitizeWisp(effectiveAction.wisp) }
+        : {}),
       ...(rememberApproval ? { alwaysAllowTool: true } : {}),
       ...(rememberIntegration ? { alwaysAllowIntegration: true } : {}),
       expiresAt,
     };
-    this.auditDecision(actionId, action, behavior, "ask", "policy", "pending");
+    this.auditDecision(actionId, effectiveAction, behavior, "ask", "policy", "pending");
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => this.expire(approvalId), this.approvalTtlMs);
       const abortListener = signal ? () => this.cancel(approvalId) : undefined;
@@ -297,7 +317,7 @@ export class ToolAuthorizationBroker {
         ...(rememberApproval ? { rememberApproval } : {}),
         ...(rememberIntegration ? { rememberIntegration } : {}),
       });
-      this.publish({ type: "tool_approval_requested", conversationId: action.conversationId, request });
+      this.publish({ type: "tool_approval_requested", conversationId: effectiveAction.conversationId, request });
     });
   }
 
@@ -595,15 +615,27 @@ function sanitizeJob(job: JobApprovalDetails): JobApprovalDetails {
 function sanitizeWisp(wisp: WispApprovalDetails): WispApprovalDetails {
   const changes = wisp.changes;
   return {
+    ...(wisp.target ? { target: wisp.target } : {}),
     action: wisp.action,
     name: sanitizeSummary(wisp.name),
     ...(changes
       ? {
           changes: {
             ...(changes.name !== undefined ? { name: sanitizeSummary(changes.name) } : {}),
-            // A role may be cleared, which the summary's fallback text would hide.
+            // A role or description may be cleared, which the summary's fallback text would hide.
             ...(changes.role !== undefined ? { role: changes.role.trim() ? sanitizeSummary(changes.role) : "" } : {}),
             ...(changes.soul !== undefined ? { soul: sanitizePreview(changes.soul) } : {}),
+            ...(changes.color !== undefined ? { color: sanitizeSummary(changes.color) } : {}),
+            ...(changes.body !== undefined ? { body: sanitizeSummary(changes.body) } : {}),
+            ...(changes.memory !== undefined ? { memory: changes.memory } : {}),
+            ...(changes.model !== undefined ? { model: sanitizeSummary(changes.model) } : {}),
+            ...(changes.fallback !== undefined ? { fallback: sanitizeSummary(changes.fallback) } : {}),
+            ...(changes.description !== undefined
+              ? { description: changes.description.trim() ? sanitizePreview(changes.description) : "" }
+              : {}),
+            ...(changes.members !== undefined ? { members: changes.members.slice(0, 100).map(sanitizeSummary) } : {}),
+            ...(changes.lead !== undefined ? { lead: sanitizeSummary(changes.lead) } : {}),
+            ...(changes.responder !== undefined ? { responder: changes.responder } : {}),
           },
         }
       : {}),

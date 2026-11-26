@@ -713,7 +713,7 @@ export async function readExecutionSettings(configDirectory: string): Promise<Ex
 }
 
 /** Whether a circle lets its members run commands; off until the person says so, and whenever it cannot be read. */
-async function readCircleCommands(settingsDirectory: string): Promise<boolean> {
+export async function readCircleCommands(settingsDirectory: string): Promise<boolean> {
   try {
     const { commands } = JSON.parse(await readFile(path.join(settingsDirectory, CIRCLE_EXECUTION_FILE), "utf8")) as {
       commands?: unknown;

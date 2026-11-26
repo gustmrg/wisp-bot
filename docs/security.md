@@ -134,13 +134,36 @@ them. `save_skill` always asks and shows the exact instructions; rules and
 auto-review cannot allow it, and its card offers no lasting decision. Skill
 instructions are treated as user-provided context and never grant tools.
 
-Every Wisp can create, change and delete the person's other Wisps
-([ADR 024](decisions/024-chief-and-wisp-tools.md)). `create_wisp`,
-`update_wisp` and `delete_wisp` always ask, like `save_skill`: the card shows
-the name, role and soul, or for a deletion repeats the warning of the
-settings' delete button. Rules, auto-review and **Allow everything** cannot
-allow them, their cards offer no lasting decision, a Wisp cannot change or
-delete itself, and job runs never get these tools.
+Every Wisp can inspect, create, change, and delete the person's other Wisps,
+manage circles, and consult another Wisp directly
+([ADR 024](decisions/024-chief-and-wisp-tools.md),
+[ADR 049](decisions/049-wisp-communication-and-management.md)):
+
+- `list_wisps` and `list_circles` are read-only and show only non-secret
+  metadata: names, roles, appearance, models, fallbacks, memory on/off, circle
+  memberships, installed skill names and descriptions, scheduled job titles and
+  schedules, container/network/browser/workspace capabilities, and plugin or
+  MCP server names with access levels. Credentials, API keys, OAuth tokens,
+  headers, secret endpoints, and raw authentication configuration are never
+  exposed.
+- `create_wisp`, `update_wisp`, `delete_wisp`, `create_circle`, and
+  `update_circle` always ask under `manage_wisp`, like `save_skill`: the card
+  shows every field being set or changed (including model, fallback, memory,
+  and circle details), or for a deletion repeats the warning of the settings'
+  delete button. Rules, auto-review, and **Allow everything** cannot allow
+  them, their cards offer no lasting decision, a Wisp cannot change or delete
+  itself, and job runs never get these tools.
+- `ask_wisp` lets a Wisp consult another existing Wisp in the same environment
+  in an isolated turn without corrupting the target Wisp's own conversation
+  session. A Wisp cannot consult itself, job runs never get `ask_wisp`, and a
+  Wisp answering a consultation never receives `ask_wisp`, `manage_wisp` tools,
+  job tools, `save_skill`, or `save_memory` (preventing recursion and loops).
+  The consulted Wisp runs strictly with its own identity, soul, memory (when
+  enabled), skills, model, workspace, grants, and permissions: there is no
+  privilege escalation, and any tool approval it triggers appears in the
+  caller's conversation attributed to and governed by the consulted Wisp.
+  Stopping the caller's turn cancels the consultation, and each consultation is
+  bounded by a timeout.
 
 ## Wisp templates
 

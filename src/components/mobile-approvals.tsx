@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import type { ChatId, ChatViewCollection } from "@/chat-data";
+import type { ChatId, ChatViewCollection, WispCollection } from "@/chat-data";
 import { ApprovalSummaries } from "@/components/approval-summary";
 import { WispAvatar } from "@/components/chat-avatar";
 import { MobileNavigation } from "@/components/mobile-navigation";
@@ -41,6 +41,10 @@ export function MobileApprovals({
 }: MobileApprovalsProps) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const pending = pendingApprovals(chats, approvals);
+  // Derive wisps from Wisp chats so consultation approvals show the consulted Wisp's name.
+  const wisps: WispCollection = Object.fromEntries(
+    Object.values(chats).flatMap((chat) => (chat.kind === "wisp" ? [[chat.wisp.id, chat.wisp]] : [])),
+  );
   // With nothing to answer, one of the Wisps keeps the empty screen company.
   const resting = Object.values(chats).find((chat) => chat.kind === "wisp")?.wisp;
 
@@ -62,6 +66,7 @@ export function MobileApprovals({
         <ApprovalSummaries
           requests={pending}
           chatOf={(request) => chats[request.conversationId]!}
+          wisps={wisps}
           onResolve={onResolve}
           onOpenChat={onOpenChat}
         />
