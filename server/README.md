@@ -85,20 +85,26 @@ anything; choose a free one with `--port`.
 wispctl pair                     Print a one-time pairing code for a new device
 wispctl devices                  List paired devices
 wispctl revoke --device-id ID    Remove a device and end its sessions
-wispctl status                   Show the running server's identity
-wispctl backup --output FILE --key-file KEY
+wispctl status                   Show the running server's identity and telemetry
+wispctl doctor                   Run read-only diagnostics on the host and server
+wispctl logs [--lines N]         Show recent server log lines from backend/logs
+wispctl config                   Show active server.env settings and resolved paths
+wispctl start | stop | restart   Control the wisp systemd user service on Linux
+wispctl backup --output FILE --key-file KEY [--wait SECONDS]
                                  Write an encrypted backup of the data directory
 wispctl help                     Show every command and option
 ```
 
-In a terminal, `pair` and `devices` print text to read, and `pair` draws a QR
-code to scan when the server has a public origin and serves the browser app
-(`--no-qr` leaves it out);
-piped, or with `--json`, they print JSON.
+In a terminal, `pair`, `devices`, `status`, `doctor`, `config`, and service
+commands print text to read, and `pair` draws a QR code to scan when the
+server has a public origin and serves the browser app (`--no-qr` leaves it
+out); piped, or with `--json`, they print JSON. `logs` prints plain log lines
+by default and JSON with `--json`.
 
 The service is a regular systemd user unit:
 
 ```sh
+wispctl restart
 systemctl --user status wisp
 journalctl --user -u wisp -n 50
 ```

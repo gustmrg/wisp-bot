@@ -28,10 +28,16 @@ const DEFAULT_CAPACITY = 5_000;
 export class EventHub {
   readonly bootId = randomUUID();
   private sequence = 0;
-  private readonly buffer: HubEvent[] = [];
+  private readonly capacity: number;
+  private readonly slots: Array<HubEvent | undefined>;
+  private head = 0;
+  private count = 0;
   private readonly listeners = new Set<(event: HubEvent) => void>();
 
-  constructor(private readonly capacity = DEFAULT_CAPACITY) {}
+  constructor(capacity = DEFAULT_CAPACITY) {
+    this.capacity = Math.max(0, Math.floor(capacity));
+    this.slots = new Array<HubEvent | undefined>(this.capacity);
+  }
 
   get cursor(): string {
     return `${this.bootId}:${this.sequence}`;
@@ -39,8 +45,15 @@ export class EventHub {
 
   publish<T extends Exclude<RemoteEventType, "resync">>(type: T, payload: RemoteEventPayloads[T]): void {
     const event: HubEvent = { id: `${this.bootId}:${++this.sequence}`, type, payload };
-    this.buffer.push(event);
-    if (this.buffer.length > this.capacity) this.buffer.shift();
+    if (this.capacity > 0) {
+      if (this.count < this.capacity) {
+        this.slots[(this.head + this.count) % this.capacity] = event;
+        this.count++;
+      } else {
+        this.slots[this.head] = event;
+        this.head = (this.head + 1) % this.capacity;
+      }
+    }
     for (const listener of this.listeners) listener(event);
   }
 
@@ -52,12 +65,18 @@ export class EventHub {
     };
     if (cursor === undefined) return { replay: [], resync: false, unsubscribe };
     const after = this.parse(cursor);
-    const oldest = this.buffer[0] ? this.sequenceOf(this.buffer[0]) : this.sequence + 1;
+    const oldest = this.sequence - this.count + 1;
     // Replay is complete only if the next event the client needs is still buffered.
     if (after === undefined || after > this.sequence || after + 1 < oldest) {
       return { replay: [], resync: true, unsubscribe };
     }
-    return { replay: this.buffer.filter((event) => this.sequenceOf(event) > after), resync: false, unsubscribe };
+    const replayCount = this.sequence - after;
+    const startOffset = after + 1 - oldest;
+    const replay = new Array<HubEvent>(replayCount);
+    for (let index = 0; index < replayCount; index++) {
+      replay[index] = this.slots[(this.head + startOffset + index) % this.capacity]!;
+    }
+    return { replay, resync: false, unsubscribe };
   }
 
   private parse(cursor: string): number | undefined {
@@ -65,9 +84,5 @@ export class EventHub {
     if (cursor.slice(0, separator) !== this.bootId) return undefined;
     const value = Number(cursor.slice(separator + 1));
     return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
-  }
-
-  private sequenceOf(event: HubEvent): number {
-    return Number(event.id.slice(event.id.lastIndexOf(":") + 1));
   }
 }

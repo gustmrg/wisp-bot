@@ -147,6 +147,11 @@ export class ToolAuthorizationBroker {
     return [...this.pending.values()].map(({ request }) => structuredClone(request));
   }
 
+  /** Number of tool approval requests currently waiting for a decision. */
+  pendingCount(): number {
+    return this.pending.size;
+  }
+
   savePolicy(value: unknown): Promise<ToolPolicySettings> {
     return this.store.save(value);
   }

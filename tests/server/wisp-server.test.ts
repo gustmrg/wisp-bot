@@ -15,7 +15,7 @@ import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { BackendResult } from "../../shared/contracts.js";
 import type { Chat, Wisp } from "../../shared/conversations.js";
 import { decodeRemoteJson, encodeRemoteJson } from "../../shared/remote-codec.js";
-import type { DeviceCredentials, ServerDescriptor } from "../../shared/remote-protocol.js";
+import type { DeviceCredentials, ServerDescriptor, ServerSummary } from "../../shared/remote-protocol.js";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
@@ -497,5 +497,139 @@ describe("Wisp server", () => {
     expect(output.pop()).not.toContain("Scan this");
     await cli("pair", "--json");
     expect(JSON.parse(output.pop()!)).toEqual({ code: expect.any(String), expiresAt: expect.any(String) });
+    await cli("status");
+    const statusText = output.pop()!;
+    expect(statusText).toContain("Wisp server 1.2.3 (running)");
+    expect(statusText).toContain(`Server ID: ${harness.server.serverId}`);
+    expect(statusText).toContain(`Port: ${harness.server.port}`);
+    expect(statusText).toContain("Paired devices: 1");
+    expect(statusText).toContain("Working Wisps: 0");
+    expect(statusText).toContain("Pending approvals: 0");
+    expect(statusText).toContain("Unread conversations: 0");
+    expect(statusText).toContain("Browser app: enabled");
+    expect(statusText).toContain("Public origin: https://wisp.example.ts.net");
+    await cli("status", "--json");
+    expect(JSON.parse(output.pop()!)).toMatchObject({
+      serverId: harness.server.serverId,
+      version: "1.2.3",
+      port: harness.server.port,
+      devices: 1,
+      web: true,
+      publicOrigin: "https://wisp.example.ts.net",
+      startedAt: expect.any(String),
+      uptimeSeconds: expect.any(Number),
+      workingWisps: 0,
+      pendingApprovals: 0,
+      unreadConversations: 0,
+      activeEventStreams: 0,
+      memoryRssBytes: expect.any(Number),
+    });
+  });
+
+  it("serves authenticated /api/v1/summary with live operational telemetry", async () => {
+    const harness = await start();
+    expect((await fetch(`${harness.server.url}/api/v1/summary`)).status).toBe(401);
+    expect(
+      (await fetch(`${harness.server.url}/api/v1/summary`, { headers: { Authorization: "Bearer bad-token" } })).status,
+    ).toBe(401);
+
+    const credentials = await pair(harness, "Monitor");
+    await setUpWisp(harness.server, credentials);
+
+    const readSummary = async (): Promise<ServerSummary> => {
+      const response = await fetch(`${harness.server.url}/api/v1/summary`, {
+        headers: { Authorization: `Bearer ${credentials.accessToken}` },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { ok: true; value: ServerSummary };
+      expect(body.ok).toBe(true);
+      return body.value;
+    };
+
+    const initial = await readSummary();
+    expect(initial).toMatchObject({
+      serverId: harness.server.serverId,
+      version: "1.2.3",
+      startedAt: expect.any(String),
+      workingWisps: 0,
+      pendingApprovals: 0,
+      unreadConversations: 0,
+      activeEventStreams: 0,
+    });
+    expect(initial.uptimeSeconds).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(initial)).not.toContain("test-key");
+
+    // Uptime follows the server clock, and active streams + unread + pending approvals update live.
+    harness.advance(65_000);
+    const stream = await openEvents(harness.server, credentials);
+    await rpc(harness.server, credentials, "markConversationUnread", { conversationId: "atlas" });
+
+    const abortApproval = new AbortController();
+    const pendingApproval = harness.server.runtime.toolAuthorization
+      .authorize(
+        {
+          conversationId: "atlas",
+          wispId: "atlas",
+          toolCallId: "tc-1",
+          toolName: "write",
+          category: "create_file",
+          summary: "Create notes.md",
+          scope: { kind: "workspace_path", value: "notes.md" },
+        },
+        abortApproval.signal,
+      )
+      .catch(() => undefined);
+
+    const active = await readSummary();
+    expect(active).toMatchObject({
+      unreadConversations: 1,
+      pendingApprovals: 1,
+      activeEventStreams: 1,
+    });
+    expect(active.uptimeSeconds).toBeGreaterThanOrEqual(initial.uptimeSeconds + 65);
+
+    abortApproval.abort();
+    await pendingApproval;
+    await rpc(harness.server, credentials, "markConversationRead", { conversationId: "atlas" });
+
+    // Working Wisp count rises during a turn and drops to 0 when the turn finishes.
+    await rpc(harness.server, credentials, "sendMessage", { conversationId: "atlas", requestId: "sum-1", text: "Hi" });
+    await waitUntil(
+      () => harness.server.runtime.registry.statuses().atlas === "working",
+      "atlas to enter working status",
+    );
+    expect((await readSummary()).workingWisps).toBe(1);
+    await stream.waitFor(
+      (event) => event.type === "agentEvent" && (event.data as { type: string }).type === "assistant_message_completed",
+    );
+    await waitUntil(() => harness.server.runtime.registry.statuses().atlas !== "working", "atlas to become idle");
+    expect((await readSummary()).workingWisps).toBe(0);
+
+    // Browser session cookie also authenticates GET /api/v1/summary.
+    const { code } = (await adminRequest(harness.directory, { command: "pair" })) as { code: string };
+    const origin = `http://127.0.0.1:${harness.server.port}`;
+    const webPair = await fetch(`${harness.server.url}/api/v1/auth/pair`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: origin, "X-Wisp-Request": "1" },
+      body: JSON.stringify({ code, deviceName: "Browser", mode: "web" }),
+    });
+    expect(webPair.status).toBe(200);
+    const cookie = webPair.headers
+      .getSetCookie()
+      .map((entry) => entry.split(";")[0])
+      .join("; ");
+    const cookieSummary = await fetch(`${harness.server.url}/api/v1/summary`, { headers: { Cookie: cookie } });
+    expect(cookieSummary.status).toBe(200);
+    expect(((await cookieSummary.json()) as { value: ServerSummary }).value.serverId).toBe(harness.server.serverId);
+
+    // Revoked device is rejected.
+    await adminRequest(harness.directory, { command: "revoke", deviceId: credentials.deviceId });
+    expect(
+      (
+        await fetch(`${harness.server.url}/api/v1/summary`, {
+          headers: { Authorization: `Bearer ${credentials.accessToken}` },
+        })
+      ).status,
+    ).toBe(401);
   });
 });

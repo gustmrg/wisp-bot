@@ -384,7 +384,26 @@ One server owns a data directory at a time. A second one exits with "Another
 Wisp server is already using this data directory." On `SIGTERM` the server
 stops accepting requests and gives running Wisps ten seconds to settle.
 
-Day to day, the service is an ordinary systemd user unit:
+Day to day, use `wispctl` or systemd directly:
+
+```sh
+wispctl status
+wispctl doctor
+wispctl logs --lines 50
+wispctl config
+wispctl start | stop | restart
+```
+
+`wispctl start`, `stop`, and `restart` wrap `systemctl --user <action> wisp` on
+Linux. `wispctl logs` reads from `<dataDir>/backend/logs`, so it works across
+systemd, Docker, and manual runs without `journalctl`. `wispctl doctor` runs
+read-only host diagnostics (SQLite and PDF runtime checks, data directory
+permissions and free disk space, master key permissions, Docker or Podman
+availability, running server status, and Linux systemd service/linger status)
+and exits non-zero if any required check fails. `wispctl config` displays
+`~/.config/wisp/server.env` and the resolved settings and paths.
+
+The underlying service is an ordinary systemd user unit:
 
 ```sh
 systemctl --user status wisp
@@ -532,10 +551,18 @@ wispctl verify --input /backups/wisp-2026-10-05.wispbak --key-file ~/.config/wis
 ```
 
 A running server writes the backup itself, so give paths the server's account
-can write (inside a container, container paths). It refuses while a Wisp is
-working, and pauses API calls while it copies; databases are copied through
-SQLite's backup API. With no server running, `wispctl` backs up the directory
-directly, holding its lock so no server starts meanwhile.
+can write (inside a container, container paths). By default it refuses while a
+Wisp is working, and pauses API calls while it copies; databases are copied
+through SQLite's backup API. Pass `--wait <seconds>` (up to 600) to wait for
+working Wisps to finish before starting the backup:
+
+```sh
+wispctl backup --output /backups/wisp-2026-10-05.wispbak \
+  --key-file ~/.config/wisp/backup.key --wait 60
+```
+
+With no server running, `wispctl` backs up the directory directly, holding its
+lock so no server starts meanwhile.
 
 Restore always goes into a new, empty directory. Nothing is written there
 unless the whole archive is authentic and complete:
@@ -609,9 +636,10 @@ logs; the app removes it from the address and history as soon as it opens. A
 code that expired or was already used is refused with a message, and the app
 asks for a code by hand. `--no-qr` leaves the QR code out.
 
-When stdout is not a terminal, or with `--json`, `pair` and `devices` print
-JSON instead, with no QR code, so scripts can read them; the desktop app pairs over SSH with
-`wispctl pair --json`:
+When stdout is not a terminal, or with `--json`, `pair`, `devices`, `status`,
+`doctor`, `config`, and service commands print JSON instead (with no QR code),
+so scripts can read them; the desktop app pairs over SSH with
+`wispctl pair --json` and discovers the server's port with `wispctl status`:
 
 ```json
 { "code": "KD7QX-M2PZR", "expiresAt": "2026-10-09T20:28:37.435Z" }
@@ -689,6 +717,10 @@ The API mirrors the desktop bridge, so a client implements it mechanically:
   minute so a client can retry when the response was lost.
 - `GET /api/v1/server` returns the server's identity and the operations it
   offers. Clients should pin `serverId` after pairing.
+- `GET /api/v1/summary` returns lightweight operational state for paired
+  devices (`serverId`, `bootId`, `version`, `startedAt`, `uptimeSeconds`,
+  `workingWisps`, `pendingApprovals`, `unreadConversations`, and
+  `activeEventStreams`), without credentials or message contents.
 - `POST /api/v1/rpc/<operation>` runs a `WispApi` operation (for example
   `createConversation`) with the same request the desktop sends over IPC, and
   answers its `BackendResult`. Byte arrays travel as `{ "$bytes": "<base64>" }`.

@@ -9,6 +9,7 @@ import { registerRuntimeHandlers } from "../backend/handlers/register-runtime-ha
 import { parseConversationRequest } from "../backend/validators.js";
 import { createBackendRuntime, disposeWithin, type BackendRuntime } from "../backend/runtime.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
+import type { ServerSummary } from "../shared/remote-protocol.js";
 import { startAdminSocket, type AdminCommand, type AdminHandler } from "./admin.js";
 import { createBackup } from "./backup.js";
 import { readPrivateKeyFile } from "./master-key.js";
@@ -18,6 +19,7 @@ import { EventHub } from "./event-hub.js";
 import { createHttpApi, OWNER_PRINCIPAL_ID, type HttpApi, type OperationListener } from "./http-api.js";
 import { InstanceLock } from "./instance-lock.js";
 import { openOAuthRelay } from "./oauth-relay.js";
+import { MAX_BACKUP_WAIT_SECONDS, waitForCondition } from "./ops.js";
 import { ServerStore } from "./server-store.js";
 import { recoverTransaction } from "./update-transaction.js";
 
@@ -184,6 +186,24 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
 
     const allowedHostNames = new Set(["127.0.0.1", "localhost", "[::1]"]);
     if (publicOrigin) allowedHostNames.add(publicOrigin.hostname);
+    const now = options.now ?? Date.now;
+    const startedAtMs = now();
+    const startedAt = new Date(startedAtMs).toISOString();
+    const shutdownController = new AbortController();
+    cleanup.push(() => shutdownController.abort());
+    const workingCount = (): number =>
+      Object.values(runtime.registry.statuses()).filter((status) => status === "working").length;
+    const serverSummary = (): ServerSummary => ({
+      serverId: store.serverId,
+      bootId: hub.bootId,
+      version: options.appVersion,
+      startedAt,
+      uptimeSeconds: Math.max(0, Math.floor((now() - startedAtMs) / 1000)),
+      workingWisps: workingCount(),
+      pendingApprovals: runtime.toolAuthorization.pendingCount(),
+      unreadConversations: Object.values(runtime.conversations.getState().chats).filter((chat) => chat.unread).length,
+      activeEventStreams: api?.activeStreamCount() ?? 0,
+    });
     let backingUp = false;
     api = createHttpApi({
       isPaused: () => backingUp,
@@ -198,6 +218,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       ...(options.webRoot ? { webRoot: options.webRoot } : {}),
       uploadWorkspaceFile: ({ conversationId, name, size, content }) =>
         runtime.workspace.receive(parseConversationRequest({ conversationId }).conversationId, { name, size }, content),
+      getSummary: serverSummary,
       logger: options.logger,
     });
     // No limit on a whole request, so a large upload over a slow link can finish;
@@ -285,20 +306,57 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
           const output = boundedString(command.output, 4096);
           if (!path.isAbsolute(output))
             throw new HttpError(400, "invalid_request", "Give the backup file as an absolute path.");
-          if (backingUp) throw new HttpError(409, "invalid_request", "A backup is already being written.");
-          const working = Object.values(runtime.registry.statuses()).filter((status) => status === "working").length;
-          if (working > 0) {
+          const waitSeconds = command.waitSeconds === undefined ? 0 : command.waitSeconds;
+          if (
+            typeof waitSeconds !== "number" ||
+            !Number.isFinite(waitSeconds) ||
+            waitSeconds < 0 ||
+            waitSeconds > MAX_BACKUP_WAIT_SECONDS
+          ) {
             throw new HttpError(
-              409,
+              400,
               "invalid_request",
-              `${working} Wisp${working === 1 ? " is" : "s are"} working. Back up when they finish.`,
+              `waitSeconds must be between 0 and ${MAX_BACKUP_WAIT_SECONDS}.`,
             );
           }
+          if (backingUp) throw new HttpError(409, "invalid_request", "A backup is already being written.");
           let key: Buffer;
           try {
             key = readPrivateKeyFile(boundedString(command.keyFile, 4096));
           } catch (error) {
             throw new HttpError(400, "invalid_request", error instanceof Error ? error.message : "The key is invalid.");
+          }
+          let working = workingCount();
+          if (working > 0 && waitSeconds > 0) {
+            await waitForCondition({
+              isReady: () => workingCount() === 0,
+              subscribe: (onChange) =>
+                hub.subscribe(undefined, (event) => {
+                  if (
+                    event.type === "agentEvent" ||
+                    event.type === "conversationChanged" ||
+                    event.type === "wispsChanged"
+                  ) {
+                    onChange();
+                  }
+                }).unsubscribe,
+              timeoutMs: waitSeconds * 1000,
+              signal: shutdownController.signal,
+            });
+            if (shutdownController.signal.aborted) {
+              throw new HttpError(503, "unavailable", "The server is shutting down.", true);
+            }
+            if (backingUp) throw new HttpError(409, "invalid_request", "A backup is already being written.");
+            working = workingCount();
+          }
+          if (working > 0) {
+            throw new HttpError(
+              409,
+              "invalid_request",
+              waitSeconds > 0
+                ? `${working} Wisp${working === 1 ? " is" : "s are"} still working after waiting ${waitSeconds}s. Back up when they finish.`
+                : `${working} Wisp${working === 1 ? " is" : "s are"} working. Back up when they finish.`,
+            );
           }
           backingUp = true;
           try {
@@ -316,9 +374,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
         }
         case "status":
           return {
-            serverId: store.serverId,
-            bootId: hub.bootId,
-            version: options.appVersion,
+            ...serverSummary(),
             port: address.port,
             devices: auth.devices().length,
             // Whether the browser app answers at the public origin, so a pairing link opens it.
@@ -328,6 +384,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
               : publicOrigin
                 ? { publicOrigin: publicOrigin.origin }
                 : {}),
+            memoryRssBytes: process.memoryUsage().rss,
           };
         default:
           throw new HttpError(400, "invalid_request", "Unknown administrative command.");

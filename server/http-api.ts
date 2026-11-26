@@ -17,6 +17,7 @@ import {
   type WebSession,
   type RemoteEventType,
   type ServerDescriptor,
+  type ServerSummary,
   WORKSPACE_UPLOAD_PATH,
 } from "../shared/remote-protocol.js";
 import type { WorkspaceAttachment } from "../shared/workspace.js";
@@ -85,6 +86,8 @@ export interface HttpApiOptions {
   webRoot?: string;
   /** Stores an uploaded file in a Wisp's workspace; without it, uploads are not offered. */
   uploadWorkspaceFile?: (upload: WorkspaceUpload) => Promise<WorkspaceAttachment>;
+  /** Returns lightweight operational state for `GET /api/v1/summary`. */
+  getSummary?: () => ServerSummary;
 }
 
 export interface HttpApi {
@@ -103,6 +106,8 @@ export interface HttpApi {
   ): Promise<HostResponse>;
   /** The device behind the current operation; undefined outside an operation. */
   callerDevice(): { deviceId: string; local: boolean } | undefined;
+  /** Number of currently open SSE event streams. */
+  activeStreamCount(): number;
   /** Ends every open event stream, e.g. on shutdown. */
   closeStreams(): void;
   /**
@@ -254,6 +259,10 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       sendJson(response, 200, { ok: true, value: descriptor });
       return;
     }
+    if (path === "/summary" && method === "GET" && options.getSummary) {
+      sendJson(response, 200, { ok: true, value: options.getSummary() });
+      return;
+    }
     if (path === "/auth/logout" && method === "POST") {
       auth.revoke(deviceId);
       setSessionCookies(request, response, undefined);
@@ -369,6 +378,9 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
     callerDevice() {
       const deviceId = caller.getStore()?.deviceId;
       return deviceId ? { deviceId, local: auth.isLocal(deviceId) } : undefined;
+    },
+    activeStreamCount() {
+      return streams.size;
     },
     async requestHost(request, timeoutMs, unsupported, requestOptions) {
       const deviceId = requestOptions?.device ?? caller.getStore()?.deviceId;

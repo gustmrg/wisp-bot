@@ -14,11 +14,29 @@ import { defaultDataDirectory } from "./config.js";
 import type { DeviceView, PairingCode } from "./device-auth.js";
 import { InstanceLock } from "./instance-lock.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
+import {
+  DEFAULT_LOG_LINES,
+  describeDoctor,
+  describeServerConfig,
+  describeServiceAction,
+  describeStatus,
+  MAX_BACKUP_WAIT_SECONDS,
+  MAX_LOG_LINES,
+  type OpsHost,
+  readServerConfig,
+  readServerLogs,
+  runDoctor,
+  runServiceAction,
+  type ServerStatus,
+  systemOpsHost,
+} from "./ops.js";
 import { checkRuntime } from "./runtime-check.js";
 import { describeSetup, findServerArchive, runSetup, setupPaths, systemHost } from "./setup.js";
 import { isProcessAlive, readUpdateRecord } from "./update-record.js";
 import { prepareServerData, readJournal } from "./update-transaction.js";
 import { StructuredLogger } from "../backend/structured-logger.js";
+
+export { describeDoctor, describeServerConfig, describeServiceAction, describeStatus };
 
 const HELP = `Usage: wispctl <command> [options]
 
@@ -31,14 +49,19 @@ Commands:
                            to scan when the server has a public origin
   devices                  List paired devices
   revoke --device-id ID    Remove a device and end its sessions
-  status                   Show the running server's identity
+  status                   Show the running server's identity and operational telemetry
+  doctor                   Run read-only diagnostics on this host and Wisp installation
+  logs [--lines N]         Print the latest log lines from backend/logs (default 50, max 1000)
+  config                   Show the active server.env settings and resolved paths
+  start | stop | restart   Control the wisp systemd user service on Linux
   version [--check]        Show this server's version and Node.js; --check also makes sure
                            this machine can run it (SQLite, PDF rendering)
   update-status [--id ID]  Show how the last setup or update ended; with --id, only if it
                            was that one (state "unknown" otherwise)
-  backup --output FILE --key-file KEY
+  backup --output FILE --key-file KEY [--wait SECONDS]
                            Write an encrypted backup of the data directory. A running
-                           server writes it itself; otherwise the directory must be idle.
+                           server writes it itself; with --wait, wait up to SECONDS
+                           (max 600) for working Wisps to finish first.
   restore --input FILE --key-file KEY --target DIR
                            Restore a backup into a new, empty directory
   verify --input FILE --key-file KEY
@@ -46,8 +69,10 @@ Commands:
 
 Options:
   --data-dir DIR           Server data directory (default: $WISP_DATA_DIR or ~/.local/share/wisp)
-  --json                   Print compact JSON. pair and devices print JSON whenever
-                           stdout is not a terminal, so scripts can read them.
+  --json                   Print compact JSON. pair, devices, status, doctor, config, and
+                           service commands print JSON whenever stdout is not a terminal.
+  --lines N                Number of log lines to read with logs (1-1000, default 50)
+  --wait SECONDS           Wait up to SECONDS (0-600) for working Wisps to finish before backup
 
 Options of setup:
   --port PORT              Port the server listens on (default 8787)
@@ -62,9 +87,11 @@ Options of setup:
 `;
 
 export interface CliOutput {
-  /** Whether stdout is a terminal, where pair and devices print text for people instead of JSON. */
+  /** Whether stdout is a terminal, where commands print text for people instead of JSON. */
   terminal?: boolean;
   now?: () => Date;
+  /** Overrides host operations for doctor, logs, config, and service commands in tests. */
+  opsHost?: OpsHost;
 }
 
 export async function runCli(
@@ -97,6 +124,8 @@ export async function runCli(
         "--check",
         "--update-id",
         "--id",
+        "--lines",
+        "--wait",
       ].includes(flag)
     ) {
       throw new Error(`Unknown option ${flag}.`);
@@ -247,20 +276,89 @@ export async function runCli(
       );
       return;
     }
-    case "status":
+    case "status": {
       result = await adminRequest(dataDirectory, { command });
-      break;
+      if (!output.terminal || flags.has("--json")) break;
+      write(describeStatus(result as ServerStatus));
+      return;
+    }
+    case "doctor": {
+      const host = output.opsHost ?? systemOpsHost();
+      const doctor = await runDoctor(
+        {
+          ...(flags.has("--data-dir") ? { dataDirectory } : {}),
+          ...(flags.has("--key-file") ? { keyFile: path.resolve(option("--key-file")) } : {}),
+        },
+        host,
+      );
+      if (output.terminal && !flags.has("--json")) {
+        write(describeDoctor(doctor));
+      } else {
+        write(`${JSON.stringify(doctor, null, flags.has("--json") ? undefined : 2)}\n`);
+      }
+      if (!doctor.ok) {
+        const failedCount = doctor.checks.filter((check) => check.status === "fail").length;
+        throw new Error(`Doctor found ${failedCount} failing check${failedCount === 1 ? "" : "s"}.`);
+      }
+      return;
+    }
+    case "logs": {
+      const maxLines = flags.has("--lines") ? Number(option("--lines")) : DEFAULT_LOG_LINES;
+      if (!Number.isInteger(maxLines) || maxLines < 1 || maxLines > MAX_LOG_LINES) {
+        throw new Error(`--lines must be a whole number between 1 and ${MAX_LOG_LINES}.`);
+      }
+      const host = output.opsHost ?? systemOpsHost();
+      const resolvedDir = flags.has("--data-dir") ? dataDirectory : (await readServerConfig({}, host)).dataDirectory;
+      const logs = await readServerLogs(resolvedDir, maxLines);
+      if (flags.has("--json")) {
+        result = logs;
+        break;
+      }
+      write(logs.lines.length === 0 ? `No log entries found in ${logs.directory}.\n` : `${logs.lines.join("\n")}\n`);
+      return;
+    }
+    case "config": {
+      const host = output.opsHost ?? systemOpsHost();
+      const config = await readServerConfig({ ...(flags.has("--data-dir") ? { dataDirectory } : {}) }, host);
+      if (!output.terminal || flags.has("--json")) {
+        result = config;
+        break;
+      }
+      write(describeServerConfig(config));
+      return;
+    }
+    case "start":
+    case "stop":
+    case "restart": {
+      const host = output.opsHost ?? systemOpsHost();
+      const outcome = await runServiceAction(command, host);
+      if (!output.terminal || flags.has("--json")) {
+        result = outcome;
+        break;
+      }
+      write(describeServiceAction(outcome));
+      return;
+    }
     case "revoke":
       result = await adminRequest(dataDirectory, { command, deviceId: option("--device-id") });
       break;
     case "backup": {
-      const output = path.resolve(option("--output"));
+      const outputPath = path.resolve(option("--output"));
       const keyFile = path.resolve(option("--key-file"));
+      const waitSeconds = flags.has("--wait") ? Number(option("--wait")) : 0;
+      if (!Number.isFinite(waitSeconds) || waitSeconds < 0 || waitSeconds > MAX_BACKUP_WAIT_SECONDS) {
+        throw new Error(`--wait must be between 0 and ${MAX_BACKUP_WAIT_SECONDS} seconds.`);
+      }
       try {
-        result = await adminRequest(dataDirectory, { command, output, keyFile });
+        result = await adminRequest(dataDirectory, {
+          command,
+          output: outputPath,
+          keyFile,
+          ...(waitSeconds > 0 ? { waitSeconds } : {}),
+        });
       } catch (error) {
         if (!(error instanceof ServerNotRunningError)) throw error;
-        result = await backUpIdleDirectory(dataDirectory, output, readPrivateKeyFile(keyFile));
+        result = await backUpIdleDirectory(dataDirectory, outputPath, readPrivateKeyFile(keyFile));
       }
       break;
     }

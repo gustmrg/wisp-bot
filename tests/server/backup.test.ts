@@ -4,13 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { adminRequest } from "../../server/admin.js";
 import { createBackup, restoreBackup, verifyBackup } from "../../server/backup.js";
 import { runCli } from "../../server/cli.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
+import { waitForCondition } from "../../server/ops.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { BackendResult } from "../../shared/contracts.js";
 import type { Wisp } from "../../shared/conversations.js";
@@ -265,6 +266,87 @@ describe("backups", () => {
         () => undefined,
       ),
     ).rejects.toThrow(/Quit it, then back up again/);
+  });
+
+  it("waits for working Wisps when --wait is specified and times out if they stay busy", async () => {
+    const source = await populated();
+    const keys = await keyFile(await temporary("wisp-keys-"));
+    const backups = await temporary("wisp-backups-");
+    const output: string[] = [];
+    const cli = (...args: string[]) =>
+      runCli([...args, "--data-dir", source.dataDirectory, "--json"], (text) => output.push(text));
+
+    // Reject invalid --wait bounds before contacting the server.
+    await expect(
+      cli("backup", "--output", path.join(backups, "bad.wispbak"), "--key-file", keys.file, "--wait", "-1"),
+    ).rejects.toThrow(/--wait must be between 0 and 600/);
+    await expect(
+      cli("backup", "--output", path.join(backups, "bad.wispbak"), "--key-file", keys.file, "--wait", "601"),
+    ).rejects.toThrow(/--wait must be between 0 and 600/);
+
+    // Trigger a turn and verify --wait waits for the Wisp to finish and then completes the backup.
+    await post(
+      source.server,
+      "/api/v1/rpc/sendMessage",
+      { conversationId: "atlas", requestId: "wait-1", text: "Hi" },
+      source.credentials.accessToken,
+    );
+    await cli("backup", "--output", path.join(backups, "waited.wispbak"), "--key-file", keys.file, "--wait", "10");
+    expect(JSON.parse(output.pop()!)).toMatchObject({ manifest: { format: 1, serverId: source.server.serverId } });
+    await cli("verify", "--input", path.join(backups, "waited.wispbak"), "--key-file", keys.file);
+    expect(JSON.parse(output.pop()!)).toMatchObject({ files: expect.any(Number) });
+
+    // Timeout case: short wait while a turn is active returns 409.
+    await post(
+      source.server,
+      "/api/v1/rpc/sendMessage",
+      { conversationId: "atlas", requestId: "wait-2", text: "Hi again" },
+      source.credentials.accessToken,
+    );
+    await expect(
+      cli("backup", "--output", path.join(backups, "timeout.wispbak"), "--key-file", keys.file, "--wait", "0.05"),
+    ).rejects.toThrow(/still working after waiting/);
+  });
+
+  it("waitForCondition wakes on change, times out, and cancels on abort deterministically", async () => {
+    vi.useFakeTimers();
+    try {
+      let ready = false;
+      const listeners = new Set<() => void>();
+      const subscribe = (onChange: () => void) => {
+        listeners.add(onChange);
+        return () => void listeners.delete(onChange);
+      };
+
+      // Wakes immediately when state changes before timeout.
+      const wakes = waitForCondition({ isReady: () => ready, subscribe, timeoutMs: 10_000 });
+      expect(listeners.size).toBe(1);
+      ready = true;
+      for (const listener of listeners) listener();
+      await expect(wakes).resolves.toBe(true);
+      expect(listeners.size).toBe(0);
+
+      // Returns false when timeout elapses without becoming ready.
+      ready = false;
+      const timesOut = waitForCondition({ isReady: () => ready, subscribe, timeoutMs: 5_000 });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(timesOut).resolves.toBe(false);
+      expect(listeners.size).toBe(0);
+
+      // Cancels immediately on abort signal.
+      const controller = new AbortController();
+      const cancelled = waitForCondition({
+        isReady: () => false,
+        subscribe,
+        timeoutMs: 60_000,
+        signal: controller.signal,
+      });
+      controller.abort();
+      await expect(cancelled).resolves.toBe(false);
+      expect(listeners.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
