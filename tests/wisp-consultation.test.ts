@@ -341,6 +341,7 @@ describe("WispSessionBuilder anti-recursion and job-run isolation", () => {
       "update_circle",
       "list_wisps",
       "list_circles",
+      "list_models",
       "schedule_job",
       "list_jobs",
       "update_job",

@@ -146,6 +146,9 @@ manage circles, and consult another Wisp directly
   MCP server names with access levels. Credentials, API keys, OAuth tokens,
   headers, secret endpoints, and raw authentication configuration are never
   exposed.
+- `list_models` is read-only. It shows the provider and model names and IDs
+  a Wisp can use, with their reasoning levels. It says nothing about the keys
+  or sign-ins behind them beyond which providers have one.
 - `create_wisp`, `update_wisp`, `delete_wisp`, `create_circle`, and
   `update_circle` always ask under `manage_wisp`, like `save_skill`: the card
   shows every field being set or changed (including model, fallback, memory,

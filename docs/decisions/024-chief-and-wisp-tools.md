@@ -45,7 +45,7 @@ default. For one Wisp it adds the reasoning level, the fallback model and
 whether memory is on. A model that is not configured, or a fallback the Wisp
 does not have, is said so. It never shows a credential.
 ([ADR 049](049-wisp-communication-and-management.md) extends `list_wisps` with
-non-secret team metadata, adds `list_circles`, extends `create_wisp` and
+non-secret team metadata, adds `list_circles` and `list_models`, extends `create_wisp` and
 `update_wisp` with model, fallback, and memory settings, adds `create_circle`
 and `update_circle`, and introduces `ask_wisp` for direct Wisp consultation.)
 

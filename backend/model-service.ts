@@ -25,7 +25,12 @@ import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 import type { SignInBrowser } from "./oauth-redirect.js";
-import { CLAUDE_CODE_MODELS, CLAUDE_CODE_PROVIDER_NAME, claudeCodeModel } from "./claude-code/claude-code-models.js";
+import {
+  CLAUDE_CODE_MODELS,
+  CLAUDE_CODE_PROVIDER_NAME,
+  claudeCodeModel,
+  type ClaudeCodeModel,
+} from "./claude-code/claude-code-models.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 import type { ClaudeCodeUpdateService } from "./claude-code/claude-code-update.js";
 
@@ -150,6 +155,18 @@ export function supportedThinkingLevels(model: Pick<CatalogModel, "reasoning" | 
   });
 }
 
+function modelSummary(model: CatalogModel | ClaudeCodeModel): ModelSummary {
+  return {
+    id: model.id,
+    name: model.name,
+    reasoning: model.reasoning,
+    thinkingLevels: supportedThinkingLevels(model),
+    input: [...model.input],
+    contextWindow: model.contextWindow,
+    maxOutputTokens: model.maxTokens,
+  };
+}
+
 function compareByName(left: { name: string }, right: { name: string }): number {
   return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
 }
@@ -268,18 +285,7 @@ export class ModelService {
         ...(this.offersSubscriptionSignIn(provider.id)
           ? { subscriptionSignIn: { label: provider.auth.oauth?.loginLabel ?? `Sign in with ${provider.name}` } }
           : {}),
-        models: this.runtime
-          .getModels(provider.id)
-          .map<ModelSummary>((model) => ({
-            id: model.id,
-            name: model.name,
-            reasoning: model.reasoning,
-            thinkingLevels: supportedThinkingLevels(model),
-            input: [...model.input],
-            contextWindow: model.contextWindow,
-            maxOutputTokens: model.maxTokens,
-          }))
-          .sort(compareByName),
+        models: this.runtime.getModels(provider.id).map(modelSummary).sort(compareByName),
       }))
       .filter((provider) => provider.models.length > 0)
       .sort(compareByName);
@@ -291,15 +297,7 @@ export class ModelService {
         id: CLAUDE_CODE_PROVIDER,
         name: CLAUDE_CODE_PROVIDER_NAME,
         credentialConfigured: claudeCode.state === "ready",
-        models: CLAUDE_CODE_MODELS.map((model) => ({
-          id: model.id,
-          name: model.name,
-          reasoning: model.reasoning,
-          thinkingLevels: supportedThinkingLevels(model),
-          input: [...model.input],
-          contextWindow: model.contextWindow,
-          maxOutputTokens: model.maxTokens,
-        })),
+        models: CLAUDE_CODE_MODELS.map(modelSummary),
       });
       providers.sort(compareByName);
     }
@@ -344,6 +342,38 @@ export class ModelService {
       ...(claudeCodeUpdate ? { claudeCodeUpdate } : {}),
       catalogError: errors.length > 0 ? errors.join("\n") : null,
     };
+  }
+
+  /**
+   * The providers whose models can answer now, with their models: those with
+   * a usable key or sign-in, and Claude Code once it is ready.
+   */
+  async listUsableProviders(): Promise<ProviderSummary[]> {
+    const credentialTypes = new Map((await this.credentials.list()).map(({ providerId, type }) => [providerId, type]));
+    const providers = this.runtime
+      .getProviders()
+      .filter(
+        (provider) =>
+          provider.auth.apiKey &&
+          (credentialTypes.get(provider.id) === "api_key" ||
+            (credentialTypes.get(provider.id) === "oauth" && this.offersSubscriptionSignIn(provider.id))),
+      )
+      .map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        credentialConfigured: true,
+        models: this.runtime.getModels(provider.id).map(modelSummary).sort(compareByName),
+      }))
+      .filter((provider) => provider.models.length > 0);
+    if ((await this.claudeCodeStatus())?.state === "ready") {
+      providers.push({
+        id: CLAUDE_CODE_PROVIDER,
+        name: CLAUDE_CODE_PROVIDER_NAME,
+        credentialConfigured: true,
+        models: CLAUDE_CODE_MODELS.map(modelSummary),
+      });
+    }
+    return providers.sort(compareByName);
   }
 
   /** Starts updating the server's `claude` with the installer that owns it (ADR 047). */

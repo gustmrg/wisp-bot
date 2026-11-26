@@ -16,6 +16,7 @@ import {
   type Wisp,
   type WispsView,
 } from "../shared/conversations.js";
+import { CLAUDE_CODE_PROVIDER } from "../shared/claude-code.js";
 import { isJobFinished, type JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
 import { pluginCatalogEntry, type PluginSettingsView } from "../shared/plugins.js";
@@ -250,17 +251,20 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     if (!wisp) throw new WispBackendError("not_found", "The Wisp was not found.");
     return wisp;
   };
+  const describeWispModel = (selection: ModelSelection) => ({
+    ...modelService.describeSelection(selection),
+    providerId: selection.providerId,
+    modelId: selection.modelId,
+    ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
+  });
   const validateWispModel = async (selection: ModelSelection) => {
     await modelService.validateConversationSelection(selection);
     modelService.assertSupportedThinkingLevel(selection);
-    return {
-      ...modelService.describeSelection(selection),
-      ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
-    };
+    return describeWispModel(selection);
   };
   const validateWispFallback = async (selection: ModelSelection, modelOverride: ModelSelection | null) => {
     await modelService.assertUsableFallback(selection, modelOverride);
-    return modelService.describeSelection(selection);
+    return describeWispModel(selection);
   };
   const circleSummaryOf = async (chat: CircleSummary) => {
     let commandsEnabled = false;
@@ -336,15 +340,10 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
         browser: false,
       }));
       const base = {
-        model: selection
-          ? {
-              ...modelService.describeSelection(selection),
-              ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
-            }
-          : null,
+        model: selection ? describeWispModel(selection) : null,
         modelSource: (modelOverride ? "wisp" : "app") as "wisp" | "app",
         modelOverride,
-        fallback: fallback ? modelService.describeSelection(fallback) : null,
+        fallback: fallback ? describeWispModel(fallback) : null,
         circles,
         capabilities: {
           commands: exec.mode === "container",
@@ -407,6 +406,13 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
         integrations: { plugins, mcpServers },
       };
     },
+    listModels: async () =>
+      (await modelService.listUsableProviders()).map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        fallback: provider.id !== CLAUDE_CODE_PROVIDER,
+        models: provider.models.map(({ id, name, thinkingLevels }) => ({ id, name, thinkingLevels })),
+      })),
     validateModel: validateWispModel,
     validateFallback: validateWispFallback,
     listCircles: async () => {
