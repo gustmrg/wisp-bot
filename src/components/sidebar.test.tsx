@@ -106,7 +106,7 @@ describe("Sidebar current user", () => {
   });
 });
 
-describe("Sidebar connection", () => {
+describe("Sidebar environments", () => {
   const connections: ConnectionsView = {
     activeId: "local",
     profiles: [
@@ -116,38 +116,69 @@ describe("Sidebar connection", () => {
     status: { profileId: "local", phase: "local", epoch: 1 },
     secureStorageAvailable: true,
   };
+  // The same conversation ID in two environments: IDs are only unique within one.
+  const localChats: ChatViewCollection = { atlas: wispChatView("atlas", { wisp: { name: "Atlas" } }) };
+  const homeServer = {
+    id: "home",
+    name: "Home server",
+    kind: "url" as const,
+    chats: { atlas: wispChatView("atlas", { wisp: { name: "Remote Atlas" }, chat: { preview: "From the server" } }) },
+    statuses: { atlas: "working" as const },
+    approvals: {},
+    activity: { atlas: "Searching the web" },
+  };
 
-  it("shows the connection in use on the desktop, and goes to its settings", async () => {
+  it("lists other environments' conversations with this one's, named by their environment", async () => {
     const user = userEvent.setup();
-    const onManageConnections = vi.fn();
-    Object.assign(window.wisp, { getRemoteAccess: vi.fn(async () => ({ ok: true, value: { enabled: false } })) });
+    const onSelectEnvironmentChat = vi.fn();
     render(
       <ActiveConnectionContext.Provider value={connections}>
         <Sidebar
-          activeChatId=""
-          chats={{}}
+          activeChatId="atlas"
+          chats={localChats}
           currentUser={currentUser}
           width={280}
           {...callbacks}
-          onManageConnections={onManageConnections}
+          otherEnvironments={[homeServer]}
+          onSelectEnvironmentChat={onSelectEnvironmentChat}
         />
       </ActiveConnectionContext.Provider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Using This computer. Switch connection" }));
-    await user.click(await screen.findByRole("button", { name: "Manage connections" }));
+    const list = screen.getByRole("navigation", { name: "Wisps and circles" });
+    const remote = within(list).getByText("Remote Atlas").closest("button")!;
+    expect(remote).toHaveTextContent("Searching the web");
+    expect(remote).toHaveTextContent("Home server");
+    expect(remote).not.toHaveAttribute("aria-current");
+    expect(within(list).getByText("Atlas").closest("button")).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("button", { name: /Switch connection/ })).toBeNull();
 
-    expect(onManageConnections).toHaveBeenCalledOnce();
-    expect(callbacks.onOpenSettings).not.toHaveBeenCalled();
+    await user.click(remote);
+    expect(onSelectEnvironmentChat).toHaveBeenCalledWith("home", "atlas");
+    expect(callbacks.onSelectChat).not.toHaveBeenCalled();
   });
 
-  it("leaves it to the Settings overview on mobile", () => {
+  it("sends a list action on another environment's conversation to that environment", async () => {
+    const onChatAction = vi.fn();
+    const onEnvironmentChatAction = vi.fn();
     render(
-      <ActiveConnectionContext.Provider value={connections}>
-        <Sidebar mobile activeChatId="" chats={{}} currentUser={currentUser} width={280} {...callbacks} />
-      </ActiveConnectionContext.Provider>,
+      <Sidebar
+        activeChatId=""
+        chats={localChats}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+        onChatAction={onChatAction}
+        otherEnvironments={[homeServer]}
+        onEnvironmentChatAction={onEnvironmentChatAction}
+      />,
     );
-    expect(screen.queryByRole("button", { name: /Switch connection/ })).toBeNull();
+
+    fireEvent.contextMenu(screen.getByText("Remote Atlas"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Pin" }));
+
+    expect(onEnvironmentChatAction).toHaveBeenCalledWith("home", "atlas", "pin");
+    expect(onChatAction).not.toHaveBeenCalled();
   });
 });
 

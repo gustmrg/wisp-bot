@@ -9,6 +9,7 @@ import {
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { useWispApi } from "@/lib/environment-api";
 import type { TemplateChoices } from "@/lib/wisp-template-actions";
 import { pluginCatalogEntry } from "../../shared/plugins";
 import { parseSkillFile } from "../../shared/skills";
@@ -46,13 +47,14 @@ export function CreateWispTemplateSection({
   const access = template.access;
   const wantsPlugins = Boolean(access?.plugins?.length);
   const wantsServers = Boolean(access?.mcpServers?.length);
+  const api = useWispApi();
   const [configuredPlugins, setConfiguredPlugins] = useState<ReadonlySet<string> | null>(null);
   const [knownServers, setKnownServers] = useState<ReadonlySet<string> | null>(null);
 
   useEffect(() => {
     let active = true;
     if (wantsPlugins) {
-      void window.wisp
+      void api
         .getPluginSettings()
         .then((result) => {
           if (active)
@@ -65,7 +67,7 @@ export function CreateWispTemplateSection({
         });
     }
     if (wantsServers) {
-      void window.wisp
+      void api
         .getMcpSettings()
         .then((result) => {
           if (active) setKnownServers(new Set(result.ok ? result.value.servers.map(({ serverId }) => serverId) : []));
@@ -77,7 +79,7 @@ export function CreateWispTemplateSection({
     return () => {
       active = false;
     };
-  }, [wantsPlugins, wantsServers]);
+  }, [wantsPlugins, wantsServers, api]);
 
   const toggle = (set: ReadonlySet<string>, key: string): Set<string> => {
     const next = new Set(set);

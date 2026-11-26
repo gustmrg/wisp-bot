@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { missingSetup, type SetupRequirement } from "../../shared/setup-status";
 import type { UserProfileController } from "@/hooks/use-user-profile";
+import { workspaceMemory } from "@/lib/workspace-memory";
 
 export type SetupGate =
   | { phase: "checking" }
@@ -13,10 +14,13 @@ export type SetupGate =
 /**
  * Decides once per launch whether the minimum setup is in place. Settings
  * changed later in the session do not send the user back to onboarding; the
- * next launch checks again.
+ * next launch checks again. A remount for another environment skips it: an
+ * environment without a model says so in its conversations instead.
  */
 export function useSetupGate(userProfile: UserProfileController): SetupGate {
-  const [phase, setPhase] = useState<"checking" | "onboarding" | "ready">("checking");
+  const [phase, setPhase] = useState<"checking" | "onboarding" | "ready">(() =>
+    workspaceMemory().opened ? "ready" : "checking",
+  );
   const [onboarded, setOnboarded] = useState(false);
   const [required, setRequired] = useState<SetupRequirement[]>([]);
   const [error, setError] = useState<string | null>(null);

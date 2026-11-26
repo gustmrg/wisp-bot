@@ -72,12 +72,9 @@ created by earlier versions stay where they are. The first stdin line carries
 the credential key and a one-time pairing code; stdin stays open, and the
 server shuts down when it closes, so it never outlives the app, even after a
 crash. The key is random and kept encrypted by the system keychain
-(`local-server-key.json`). Once you choose a connection, the local server stays
-running in the background by default so **This computer**'s Wisps keep working
-while you use another server and switching back is instant; you can opt out with
-**Keep this computer's Wisps running in the background** in **Settings →
-Connections**, so it stops when you switch away unless
-[remote access](#remote-access-to-this-computer) is on. It always stops, after
+(`local-server-key.json`). Once you choose a connection, the local server keeps
+running in the background, so **This computer**'s Wisps keep working and stay
+in the conversation list while you use another server. It always stops, after
 its Wisps settle, when you quit. Disabling Electron's `RunAsNode` fuse would
 break this mode.
 
@@ -444,29 +441,24 @@ the browser app answers 404 until you set `WISP_WEB: "1"`.
 
 ## Connect the desktop app
 
-With more than one connection saved, the bottom of the sidebar shows the one in
-use, its status dot, and a subtle badge whenever another connected environment
-has pending approvals or unread messages. Selecting it lists every saved
-environment with its live status dot and counts (pending approvals, working
-Wisps, and unread conversations); selecting another switches to it right away,
-with **Manage connections** going to **Settings → Connections**. If **Keep this
-computer's Wisps running in the background** is turned off (and remote access is
-off), the switcher warns before leaving **This computer**.
+With more than one connection saved, the sidebar lists the conversations of
+every connected environment together. Rows from a server show its name, and a
+reconnecting server's rows stay dimmed until it is back. Opening a conversation
+from another environment switches to it; nothing else needs choosing. New
+Wisps and circles ask where to go, **This computer** first. If the server in
+use stops working for good, the app goes back to **This computer** and says so.
+Manage servers in **Settings → Connections**. See
+[ADR 051](decisions/051-unified-environment-sidebar.md).
 
 At the top of the sidebar, **Team** opens a main-panel overview of your Wisps,
 circles, and pending approvals. With two or more environments saved, switch
-between **This environment** and **All environments** to review and resolve
-approvals, inspect connected servers, jump straight to any conversation across
-environments, or copy a Wisp's credential-free, grant-free template definition
-to another connected environment (**Copy to…**).
+between **This computer** and **All environments** to review and resolve
+approvals and jump straight to any conversation across connected environments.
 
 In **Settings**, every panel under **Environment** also offers an environment
 selector in its header so you can inspect or change another connected server's
-settings without switching your active conversation. Under **Settings →
-Connections → Background**, **Keep this computer's Wisps running in the
-background** controls whether **This computer**'s server stays running while
-another server is active (remote access keeps it running while turned on). With
-a single connection nothing extra shows.
+settings without switching your active conversation. With a single connection
+nothing extra shows.
 
 A new installation first asks **Where should your Wisps run?**: **On this
 computer** (recommended) or **On a Wisp server**. Nothing runs until one is

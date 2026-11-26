@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TeamOverview } from "@/components/team-overview";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
+import { EnvironmentDirectoryProvider } from "@/features/environments/environment-directory";
 import type { ActiveWorkspaceSnapshot } from "@/hooks/use-team-overview";
 import { clearPendingEnvironmentOpen, consumePendingEnvironmentOpen } from "@/lib/pending-environment-open";
 import { circleChatView, testWisp, wispChatView } from "@/test/chat-fixtures";
@@ -11,7 +12,6 @@ import type { ConnectionEventMessage, ConnectionsView } from "../../shared/conne
 import type { AiSettingsView } from "../../shared/contracts";
 import type { ConversationStateView } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
-import { parseWispTemplate } from "../../shared/wisp-template";
 import { WISP_COLORS } from "../../shared/wisp-appearance";
 
 const LOCAL_PROFILE = { id: "local" as const, kind: "local" as const, name: "This computer", paired: true };
@@ -134,13 +134,30 @@ const remoteState: ConversationStateView = {
   recoveredCorruptState: false,
 };
 
+/** This computer's own state, as the directory loads it while a server is in use. */
+const localState: ConversationStateView = {
+  ...remoteState,
+  wisps: { orion: testWisp("orion", { name: "Orion", role: "Writing", soul: "Writes plainly" }) },
+  chats: {
+    orion: {
+      id: "orion",
+      kind: "wisp",
+      wispId: "orion",
+      notifyOnUpdatesEnabled: true,
+      preview: "Drafting",
+      messages: [],
+    },
+  },
+  statuses: { orion: "idle" },
+  pendingToolApprovals: [],
+};
+
 function multiEnvView(overrides: Partial<ConnectionsView> = {}): ConnectionsView {
   return {
     activeId: "local",
     profiles: [LOCAL_PROFILE, SERVER_PROFILE, OFFLINE_PROFILE],
     status: { profileId: "local", phase: "local", epoch: 1 },
     secureStorageAvailable: true,
-    keepLocalRunning: true,
     environments: {
       local: {
         profileId: "local",
@@ -189,19 +206,16 @@ function activeWorkspace(overrides: Partial<ActiveWorkspaceSnapshot> = {}): Acti
   };
 }
 
-let connectionEventListener: ((event: ConnectionEventMessage) => void) | null = null;
+const connectionEventListeners = new Set<(event: ConnectionEventMessage) => void>();
 const invokeConnectionOperation = vi.fn();
 const activateConnection = vi.fn();
-const connectEnvironment = vi.fn();
 const getAiSettings = vi.fn();
 const getJobs = vi.fn();
 const getConversationModel = vi.fn();
-const listSkills = vi.fn();
-const saveWispTemplate = vi.fn();
 
 beforeEach(() => {
   clearPendingEnvironmentOpen();
-  connectionEventListener = null;
+  connectionEventListeners.clear();
 
   getAiSettings.mockReset().mockResolvedValue({ ok: true, value: AI_SETTINGS });
   getJobs.mockReset().mockResolvedValue({
@@ -238,35 +252,31 @@ beforeEach(() => {
       status: "idle",
     },
   }));
-  listSkills.mockReset().mockResolvedValue({
-    ok: true,
-    value: [{ name: "research-notes", description: "Takes structured notes", body: "Always cite sources." }],
-  });
-  saveWispTemplate.mockReset().mockResolvedValue({ ok: true, value: { id: "tpl-1", builtIn: false } });
   activateConnection.mockReset().mockResolvedValue({ ok: true, value: multiEnvView({ activeId: "home" }) });
-  connectEnvironment.mockReset().mockResolvedValue({ ok: true, value: multiEnvView() });
-  invokeConnectionOperation.mockReset().mockImplementation(async ({ operation }: { operation: string }) => {
-    if (operation === "getConversationState") return { ok: true, value: remoteState };
-    if (operation === "getAiSettings") return { ok: true, value: AI_SETTINGS };
-    if (operation === "getJobs") return { ok: true, value: { jobs: [] } };
-    if (operation === "getConversationModel") {
-      return {
-        ok: true,
-        value: {
-          override: null,
-          effective: { providerId: "openrouter", modelId: "claude-sonnet" },
-          applied: null,
-          pending: null,
-          fallback: "global",
-          status: "working",
-        },
-      };
-    }
-    if (operation === "resolveToolApproval") return { ok: true, value: {} };
-    if (operation === "saveWispTemplate") return { ok: true, value: { id: "tpl-remote", builtIn: false } };
-    if (operation === "listSkills") return { ok: true, value: [] };
-    return { ok: true, value: {} };
-  });
+  invokeConnectionOperation
+    .mockReset()
+    .mockImplementation(async ({ connectionId, operation }: { connectionId: string; operation: string }) => {
+      if (operation === "getConversationState") {
+        return { ok: true, value: connectionId === "local" ? localState : remoteState };
+      }
+      if (operation === "getAiSettings") return { ok: true, value: AI_SETTINGS };
+      if (operation === "getJobs") return { ok: true, value: { jobs: [] } };
+      if (operation === "getConversationModel") {
+        return {
+          ok: true,
+          value: {
+            override: null,
+            effective: { providerId: "openrouter", modelId: "claude-sonnet" },
+            applied: null,
+            pending: null,
+            fallback: "global",
+            status: "working",
+          },
+        };
+      }
+      if (operation === "resolveToolApproval") return { ok: true, value: {} };
+      return { ok: true, value: {} };
+    });
 
   Object.defineProperty(window, "wisp", {
     configurable: true,
@@ -278,17 +288,12 @@ beforeEach(() => {
         ok: true,
         value: { maxQuotaBytes: 1024, runtime: { available: false, message: "none" } },
       })),
-      listSkills,
-      saveWispTemplate,
       activateConnection,
-      connectEnvironment,
       invokeConnectionOperation,
       subscribeToJobs: vi.fn(() => () => undefined),
       subscribeToConnectionEvents: vi.fn((listener: (event: ConnectionEventMessage) => void) => {
-        connectionEventListener = listener;
-        return () => {
-          connectionEventListener = null;
-        };
+        connectionEventListeners.add(listener);
+        return () => connectionEventListeners.delete(listener);
       }),
     },
   });
@@ -299,7 +304,6 @@ function renderTeam({
   workspace = activeWorkspace(),
   onResolveActiveApproval = vi.fn(async () => true),
   onOpenActiveChat = vi.fn(),
-  onOpenEnvironmentSettings = vi.fn(),
   onCreateWisp = vi.fn(async () => "new-wisp"),
   onCreateCircle = vi.fn(async () => true),
 }: {
@@ -307,60 +311,85 @@ function renderTeam({
   workspace?: ActiveWorkspaceSnapshot;
   onResolveActiveApproval?: (request: ToolApprovalRequest, decision: "allow_once" | "deny") => Promise<boolean>;
   onOpenActiveChat?: (conversationId: string, options?: { openDetails?: boolean }) => void;
-  onOpenEnvironmentSettings?: (environmentId: string, unpaired: boolean) => void;
   onCreateWisp?: () => Promise<string | null>;
   onCreateCircle?: () => Promise<boolean>;
 } = {}) {
   render(
     <ActiveConnectionContext.Provider value={view}>
-      <TeamOverview
-        activeWorkspace={workspace}
-        onCreateWisp={onCreateWisp}
-        onCreateCircle={onCreateCircle}
-        onResolveActiveApproval={onResolveActiveApproval as never}
-        onOpenActiveChat={onOpenActiveChat}
-        onOpenEnvironmentSettings={onOpenEnvironmentSettings}
-      />
+      <EnvironmentDirectoryProvider>
+        <TeamOverview
+          activeWorkspace={workspace}
+          onCreateWisp={onCreateWisp}
+          onCreateCircle={onCreateCircle}
+          onResolveActiveApproval={onResolveActiveApproval as never}
+          onOpenActiveChat={onOpenActiveChat}
+        />
+      </EnvironmentDirectoryProvider>
     </ActiveConnectionContext.Provider>,
   );
-  return { onResolveActiveApproval, onOpenActiveChat, onOpenEnvironmentSettings };
+  return { onResolveActiveApproval, onOpenActiveChat };
 }
 
 describe("TeamOverview", () => {
-  it("shows only the active environment by default without polling remote servers, and switches to All environments on demand", async () => {
+  it("shows This computer by default, and every connected environment's Wisps under All environments", async () => {
     const user = userEvent.setup();
     renderTeam();
 
     expect(screen.getByRole("heading", { name: "Team" })).toBeVisible();
+    expect(screen.getByRole("radio", { name: "This computer" })).toBeChecked();
     expect(screen.getByRole("button", { name: /^Atlas/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /^Launch Crew/ })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Environments" })).not.toBeInTheDocument();
-    expect(invokeConnectionOperation).not.toHaveBeenCalled();
 
     // Model names and job count hydrate for the active environment.
     expect(await screen.findByText("Claude Sonnet")).toBeVisible();
     expect(screen.getByText("GPT Mini")).toBeVisible();
     expect(screen.getByText("1 job")).toBeVisible();
 
-    // Switch to All environments -> fetches remote connected server state and renders Environments section.
+    // Model names cost a call per Wisp, so another environment's are asked for only once it is in scope.
+    expect(invokeConnectionOperation).not.toHaveBeenCalledWith(
+      expect.objectContaining({ connectionId: "home", operation: "getConversationModel" }),
+    );
+
     await user.click(screen.getByRole("radio", { name: "All environments" }));
-    expect(await screen.findByRole("heading", { name: "Environments" })).toBeVisible();
     expect(await screen.findByRole("button", { name: /^Nova/ })).toBeVisible();
-    expect(invokeConnectionOperation).toHaveBeenCalledWith({
-      connectionId: "home",
-      operation: "getConversationState",
-    });
+    // Environments are managed in Settings: Team lists only what connected ones hold.
+    expect(screen.queryByRole("heading", { name: "Environments" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Lab server")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(invokeConnectionOperation).toHaveBeenCalledWith(
+        expect.objectContaining({ connectionId: "home", operation: "getConversationModel" }),
+      ),
+    );
+    expect(screen.queryByRole("button", { name: /to another environment/ })).not.toBeInTheDocument();
 
     // Live updates from subscribeToConnectionEvents update remote status.
     act(() => {
-      connectionEventListener?.({
-        connectionId: "home",
-        type: "agentEvent",
-        payload: { sequence: 2, type: "conversation_status", conversationId: "nova", status: "idle" },
-      });
+      for (const listener of connectionEventListeners) {
+        listener({
+          connectionId: "home",
+          type: "agentEvent",
+          payload: { sequence: 2, type: "conversation_status", conversationId: "nova", status: "idle" },
+        });
+      }
     });
     const novaArticle = screen.getByRole("button", { name: /^Nova/ }).closest("article")!;
     expect(within(novaArticle).getByText("Idle")).toBeVisible();
+  });
+
+  it("keeps This computer's Wisps under This computer while a server is in use", async () => {
+    renderTeam({
+      view: multiEnvView({ activeId: "home", status: { profileId: "home", phase: "connected", epoch: 1 } }),
+      workspace: activeWorkspace({
+        wisps: remoteState.wisps,
+        chats: { nova: wispChatView("nova", { wisp: remoteState.wisps.nova! }) },
+        statuses: { nova: "working" },
+        activity: {},
+        approvals: {},
+      }),
+    });
+
+    expect(await screen.findByRole("button", { name: /^Orion/ })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Nova/ })).not.toBeInTheDocument();
   });
 
   it("hides the environment scope switch when only one environment exists", () => {
@@ -436,7 +465,7 @@ describe("TeamOverview", () => {
     );
   });
 
-  it("switches environments and records a pending conversation open when clicking a Wisp from another environment", async () => {
+  it("opens a Wisp from another environment by switching to it and opening its conversation there", async () => {
     const user = userEvent.setup();
     renderTeam();
 
@@ -447,57 +476,6 @@ describe("TeamOverview", () => {
     expect(consumePendingEnvironmentOpen("home")).toEqual(
       expect.objectContaining({ environmentId: "home", conversationId: "nova" }),
     );
-  });
-
-  it("offers Connect, Switch to, and Settings actions on Environment cards", async () => {
-    const user = userEvent.setup();
-    const { onOpenEnvironmentSettings } = renderTeam();
-
-    await user.click(screen.getByRole("radio", { name: "All environments" }));
-    const envsSection = await screen.findByRole("region", { name: "Environments" });
-
-    await user.click(within(envsSection).getByRole("button", { name: "Connect Lab server" }));
-    expect(connectEnvironment).toHaveBeenCalledWith({ id: "lab" });
-
-    await user.click(within(envsSection).getByRole("button", { name: "Switch to Home server" }));
-    expect(activateConnection).toHaveBeenCalledWith({ id: "home" });
-
-    await user.click(within(envsSection).getByRole("button", { name: "Settings for Home server" }));
-    expect(onOpenEnvironmentSettings).toHaveBeenCalledWith("home", false);
-  });
-
-  it("copies a Wisp definition as a credential-free, grant-free template to another connected environment", async () => {
-    const user = userEvent.setup();
-    renderTeam();
-
-    await user.click(screen.getByRole("button", { name: "Copy Atlas to another environment" }));
-    const list = await screen.findByRole("list", { name: "Copy Atlas to environment" });
-    await user.click(within(list).getByRole("button", { name: "Home server" }));
-
-    await waitFor(() =>
-      expect(invokeConnectionOperation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          connectionId: "home",
-          operation: "saveWispTemplate",
-        }),
-      ),
-    );
-    const call = invokeConnectionOperation.mock.calls.find(
-      ([req]) => req.connectionId === "home" && req.operation === "saveWispTemplate",
-    );
-    const parsed = parseWispTemplate(call?.[0].payload.contents);
-    expect(parsed.ok).toBe(true);
-    if (parsed.ok) {
-      expect(parsed.template.name).toBe("Atlas");
-      expect(parsed.template.role).toBe("Research");
-      expect(parsed.template.soul).toBe("Investigates deeply");
-      expect(parsed.template.color).toBe(WISP_COLORS[0].value);
-      expect(parsed.template.skills).toHaveLength(1);
-      expect(parsed.template.access).toBeUndefined();
-      expect(parsed.template.model).toBeUndefined();
-      expect(parsed.template.setup).toBeUndefined();
-    }
-    expect(await screen.findByRole("status")).toHaveTextContent("Copied Atlas as a template to Home server.");
   });
 
   it("opens the creation dialog directly on the Circle tab from New circle", async () => {

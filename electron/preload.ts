@@ -147,7 +147,6 @@ const WISP_IPC_CHANNELS = {
   cancelServerInstall: "wisp:connections:cancel-server-install",
   cancelConnection: "wisp:connections:cancel",
   answerSshPrompt: "wisp:connections:answer-ssh-prompt",
-  setKeepLocalRunning: "wisp:connections:keep-local-running",
   connectEnvironment: "wisp:connections:connect-environment",
   invokeConnectionOperation: "wisp:connections:invoke-operation",
   connectionsChanged: "wisp:connections:changed",
@@ -348,7 +347,6 @@ const wispApi: WispApi = {
   cancelServerInstall: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelServerInstall),
   cancelConnection: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelConnection),
   answerSshPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerSshPrompt, request),
-  setKeepLocalRunning: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setKeepLocalRunning, request),
   connectEnvironment: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.connectEnvironment, request),
   invokeConnectionOperation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.invokeConnectionOperation, request),
   subscribeToConnections: (listener) => {

@@ -10,7 +10,7 @@ import { MobileApprovals } from "@/components/mobile-approvals";
 import { Onboarding, SetupStatus } from "@/components/onboarding";
 import { SearchDialog } from "@/components/search-dialog";
 import { SplashOverlay, SplashScreen } from "@/components/splash-screen";
-import { Sidebar } from "@/components/sidebar";
+import { Sidebar, type SidebarEnvironment } from "@/components/sidebar";
 import { TeamOverview } from "@/components/team-overview";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
@@ -18,6 +18,8 @@ import { WispProfile } from "@/components/wisp-profile";
 import type { WispSettingsSection } from "@/components/wisp-settings";
 import { APP_METADATA } from "@/config/app-metadata";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
+import { useEnvironmentDirectory } from "@/features/environments/environment-directory";
+import { applyEnvironmentChatAction } from "@/features/workspace/workspace-actions";
 import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
 import { useMessageQueue } from "@/hooks/use-message-queue";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
@@ -31,13 +33,15 @@ import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone, transcriptionFallbacks } from "@/lib/app-preferences";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
-import { consumePendingEnvironmentOpen } from "@/lib/pending-environment-open";
+import { createEnvironmentApi } from "@/lib/environment-api";
+import { consumePendingEnvironmentOpen, openEnvironmentChat } from "@/lib/pending-environment-open";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import type { SettingsPluginId } from "@/lib/plugin-access";
 import { createWispFromTemplate } from "@/lib/create-wisp-from-template";
 import { uniqueWispName } from "@/lib/wisp-template-actions";
+import { rememberWorkspace, workspaceMemory } from "@/lib/workspace-memory";
 import { CHIEF_WISP } from "../shared/chief-wisp";
 import { LOCAL_CONNECTION_ID } from "../shared/connections";
 import type { WispTemplateEntry } from "../shared/wisp-template";
@@ -90,6 +94,37 @@ function Workspace({
   };
   const connectionsView = useContext(ActiveConnectionContext);
   const activeEnvironmentId = connectionsView?.activeId ?? LOCAL_CONNECTION_ID;
+  const directory = useEnvironmentDirectory();
+  // A remount for another environment keeps the window as it was: no splash while it reloads.
+  const [reopened] = useState(() => workspaceMemory().opened);
+  useEffect(() => {
+    if (!workspace.loading) rememberWorkspace({ opened: true });
+  }, [workspace.loading]);
+  /** Until this environment's own state loads, the list shows what the directory knows of it. */
+  const activeListing = workspace.loading
+    ? directory.environments.find(({ profile }) => profile.id === activeEnvironmentId)
+    : undefined;
+  const otherEnvironments = useMemo<ReadonlyArray<SidebarEnvironment>>(
+    () =>
+      directory.environments
+        .filter(({ profile }) => profile.id !== activeEnvironmentId)
+        .map((entry) => ({
+          id: entry.profile.id,
+          name: entry.profile.name,
+          kind: entry.profile.kind,
+          stale: entry.phase === "reconnecting",
+          chats: entry.chats,
+          statuses: entry.statuses,
+          approvals: entry.approvals,
+          activity: entry.activity,
+        })),
+    [directory.environments, activeEnvironmentId],
+  );
+  const activeProfile = connectionsView?.profiles.find(({ id }) => id === activeEnvironmentId);
+  const activeEnvironmentLabel =
+    directory.enabled && activeProfile && activeProfile.kind !== "local"
+      ? { name: activeProfile.name, kind: activeProfile.kind }
+      : undefined;
   const mobile = useMobileLayout();
   const [mainView, setMainView] = useState<"chat" | "team">("chat");
   const [mobilePage, setMobilePage] = useState<"list" | "chat" | "approvals" | "team">("list");
@@ -229,6 +264,17 @@ function Workspace({
     setMobilePage("chat");
   }
 
+  function selectEnvironmentChat(environmentId: string, chatId: string) {
+    navigationVersion.current += 1;
+    void openEnvironmentChat(environmentId, chatId);
+  }
+
+  function applyOtherEnvironmentChatAction(environmentId: string, chatId: string, action: ChatListAction) {
+    const chat = otherEnvironments.find(({ id }) => id === environmentId)?.chats[chatId];
+    if (!chat) return;
+    void applyEnvironmentChatAction(createEnvironmentApi(environmentId, activeEnvironmentId), chat, action);
+  }
+
   function showConversations() {
     navigationVersion.current += 1;
     setDetailsOpen(false);
@@ -359,7 +405,7 @@ function Workspace({
           <div className="workspace-shell relative flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">
             <Sidebar
               activeChatId={workspace.activeChatId}
-              chats={workspace.chats}
+              chats={activeListing?.chats ?? workspace.chats}
               currentUser={currentUser}
               width={sidebarPanel.width}
               mobile={mobile}
@@ -367,11 +413,11 @@ function Workspace({
               onToggleCollapsed={toggleSidebar}
               order={workspace.preferences.chatListOrder}
               hidden={mobile && (mobilePage !== "list" || detailsOpen)}
-              statuses={workspace.statuses}
-              activity={workspace.activity}
-              approvals={workspace.approvals}
+              statuses={activeListing?.statuses ?? workspace.statuses}
+              activity={activeListing?.activity ?? workspace.activity}
+              approvals={activeListing?.approvals ?? workspace.approvals}
               failedChats={workspace.failedChats}
-              loading={workspace.loading}
+              loading={workspace.loading && !activeListing}
               error={workspace.error}
               createFromTemplate={templateToCustomize}
               onCreateFromTemplateClosed={() => setTemplateToCustomize(null)}
@@ -382,11 +428,14 @@ function Workspace({
               onOpenTeam={showTeam}
               teamActive={showTeamMain}
               onOpenTemplates={() => showSettings("templates")}
-              onManageConnections={() => showSettings("connections")}
               onOpenApprovals={showApprovals}
               onResizeStart={sidebarPanel.onResizeStart}
               onSelectChat={selectChat}
               onChatAction={applyChatAction}
+              otherEnvironments={otherEnvironments}
+              {...(activeEnvironmentLabel ? { activeEnvironment: activeEnvironmentLabel } : {})}
+              onSelectEnvironmentChat={selectEnvironmentChat}
+              onEnvironmentChatAction={applyOtherEnvironmentChatAction}
             />
             {showTeamMain ? (
               <TeamOverview
@@ -404,10 +453,6 @@ function Workspace({
                     if (mobile && workspace.chats[conversationId]?.kind === "wisp") setProfileOpen(true);
                     else showDetails(true);
                   }
-                }}
-                onOpenEnvironmentSettings={(environmentId, unpaired) => {
-                  if (unpaired) showSettings("connections");
-                  else showSettings("profile", undefined, undefined, environmentId);
                 }}
                 onConversations={showConversations}
                 onOpenApprovals={showApprovals}
@@ -565,7 +610,7 @@ function Workspace({
             onAnnounced={announceVersion}
           />
           {/* The splash from opening stays until the Wisps have loaded. */}
-          <SplashOverlay ready={!workspace.loading} />
+          <SplashOverlay ready={reopened || !workspace.loading} />
         </TooltipProvider>
       </ReplyPaceProvider>
     </TimeZoneProvider>

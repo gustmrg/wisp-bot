@@ -129,24 +129,4 @@ describe("ConnectionStore", () => {
     expect(reloaded.loadCredentials(profile.id)).toBeUndefined();
     expect(instance.secureStorageAvailable).toBe(false);
   });
-
-  it("defaults keepLocalRunning to true and persists opt-out across reloads", async () => {
-    const { root, instance } = await store();
-    expect(instance.keepLocalRunning).toBe(true);
-
-    await instance.setKeepLocalRunning(false);
-    await instance.flush();
-    expect(instance.keepLocalRunning).toBe(false);
-    expect(JSON.parse(await readFile(path.join(root, "connections.json"), "utf8")).keepLocalRunning).toBe(false);
-
-    const { instance: reloadedFalse } = await store(true, root);
-    expect(reloadedFalse.keepLocalRunning).toBe(false);
-
-    await reloadedFalse.setKeepLocalRunning(true);
-    await reloadedFalse.flush();
-    const { instance: reloadedTrue } = await store(true, root);
-    expect(reloadedTrue.keepLocalRunning).toBe(true);
-
-    await expect(reloadedTrue.setKeepLocalRunning("yes" as unknown as boolean)).rejects.toThrow(/invalid/i);
-  });
 });

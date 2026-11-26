@@ -1,6 +1,6 @@
 # ADR 050: Multi-environment session pool, settings scope, and team overview
 
-- Status: Accepted (delivered as stacked PRs: B1 session pool and bridge, B2 environment-scoped settings, B3 team overview)
+- Status: Accepted (delivered as stacked PRs: B1 session pool and bridge, B2 environment-scoped settings, B3 team overview); partly superseded by [ADR 051](051-unified-environment-sidebar.md), which lists every connected environment in one sidebar, removes `keepLocalRunning` and the sidebar `ConnectionSwitcher`, scopes **Team** to **This computer** or **All environments**, and removes the **Environments** section and **Copy to…** from **Team**
 - Date: 2026-11-26
 - Decision owners: Wisp desktop main process and renderer
 - Scope: Multi-environment session pooling, local background persistence, live operational summaries, and scoped runtime dispatch

@@ -39,7 +39,7 @@ environment, or in the browser app, no selector is shown.
 | **General** | **Launch at login** | This computer's system |
 | **Notifications** | Sounds, **Volume**, **System notifications**, **Mute the open conversation**, **Server connection notice** | Device |
 | **Shortcuts** | **Voice input** shortcut | Device |
-| **Connections** | Saved servers, their pairing, and **Keep this computer's Wisps running in the background** | Device |
+| **Connections** | Saved servers and their pairing | Device |
 | **Remote access** | **Remote access**, **Address**, **Paired devices** | This computer |
 | **About** | Nothing to set; checks for updates | Device |
 | **Profile & memory** | **Name**, **About you** | Environment |
@@ -84,7 +84,7 @@ saved key.
 ## General
 
 - **Application** — theme, Wisp colors, conversation order, reply speed, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
-- **Sidebar & Team** — on the desktop, the expanded sidebar shows compact **All**, **Working**, and **Unread** filter pills whenever you have two or more conversations. **Team**, pinned at the top of the sidebar, opens a full-panel overview of pending approvals, Wisps, and circles (with a **This environment** / **All environments** toggle when multiple environments are configured).
+- **Sidebar & Team** — on the desktop, the expanded sidebar shows compact **All**, **Working**, and **Unread** filter pills whenever you have two or more conversations. With more than one environment connected, the list shows the conversations of every connected environment, and rows from a server show its name. **Team**, pinned at the top of the sidebar, opens a full-panel overview of pending approvals, Wisps, and circles (with a **This computer** / **All environments** toggle when multiple environments are configured). See [ADR 051](decisions/051-unified-environment-sidebar.md).
 - **Tools in circles** — under **Settings → General → Application**, choose **Show**
   (the default) or **Hide** for tool steps in all circles on this device.
   Approval requests, reply errors, and the working indicator stay visible.

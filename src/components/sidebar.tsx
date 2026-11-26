@@ -1,8 +1,16 @@
-import { useContext, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   BellIcon,
   BellOffIcon,
   ChevronRightIcon,
+  LaptopIcon,
   LayoutGridIcon,
   MailCheckIcon,
   MailIcon,
@@ -12,6 +20,7 @@ import {
   PinOffIcon,
   PlusIcon,
   SearchIcon,
+  ServerIcon,
   UserIcon,
 } from "lucide-react";
 
@@ -23,6 +32,7 @@ import { NeedsYou } from "@/components/needs-you";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { ConnectionProfileView } from "../../shared/connections";
 import type { WispTemplateEntry } from "../../shared/wisp-template";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
@@ -39,9 +49,35 @@ import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { formatShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
-import { ConnectionSwitcher } from "@/features/connections/connection-switcher";
 import { cn } from "@/lib/utils";
+import { rememberWorkspace, workspaceMemory } from "@/lib/workspace-memory";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
+
+/** Another connected environment whose conversations the list shows with this one's. */
+interface SidebarEnvironment {
+  id: string;
+  name: string;
+  kind: ConnectionProfileView["kind"];
+  /** Reconnecting: its conversations stay listed as last seen, dimmed. */
+  stale?: boolean;
+  chats: ChatViewCollection;
+  statuses: Record<string, ManagedConversationStatus>;
+  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
+  activity: Record<string, string | undefined>;
+}
+
+/** One conversation in the list, from the environment in use or another one. */
+interface SidebarRow {
+  /** Unique across environments, since conversation IDs are only unique within one. */
+  key: string;
+  /** Null for the environment in use. */
+  environment: SidebarEnvironment | null;
+  chat: ChatView;
+  id: string;
+  pinned?: boolean;
+  lastActivityAt?: string;
+  createdAt?: string;
+}
 
 interface SidebarProps {
   activeChatId: ChatId;
@@ -81,14 +117,19 @@ interface SidebarProps {
   /** Whether the Team overview is currently shown in the main panel. */
   teamActive?: boolean;
   onOpenTemplates?: () => void;
-  /** Opens the connections in Settings; without it, Settings opens where it does for the profile. */
-  onManageConnections?: () => void;
   /** Opens the mobile Approvals tab; without it the list does not point to waiting approvals. */
   onOpenApprovals?: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
   /** Without it the list has no menu, as in component tests that do not need it. */
   onChatAction?: (chatId: ChatId, action: ChatListAction) => void;
+  /** Conversations of other connected environments, listed with these. */
+  otherEnvironments?: ReadonlyArray<SidebarEnvironment>;
+  /** Names the environment in use on its rows when it is a server and others are listed. */
+  activeEnvironment?: Pick<SidebarEnvironment, "name" | "kind">;
+  /** Opens a conversation of another environment, which switches to it. */
+  onSelectEnvironmentChat?: (environmentId: string, chatId: ChatId) => void;
+  onEnvironmentChatAction?: (environmentId: string, chatId: ChatId, action: ChatListAction) => void;
 }
 
 // Product notification color intentionally remains explicit rather than a neutral surface token.
@@ -126,14 +167,21 @@ function Sidebar({
   onOpenTeam,
   teamActive = false,
   onOpenTemplates,
-  onManageConnections,
   onOpenApprovals,
   onResizeStart,
   onSelectChat,
   onChatAction,
+  otherEnvironments = [],
+  activeEnvironment,
+  onSelectEnvironmentChat,
+  onEnvironmentChatAction,
 }: SidebarProps) {
   const connectionsView = useContext(ActiveConnectionContext);
-  const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
+  const [filter, setFilterState] = useState(() => workspaceMemory().sidebarFilter);
+  const setFilter = (next: typeof filter) => {
+    rememberWorkspace({ sidebarFilter: next });
+    setFilterState(next);
+  };
   const [menuChatId, setMenuChatId] = useState<ChatId | null>(null);
   const asideRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -156,9 +204,16 @@ function Sidebar({
   const timeZone = useTimeZone();
   const timeFormat = useTimeFormat();
   const allChatIds = Object.keys(chats);
-  const unreadCount = allChatIds.filter((id) => chats[id]?.unread).length;
-  const activeWorkingCount = allChatIds.filter((id) => statuses[id] === "working").length;
   const activeApprovalCount = allChatIds.reduce((count, id) => count + (approvals[id]?.length ?? 0), 0);
+  const allRows: SidebarRow[] = [
+    ...Object.values(chats).map((chat) => sidebarRow(null, chat)),
+    ...otherEnvironments.flatMap((environment) =>
+      Object.values(environment.chats).map((chat) => sidebarRow(environment, chat)),
+    ),
+  ];
+  const rowStatus = (row: SidebarRow) => (row.environment ?? { statuses }).statuses[row.chat.id];
+  const unreadCount = allRows.filter((row) => row.chat.unread).length;
+  const activeWorkingCount = allRows.filter((row) => rowStatus(row) === "working").length;
 
   let otherEnvApprovals = 0;
   let otherEnvWorking = 0;
@@ -180,19 +235,24 @@ function Sidebar({
         ? `${teamWorking} working`
         : null;
 
-  const showDesktopFilters = !mobile && !rail && allChatIds.length >= 2;
+  const showDesktopFilters = !mobile && !rail && allRows.length >= 2;
   const applyFilter = !rail && (mobile || showDesktopFilters);
-  const chatIds = sortChats(
-    Object.values(chats).filter(
-      (chat) =>
-        !applyFilter || filter === "all" || (filter === "unread" ? chat.unread : statuses[chat.id] === "working"),
+  const rows = sortChats(
+    allRows.filter(
+      (row) =>
+        !applyFilter || filter === "all" || (filter === "unread" ? row.chat.unread : rowStatus(row) === "working"),
     ),
     order,
-  ).map((chat) => chat.id);
+  );
 
   useEffect(() => {
     if (mobile && !hidden) titleRef.current?.focus();
   }, [mobile, hidden]);
+
+  // A remount for another environment keeps the list where it was.
+  useLayoutEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = workspaceMemory().sidebarScrollTop;
+  }, []);
 
   // The open conversation stays in view when it or the order changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: those changes are what scroll it back into view.
@@ -392,15 +452,18 @@ function Sidebar({
             rail ? (onOpenTeam ? "px-1 pt-1" : "border-t border-border px-1 pt-2") : "px-2.5",
           )}
           aria-label="Wisps and circles"
+          onScroll={(event) => rememberWorkspace({ sidebarScrollTop: event.currentTarget.scrollTop })}
         >
-          {chatIds.map((chatId) => {
-            const chat = chats[chatId];
-            if (!chat) return null;
+          {rows.map((rowEntry) => {
+            const { chat, environment, key } = rowEntry;
+            const chatId = chat.id;
+            const source = environment ?? { statuses, approvals, activity };
+            const label = environment ?? activeEnvironment;
             // On a phone the list is its own page, so no conversation is open beside it.
-            const selected = !mobile && !teamActive && chatId === activeChatId;
-            const pendingApproval = Boolean(approvals[chatId]?.length);
-            const failed = !pendingApproval && Boolean(failedChats[chatId]);
-            const working = statuses[chatId] === "working";
+            const selected = !environment && !mobile && !teamActive && chatId === activeChatId;
+            const pendingApproval = Boolean(source.approvals[chatId]?.length);
+            const failed = !environment && !pendingApproval && Boolean(failedChats[chatId]);
+            const working = source.statuses[chatId] === "working";
             const activityDate = chatActivityDate(chat);
             const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
             const role = chat.kind === "wisp" ? chat.wisp.role.trim() : "";
@@ -411,22 +474,40 @@ function Sidebar({
                   "conversation-list-item group/item relative mb-1 flex min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent text-left hover:bg-muted data-[selected=true]:bg-accent",
                   // In the rail the item just holds the 44px avatar and its ring, centered with a margin to the rail's edges.
                   rail ? "mx-auto size-12 justify-center p-0" : "w-full p-2",
+                  environment?.stale && "opacity-60",
                 )}
                 data-selected={selected}
+                data-environment={environment?.id}
                 data-unread={chat.unread ? true : undefined}
                 style={color ? wispAccentStyle(color) : undefined}
                 type="button"
                 aria-current={selected ? "page" : undefined}
                 aria-label={
                   rail
-                    ? railLabel(chatName(chat), { pendingApproval, failed, working, unread: chat.unread })
+                    ? railLabel(chatName(chat), {
+                        pendingApproval,
+                        failed,
+                        working,
+                        unread: chat.unread,
+                        ...(label ? { environment: label.name } : {}),
+                      })
                     : undefined
                 }
-                title={rail ? chatName(chat) : undefined}
-                key={chatId}
+                title={
+                  rail
+                    ? label
+                      ? `${chatName(chat)} · ${label.name}`
+                      : chatName(chat)
+                    : environment?.stale
+                      ? `Reconnecting to ${environment.name}`
+                      : undefined
+                }
+                key={key}
                 onClick={() => {
                   // The click that ends a long press opened the menu, not the conversation.
-                  if (menuChatId !== chatId) onSelectChat(chatId);
+                  if (menuChatId === key) return;
+                  if (environment) onSelectEnvironmentChat?.(environment.id, chatId);
+                  else onSelectChat(chatId);
                 }}
               >
                 <span
@@ -438,6 +519,14 @@ function Sidebar({
                     state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
                   />
                   {chat.unread && !mobile ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
+                  {rail && label ? (
+                    <span
+                      className="absolute -bottom-0.5 -left-0.5 flex size-4 items-center justify-center rounded-full border border-sidebar bg-muted text-dim [&_svg]:size-2.5"
+                      aria-hidden="true"
+                    >
+                      <EnvironmentIcon kind={label.kind} />
+                    </span>
+                  ) : null}
                 </span>
                 {rail ? null : (
                   <span className="flex min-w-0 flex-1 flex-col">
@@ -480,9 +569,18 @@ function Sidebar({
                           : failed
                             ? "The last reply failed"
                             : working
-                              ? (activity[chatId] ?? "Working…")
+                              ? (source.activity[chatId] ?? "Working…")
                               : messagePreview(chat.preview)}
                       </span>
+                      {label ? (
+                        <span
+                          className="conversation-environment inline-flex max-w-[96px] flex-none items-center gap-1 text-faint text-2xs [&_svg]:size-3 [&_svg]:flex-none"
+                          title={label.name}
+                        >
+                          <EnvironmentIcon kind={label.kind} />
+                          <span className="truncate">{label.name}</span>
+                        </span>
+                      ) : null}
                       {chat.unread && mobile ? (
                         // A server that predates counts sends only `unread`: a dot then.
                         <span className="conversation-unread-badge" data-counted={chat.unreadCount ? true : undefined}>
@@ -501,33 +599,35 @@ function Sidebar({
                 )}
               </button>
             );
-            if (!onChatAction) return row;
+            const onAction = environment
+              ? onEnvironmentChatAction &&
+                ((action: ChatListAction) => onEnvironmentChatAction(environment.id, chatId, action))
+              : onChatAction && ((action: ChatListAction) => onChatAction(chatId, action));
+            if (!onAction) return row;
             return (
               <ContextMenu
-                key={chatId}
-                open={menuChatId === chatId}
-                onOpenChange={(open) =>
-                  setMenuChatId((current) => (open ? chatId : current === chatId ? null : current))
-                }
+                key={key}
+                open={menuChatId === key}
+                onOpenChange={(open) => setMenuChatId((current) => (open ? key : current === key ? null : current))}
               >
                 <ContextMenuTrigger render={row} />
-                <ConversationMenu chat={chat} onAction={(action) => onChatAction(chatId, action)} />
+                <ConversationMenu chat={chat} onAction={onAction} />
               </ContextMenu>
             );
           })}
-          {mobile && !chatIds.length ? (
+          {mobile && !rows.length ? (
             <p className="mobile-list-empty" role={error ? "alert" : "status"}>
               {loading
                 ? "Loading conversations…"
                 : (error ??
-                  (allChatIds.length
+                  (allRows.length
                     ? filter === "unread"
                       ? "You're all caught up."
                       : "No Wisps are working right now."
                     : "Create a Wisp to get started."))}
             </p>
           ) : null}
-          {!mobile && !rail && !chatIds.length && allChatIds.length > 0 && filter !== "all" ? (
+          {!mobile && !rail && !rows.length && allRows.length > 0 && filter !== "all" ? (
             <div className="flex flex-col items-center gap-2 px-3 py-6 text-center" role="status">
               <p className="m-0 text-xs text-dim">
                 {filter === "unread" ? "No unread conversations" : "No working conversations"}
@@ -582,11 +682,10 @@ function Sidebar({
             onApprovals={onOpenApprovals}
             onSettings={onOpenSettings}
             unreadCount={unreadCount}
-            approvalCount={allChatIds.reduce((count, id) => count + (approvals[id]?.length ?? 0), 0)}
+            approvalCount={activeApprovalCount}
           />
         ) : (
           <>
-            <ConnectionSwitcher rail={rail} onManage={onManageConnections ?? onOpenSettings} />
             <button
               className={cn(
                 "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-muted",
@@ -619,6 +718,22 @@ function Sidebar({
   );
 }
 
+function sidebarRow(environment: SidebarEnvironment | null, chat: ChatView): SidebarRow {
+  return {
+    key: environment ? `${environment.id}/${chat.id}` : chat.id,
+    environment,
+    chat,
+    id: environment ? `${environment.id}/${chat.id}` : chat.id,
+    ...(chat.pinned ? { pinned: chat.pinned } : {}),
+    ...(chat.lastActivityAt ? { lastActivityAt: chat.lastActivityAt } : {}),
+    ...(chat.createdAt ? { createdAt: chat.createdAt } : {}),
+  };
+}
+
+function EnvironmentIcon({ kind }: { kind: ConnectionProfileView["kind"] }) {
+  return kind === "local" ? <LaptopIcon aria-hidden="true" /> : <ServerIcon aria-hidden="true" />;
+}
+
 function createButton(mobile: boolean, label: string) {
   return mobile ? (
     <Button className="mobile-create-button" type="button" aria-label={label}>
@@ -634,7 +749,7 @@ function createButton(mobile: boolean, label: string) {
 /** What a folded row says, since only its avatar shows. */
 function railLabel(
   name: string,
-  state: { pendingApproval: boolean; failed: boolean; working: boolean; unread?: boolean },
+  state: { pendingApproval: boolean; failed: boolean; working: boolean; unread?: boolean; environment?: string },
 ): string {
   const status = state.pendingApproval
     ? "waiting for your approval"
@@ -643,7 +758,9 @@ function railLabel(
       : state.working
         ? "working"
         : null;
-  return [name, status, state.unread ? "unread" : null].filter(Boolean).join(", ");
+  return [name, state.environment ? `in ${state.environment}` : null, status, state.unread ? "unread" : null]
+    .filter(Boolean)
+    .join(", ");
 }
 
 function ConversationMenu({ chat, onAction }: { chat: ChatView; onAction: (action: ChatListAction) => void }) {
@@ -666,4 +783,4 @@ function ConversationMenu({ chat, onAction }: { chat: ChatView; onAction: (actio
 }
 
 export { Sidebar };
-export type { SidebarProps };
+export type { SidebarEnvironment, SidebarProps };

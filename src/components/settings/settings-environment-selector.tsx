@@ -5,6 +5,7 @@ import { SettingsCard, StatusDot } from "@/components/settings/settings-primitiv
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { phaseTone } from "@/features/connections/connections-panel";
+import { cn } from "@/lib/utils";
 import type { ConnectionPhase, ConnectionProfileView, ConnectionsView } from "../../../shared/connections";
 
 export interface SettingsEnvironmentContextValue {
@@ -55,41 +56,56 @@ function ProfileIcon({ profile, className }: { profile: ConnectionProfileView | 
 }
 
 /**
- * Actionable environment selector shown on the right of Environment Settings panel headings
- * when two or more environments exist in the desktop app. Changing it only switches which
- * environment Settings inspects and never calls `activateConnection`.
+ * Picks one of the saved environments, with each one's live status. With
+ * `connectedOnly`, environments that are not connected cannot be chosen.
  */
-export function SettingsEnvironmentSelector() {
-  const ctx = useSettingsEnvironment();
-  if (!ctx) return null;
-  const { connectionsView, selectedEnvironmentId, selectedProfile, selectedPhase, onSelectEnvironment } = ctx;
-  if (connectionsView.canManage === false || connectionsView.profiles.length < 2) return null;
-
-  const items = connectionsView.profiles.map((profile) => ({ value: profile.id, label: profile.name }));
-  const triggerLabel = selectedProfile?.name ?? "Select environment";
+export function EnvironmentSelect({
+  view,
+  value,
+  onChange,
+  connectedOnly = false,
+  className,
+}: {
+  view: ConnectionsView;
+  value: string;
+  onChange: (environmentId: string) => void;
+  connectedOnly?: boolean;
+  className?: string;
+}) {
+  const selectedProfile = view.profiles.find(({ id }) => id === value);
+  const items = view.profiles.map((profile) => ({ value: profile.id, label: profile.name }));
 
   return (
     <Select
       items={items}
-      value={selectedEnvironmentId}
+      value={value}
       onValueChange={(next) => {
-        if (next !== null && next !== selectedEnvironmentId) onSelectEnvironment(next);
+        if (next !== null && next !== value) onChange(next);
       }}
     >
-      <SelectTrigger size="sm" aria-label="Environment" className="max-w-[240px] gap-1.5 text-xs font-normal">
+      <SelectTrigger
+        size="sm"
+        aria-label="Environment"
+        className={cn("max-w-[240px] gap-1.5 text-xs font-normal", className)}
+      >
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <ProfileIcon profile={selectedProfile} className="size-3.5 shrink-0 text-dim" />
-          <StatusDot tone={phaseTone(selectedPhase)} />
-          <span className="truncate">{triggerLabel}</span>
+          <StatusDot tone={phaseTone(environmentPhase(view, value))} />
+          <span className="truncate">{selectedProfile?.name ?? "Select environment"}</span>
         </span>
       </SelectTrigger>
       <SelectContent align="end" alignItemWithTrigger={false} className="min-w-[220px]">
         <SelectGroup>
-          {connectionsView.profiles.map((profile) => {
-            const phase = environmentPhase(connectionsView, profile.id);
+          {view.profiles.map((profile) => {
+            const phase = environmentPhase(view, profile.id);
             const connected = isEnvironmentConnected(phase);
             return (
-              <SelectItem key={profile.id} value={profile.id} className="text-sm">
+              <SelectItem
+                key={profile.id}
+                value={profile.id}
+                disabled={connectedOnly && !connected}
+                className="text-sm"
+              >
                 <span className="flex min-w-0 items-center gap-2">
                   <ProfileIcon profile={profile} className="size-3.5 shrink-0 text-dim" />
                   <StatusDot tone={phaseTone(phase)} />
@@ -105,6 +121,19 @@ export function SettingsEnvironmentSelector() {
       </SelectContent>
     </Select>
   );
+}
+
+/**
+ * Actionable environment selector shown on the right of Environment Settings panel headings
+ * when two or more environments exist in the desktop app. Changing it only switches which
+ * environment Settings inspects and never calls `activateConnection`.
+ */
+export function SettingsEnvironmentSelector() {
+  const ctx = useSettingsEnvironment();
+  if (!ctx) return null;
+  const { connectionsView, selectedEnvironmentId, onSelectEnvironment } = ctx;
+  if (connectionsView.canManage === false || connectionsView.profiles.length < 2) return null;
+  return <EnvironmentSelect view={connectionsView} value={selectedEnvironmentId} onChange={onSelectEnvironment} />;
 }
 
 /**

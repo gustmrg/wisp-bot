@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useLayoutEffect, useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConnectionsView, ConnectionStatus } from "../../../shared/connections";
+import type { ConnectionPhase, ConnectionsView, ConnectionStatus } from "../../../shared/connections";
 import { useScreenActions } from "./active-connection";
 import { ConnectionGate } from "./connection-gate";
 
@@ -14,6 +14,16 @@ const profiles: ConnectionsView["profiles"] = [
 
 function view(status: Partial<ConnectionStatus> & Pick<ConnectionStatus, "phase">, activeId = "pi"): ConnectionsView {
   return { activeId, profiles, status: { profileId: activeId, epoch: 1, ...status }, secureStorageAvailable: true };
+}
+
+function withEnvironments(base: ConnectionsView, phases: Record<string, ConnectionPhase>): ConnectionsView {
+  const environments = Object.fromEntries(
+    Object.entries(phases).map(([profileId, phase]) => [
+      profileId,
+      { profileId, phase, workingWisps: 0, pendingApprovals: 0, unreadConversations: 0, wispCount: 0, circleCount: 0 },
+    ]),
+  );
+  return { ...base, environments };
 }
 
 function bridge(initial: ConnectionsView) {
@@ -518,6 +528,50 @@ describe("ConnectionGate", () => {
     await push(view({ phase: "connected", epoch: 2, serverVersion: __APP_VERSION__ }));
     expect(await screen.findByText("Connected to Home server")).toBeVisible();
     expect(screen.getByText(`me@raspberrypi · server ${__APP_VERSION__}`)).toBeVisible();
+  });
+
+  it("says nothing when it opens a server that was already connected in the background", async () => {
+    const { push } = bridge(withEnvironments(view({ phase: "local" }, "local"), { local: "local", pi: "connected" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByText("Workspace");
+    await push(withEnvironments(view({ phase: "connected", epoch: 2 }), { local: "local", pi: "connected" }));
+    await screen.findByText("Workspace");
+    expect(screen.queryByText("Connected to Home server")).toBeNull();
+  });
+
+  it("leaves a server that stopped working for This computer, and says so", async () => {
+    const { api, push } = bridge(withEnvironments(view({ phase: "connected" }), { local: "local", pi: "connected" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByText("Workspace");
+    await push(
+      withEnvironments(view({ phase: "error", message: "This device is no longer paired." }), {
+        local: "local",
+        pi: "error",
+      }),
+    );
+    expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
+    expect(await screen.findByText("Home server stopped working")).toBeVisible();
+  });
+
+  it("keeps the connection screen for a server that fails while connecting", async () => {
+    const { api, push } = bridge(withEnvironments(view({ phase: "connecting" }), { local: "local", pi: "connecting" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByRole("heading", { name: "Connecting to Home server" });
+    await push(withEnvironments(view({ phase: "error", message: "Refused." }), { local: "local", pi: "error" }));
+    expect(api.activateConnection).not.toHaveBeenCalled();
+    expect(screen.queryByText("Home server stopped working")).toBeNull();
   });
 
   it("stops saying which server it connected to after Don't show again, on this device", async () => {

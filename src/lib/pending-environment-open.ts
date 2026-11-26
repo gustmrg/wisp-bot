@@ -56,3 +56,25 @@ export function consumePendingEnvironmentOpen(environmentId: string): PendingEnv
   clearPendingEnvironmentOpen();
   return entry;
 }
+
+/**
+ * Opens a conversation in another environment: switches to it, and the
+ * remounted workspace opens the conversation once it loads. Resolves with an
+ * error message, or null.
+ */
+export async function openEnvironmentChat(
+  environmentId: string,
+  conversationId: string,
+  options?: { openDetails?: boolean },
+): Promise<string | null> {
+  setPendingEnvironmentOpen({ environmentId, conversationId, ...(options?.openDetails ? { openDetails: true } : {}) });
+  try {
+    const result = await window.wisp.activateConnection({ id: environmentId });
+    if (result.ok) return null;
+    clearPendingEnvironmentOpen();
+    return result.error.message;
+  } catch {
+    clearPendingEnvironmentOpen();
+    return "The environment could not be switched.";
+  }
+}

@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { useWispApi } from "@/lib/environment-api";
 import { AVATAR_COLORS } from "@/lib/wisp-appearance";
 import { applyTemplateChoices, initialTemplateChoices, type TemplateChoices } from "@/lib/wisp-template-actions";
 import { parseWispTemplate, type WispTemplate } from "../../shared/wisp-template";
@@ -95,6 +96,7 @@ function CreateWispPanel({
   onOpenTemplates,
   template,
 }: CreateWispPanelProps) {
+  const api = useWispApi();
   const STEPS: ReadonlyArray<CreateWispStep> =
     template && templateHasChoices(template) ? [...BASE_STEPS, "template"] : BASE_STEPS;
   const [step, setStep] = useState<CreateWispStep>("identity");
@@ -148,6 +150,20 @@ function CreateWispPanel({
     )?.focus();
   }, [step]);
 
+  // Another environment has its own models and server checks; the rest of the draft stays.
+  const loadedApi = useRef(api);
+  useEffect(() => {
+    if (loadedApi.current === api) return;
+    loadedApi.current = api;
+    setModelView(null);
+    setModelLoadError("");
+    setModelNotice("");
+    setModelDraft(createDefaultWispModelDraft());
+    templateModelApplied.current = !template?.model;
+    setSetupView(null);
+    setSetupLoadError("");
+  }, [api, template]);
+
   function goToStep(nextStep: CreateWispStep) {
     focusStep.current = nextStep;
     setStep(nextStep);
@@ -156,7 +172,7 @@ function CreateWispPanel({
   useEffect(() => {
     if (!open || modelView) return;
     let active = true;
-    void window.wisp
+    void api
       .getAiSettings()
       .then((result) => {
         if (!active) return;
@@ -169,12 +185,12 @@ function CreateWispPanel({
     return () => {
       active = false;
     };
-  }, [open, modelView]);
+  }, [open, modelView, api]);
 
   useEffect(() => {
     if (!open || setupView || setupLoadError) return;
     let active = true;
-    void window.wisp
+    void api
       .getWispSetup()
       .then((result) => {
         if (!active) return;
@@ -187,7 +203,7 @@ function CreateWispPanel({
     return () => {
       active = false;
     };
-  }, [open, setupView, setupLoadError]);
+  }, [open, setupView, setupLoadError, api]);
 
   useEffect(() => {
     if (templateModelApplied.current || !template || (!modelView && !modelLoadError)) return;
@@ -242,8 +258,8 @@ function CreateWispPanel({
         return;
       }
       const failures = [
-        ...[await applyWispSetup(conversationId, setupDraft)].filter(Boolean),
-        ...(template && choices ? await applyTemplateChoices(conversationId, template, choices) : []),
+        ...[await applyWispSetup(conversationId, setupDraft, api)].filter(Boolean),
+        ...(template && choices ? await applyTemplateChoices(conversationId, template, choices, api) : []),
       ];
       const failed = failures.join(" and ");
       if (failed) {

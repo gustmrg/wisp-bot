@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AiSettingsView } from "../../shared/contracts";
 import { CreateChatDialog } from "@/components/create-chat-dialog";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
+import type { ConnectionsView } from "../../shared/connections";
 import { serializeWispTemplate, wispTemplateFrom } from "../../shared/wisp-template";
 
 const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
@@ -536,5 +538,53 @@ describe("CreateChatDialog from a template", () => {
     await waitFor(() => expect(api.importSkill).toHaveBeenCalled());
     expect(api.getWispPluginAccess).not.toHaveBeenCalled();
     expect(api.saveWispPluginAccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("CreateChatDialog environments", () => {
+  it("creates a Wisp in the environment chosen, This computer first, and opens it there once the dialog closes", async () => {
+    mockAiSettings();
+    const invokeConnectionOperation = vi.fn(async ({ operation }: { operation: string }) => {
+      if (operation === "getAiSettings") return window.wisp.getAiSettings();
+      if (operation === "getWispSetup") return window.wisp.getWispSetup();
+      return { ok: true, value: {} };
+    });
+    const activateConnection = vi.fn(async () => ({ ok: true, value: {} }));
+    Object.assign(window.wisp, { invokeConnectionOperation, activateConnection });
+    const summary = { workingWisps: 0, pendingApprovals: 0, unreadConversations: 0, wispCount: 0, circleCount: 0 };
+    const view: ConnectionsView = {
+      activeId: "local",
+      profiles: [
+        { id: "local", kind: "local", name: "This computer", paired: true },
+        { id: "home", kind: "url", name: "Home server", url: "https://test-host.invalid", paired: true },
+      ],
+      status: { profileId: "local", phase: "local", epoch: 1 },
+      secureStorageAvailable: true,
+      environments: {
+        local: { profileId: "local", phase: "local", ...summary },
+        home: { profileId: "home", phase: "connected", ...summary },
+      },
+    };
+    const user = userEvent.setup();
+    const onCreate = vi.fn();
+    render(
+      <ActiveConnectionContext.Provider value={view}>
+        <CreateChatDialog onCreate={onCreate} trigger={trigger} />
+      </ActiveConnectionContext.Provider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    const environment = screen.getByRole("combobox", { name: "Environment" });
+    expect(environment).toHaveTextContent("This computer");
+    await user.click(environment);
+    await user.click(await screen.findByRole("option", { name: /Home server/ }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(onCreate).not.toHaveBeenCalled();
+    const created = invokeConnectionOperation.mock.calls.find(([request]) => request.operation === "createWisp");
+    expect(created?.[0]).toMatchObject({ connectionId: "home", payload: { wisp: { name: "Atlas" } } });
+    expect(activateConnection).toHaveBeenCalledWith({ id: "home" });
   });
 });

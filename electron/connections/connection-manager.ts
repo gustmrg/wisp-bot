@@ -54,8 +54,8 @@ import { type InstallOutcome, type InstallStep, SetupOutcomeUnknownError } from 
 export interface ConnectionManagerOptions {
   store: ConnectionStore;
   /**
-   * The Wisp server on this computer, kept running in the background while
-   * `keepLocalRunning` or remote access is enabled, and while it is active.
+   * The Wisp server on this computer, kept running in the background once the
+   * person has chosen where Wisps run, or while remote access is enabled.
    */
   localServer: LocalServer;
   /**
@@ -177,9 +177,9 @@ export class ConnectionManager {
   constructor(private readonly options: ConnectionManagerOptions) {}
 
   /**
-   * Opens the connection chosen last time and quietly connects other paired
-   * environments (plus `local` when `keepLocalRunning` is enabled). On a first
-   * run nothing starts until the person chooses this computer or a server.
+   * Opens the connection chosen last time and quietly connects this computer
+   * and other paired environments. On a first run nothing starts until the
+   * person chooses this computer or a server.
    */
   start(): Promise<void> {
     return this.serialized(async () => {
@@ -218,33 +218,6 @@ export class ConnectionManager {
           this.publish();
         }
       }
-    });
-  }
-
-  /**
-   * Sets whether Wisps on this computer stay running in the background when
-   * another server is active. Remote access overrides an opt-out while active.
-   */
-  setKeepLocalRunning(enabled: boolean): Promise<ConnectionsView> {
-    return this.serialized(async () => {
-      if (typeof enabled !== "boolean") {
-        throw new WispBackendError("invalid_request", "The background setting is invalid.");
-      }
-      await this.options.store.setKeepLocalRunning(enabled);
-      if (this.started && !this.disposed) {
-        if (enabled) {
-          this.keepLocalServerRunning();
-          if (this.options.store.hasChoice && !this.sessions.has(LOCAL_CONNECTION_ID)) {
-            this.openPooledSession(LOCAL_PROFILE, { active: false, userInitiated: false });
-          }
-        } else if (this.activeId !== LOCAL_CONNECTION_ID && !this.exposure) {
-          clearTimeout(this.localRestart);
-          await this.closeSession(LOCAL_CONNECTION_ID);
-          await this.options.localServer.stop();
-        }
-      }
-      this.publish();
-      return this.view();
     });
   }
 
@@ -323,7 +296,6 @@ export class ConnectionManager {
         ...(this.update?.profileId === this.status.profileId ? { update: { ...this.update.view } } : {}),
       },
       secureStorageAvailable: store.secureStorageAvailable,
-      keepLocalRunning: store.keepLocalRunning,
       environments,
       ...(this.sshPrompts[0] ? { sshPrompt: this.sshPrompts[0].view } : {}),
     };
@@ -836,7 +808,7 @@ export class ConnectionManager {
 
   /**
    * Quietly starts background sessions for already-paired remote servers and
-   * for `local` when `keepLocalRunning` or remote access is enabled.
+   * for `local`, so every environment's conversations stay live.
    */
   private connectBackgroundProfiles(): void {
     const { store } = this.options;
@@ -1071,15 +1043,16 @@ export class ConnectionManager {
       });
   }
 
+  /** The local server runs from the first choice of where Wisps run, or earlier while remote access needs it. */
   private shouldKeepLocalRunning(): boolean {
-    return Boolean(this.exposure) || (this.options.store.hasChoice && this.options.store.keepLocalRunning);
+    return Boolean(this.exposure) || this.options.store.hasChoice;
   }
 
   private isPaired(profile: ConnectionProfile): boolean {
     return profile.kind === "local" || Boolean(this.options.store.loadCredentials(profile.id));
   }
 
-  /** While local persistence or remote access is on, starts the local server and restarts it if it stops. */
+  /** Starts the local server and restarts it if it stops, while it should keep running. */
   private keepLocalServerRunning(): void {
     if (!this.shouldKeepLocalRunning() || !this.started || this.disposed) return;
     clearTimeout(this.localRestart);

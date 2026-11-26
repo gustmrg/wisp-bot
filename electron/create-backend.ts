@@ -250,7 +250,6 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
       [WISP_IPC_CHANNELS.cancelConnection, () => manager.cancel()],
       [WISP_IPC_CHANNELS.answerSshPrompt, (payload) => manager.answerSshPrompt(payload)],
-      [WISP_IPC_CHANNELS.setKeepLocalRunning, (payload) => manager.setKeepLocalRunning(keepLocalRunningFlag(payload))],
       [WISP_IPC_CHANNELS.connectEnvironment, (payload) => manager.connectEnvironment(connectionId(payload))],
       [WISP_IPC_CHANNELS.getRemoteAccess, () => remoteAccess.view()],
       [WISP_IPC_CHANNELS.saveRemoteAccess, (payload) => remoteAccess.save(payload)],
@@ -317,12 +316,4 @@ function connectionId(payload: unknown): string {
     throw new WispBackendError("invalid_request", "The connection is invalid.");
   }
   return id;
-}
-
-function keepLocalRunningFlag(payload: unknown): boolean {
-  const enabled = (payload as { enabled?: unknown } | null)?.enabled;
-  if (typeof enabled !== "boolean") {
-    throw new WispBackendError("invalid_request", "The background setting is invalid.");
-  }
-  return enabled;
 }

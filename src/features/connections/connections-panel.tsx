@@ -1,22 +1,10 @@
 import { useId, useRef, useState } from "react";
 import { ChevronLeftIcon, LaptopIcon, Plus, ServerIcon, Settings2 } from "lucide-react";
 
-import {
-  ConfirmAction,
-  SettingsCard,
-  SettingsField,
-  SettingsGroup,
-  SettingsRow,
-  SettingsRowCopy,
-  SettingsRowDescription,
-  SettingsRowTitle,
-  StatusDot,
-  type StatusTone,
-} from "@/components/settings/settings-primitives";
+import { ConfirmAction, SettingsField, StatusDot, type StatusTone } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import {
   DEFAULT_SERVER_PORT,
   type ConnectionProfileView,
@@ -67,7 +55,6 @@ export function ConnectionsPanel({
   onExit,
   bare = false,
   connectOnSave = false,
-  showBackgroundSetting = false,
 }: {
   view: ConnectionsView;
   serversOnly?: boolean;
@@ -79,8 +66,6 @@ export function ConnectionsPanel({
   bare?: boolean;
   /** Connects to a new connection once it is saved, as on the first run. */
   connectOnSave?: boolean;
-  /** Shows the local background persistence toggle when multiple environments exist. */
-  showBackgroundSetting?: boolean;
 }) {
   const [editing, setEditing] = useState<"new" | string | null>(initialEditing);
   const leaveForm = () => (onExit && editing === initialEditing ? onExit() : setEditing(null));
@@ -195,31 +180,6 @@ export function ConnectionsPanel({
           <span className="mt-1 block text-sm text-dim">Use Wisps running on a Wisp server over SSH or HTTPS.</span>
         </span>
       </button>
-      {showBackgroundSetting && !serversOnly && view.canManage !== false && view.profiles.length >= 2 ? (
-        <SettingsGroup label="Background">
-          <SettingsCard>
-            <SettingsRow>
-              <SettingsRowCopy>
-                <SettingsRowTitle>Keep this computer&apos;s Wisps running in the background</SettingsRowTitle>
-                <SettingsRowDescription>
-                  Keep Wisps, jobs, and scheduled messages on this computer running while you use another server. Remote
-                  access also keeps them running when turned on.
-                </SettingsRowDescription>
-              </SettingsRowCopy>
-              <ToggleSwitch
-                label="Keep this computer's Wisps running in the background"
-                checked={view.keepLocalRunning ?? true}
-                disabled={busy !== null}
-                onChange={() =>
-                  void run("keep-local", () =>
-                    window.wisp.setKeepLocalRunning({ enabled: !(view.keepLocalRunning ?? true) }),
-                  )
-                }
-              />
-            </SettingsRow>
-          </SettingsCard>
-        </SettingsGroup>
-      ) : null}
       <ServerSetupGuide />
       {error ? (
         <p role="alert" className="mt-3 text-xs text-destructive">

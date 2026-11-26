@@ -341,11 +341,10 @@ describe("EnvironmentSummaryTracker", () => {
 });
 
 describe("multi-environment session pool", () => {
-  it("keeps the local server running in background by default, stops it when opted out, and switches instantly", async () => {
+  it("keeps the local server running in the background and switches instantly", async () => {
     const { server } = await startServer();
     const app = await desktop();
     await vi.waitFor(async () => expect((await app.view()).status.phase).toBe("local"), { timeout: 8_000 });
-    expect((await app.view()).keepLocalRunning).toBe(true);
 
     // Create a Wisp and circle locally so we can verify live summaries across both environments.
     await app.invoke(WISP_IPC_CHANNELS.initializeConversations);
@@ -398,21 +397,10 @@ describe("multi-environment session pool", () => {
     const switchedToRemote = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.activateConnection, { id: remote.id });
     expect(switchedToRemote.status.phase).toBe("connected");
     expect(switchedToRemote.status.epoch).toBe(epochBefore + 2);
-
-    // Opting out of keepLocalRunning stops the local server while on remote.
-    const optedOut = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.setKeepLocalRunning, { enabled: false });
-    expect(optedOut.keepLocalRunning).toBe(false);
-    expect(app.localServer.server).toBeUndefined();
-    expect(optedOut.environments?.local?.phase).toBe("choosing");
-
-    // Turning keepLocalRunning back on restarts the local server in the background without leaving remote.
-    const optedIn = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.setKeepLocalRunning, { enabled: true });
-    expect(optedIn.keepLocalRunning).toBe(true);
-    expect(optedIn.activeId).toBe(remote.id);
-    await vi.waitFor(async () => expect((await app.view()).environments?.local?.phase).toBe("local"), {
-      timeout: 8_000,
-    });
-    expect(app.localServer.starts).toBe(2);
+    // This computer's Wisps keep running while a server is in use.
+    expect(app.localServer.server).toBeDefined();
+    expect(switchedToRemote.environments?.local?.phase).toBe("local");
+    expect(app.localServer.starts).toBe(1);
   });
 
   it("dispatches allowlisted runtime operations to any connected environment and forwards scoped events", async () => {
@@ -528,11 +516,17 @@ describe("multi-environment session pool", () => {
       }),
     ).toMatchObject({ ok: false, error: { code: "not_found" } });
 
-    await app.invoke(WISP_IPC_CHANNELS.setKeepLocalRunning, { enabled: false });
-    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: remote.id });
+    // A saved server that was never paired has no session to run it on.
+    const unpaired = (
+      await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+        kind: "url",
+        name: "Unpaired server",
+        url: "https://test-host.invalid",
+      })
+    ).profiles.find((profile) => profile.name === "Unpaired server")!;
     expect(
       await app.call(WISP_IPC_CHANNELS.invokeConnectionOperation, {
-        connectionId: "local",
+        connectionId: unpaired.id,
         operation: "getAiSettings",
       }),
     ).toMatchObject({ ok: false, error: { code: "unavailable", retryable: true } });

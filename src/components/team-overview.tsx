@@ -7,14 +7,13 @@ import {
   LoaderCircleIcon,
   PlusIcon,
   SearchIcon,
-  SendIcon,
   ServerIcon,
   SettingsIcon,
   ShieldAlertIcon,
   UsersIcon,
 } from "lucide-react";
 
-import type { ChatView, NewCircle, NewWisp, Wisp, WispChatView } from "@/chat-data";
+import type { ChatView, NewCircle, NewWisp, Wisp } from "@/chat-data";
 import { ApprovalSheet } from "@/components/approval-summary";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateChatDialog } from "@/components/create-chat-dialog";
@@ -23,7 +22,6 @@ import { StatusDot } from "@/components/settings/settings-primitives";
 import { approvalAsk, needsReview } from "@/components/tool-approval-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { phaseTone } from "@/features/connections/connections-panel";
 import {
@@ -46,7 +44,7 @@ type StatusFilter = "all" | "working" | "approval" | "unread";
 type KindFilter = "all" | "wisp" | "circle";
 
 const SCOPE_OPTIONS: ReadonlyArray<{ value: TeamScope; label: string }> = [
-  { value: "current", label: "This environment" },
+  { value: "home", label: "This computer" },
   { value: "all", label: "All environments" },
 ];
 
@@ -76,7 +74,6 @@ export interface TeamOverviewProps {
   onOpenTemplates?: () => void;
   onResolveActiveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => Promise<boolean>;
   onOpenActiveChat: (conversationId: string, options?: { openDetails?: boolean }) => void;
-  onOpenEnvironmentSettings: (environmentId: string, unpaired: boolean) => void;
   onConversations?: () => void;
   onOpenApprovals?: () => void;
   onOpenSettings?: () => void;
@@ -136,12 +133,11 @@ export function TeamOverview({
   onOpenTemplates,
   onResolveActiveApproval,
   onOpenActiveChat,
-  onOpenEnvironmentSettings,
   onConversations,
   onOpenApprovals,
   onOpenSettings,
 }: TeamOverviewProps) {
-  const [scope, setScope] = useState<TeamScope>("current");
+  const [scope, setScope] = useState<TeamScope>("home");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
@@ -164,10 +160,10 @@ export function TeamOverview({
   }, [mobile]);
 
   useEffect(() => {
-    if (!team.canShowAllEnvironments && scope !== "current") setScope("current");
+    if (!team.canShowAllEnvironments && scope !== "home") setScope("home");
   }, [team.canShowAllEnvironments, scope]);
 
-  const effectiveScope: TeamScope = team.canShowAllEnvironments ? scope : "current";
+  const effectiveScope: TeamScope = team.canShowAllEnvironments ? scope : "home";
   const allWisps: ReadonlyArray<Wisp> = useMemo(
     () => Object.values(activeWorkspace.chats).flatMap((chat) => (chat.kind === "wisp" ? [chat.wisp] : [])),
     [activeWorkspace.chats],
@@ -411,34 +407,6 @@ export function TeamOverview({
             </section>
           ) : null}
 
-          {effectiveScope === "all" && team.canShowAllEnvironments ? (
-            <section aria-labelledby="team-environments-heading" className="flex flex-col gap-2.5">
-              <h2 id="team-environments-heading" className="m-0 text-sm font-semibold">
-                Environments
-              </h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {team.environments.map((env) => (
-                  <EnvironmentCard
-                    key={env.profile.id}
-                    env={env}
-                    busy={busyKey === `env:${env.profile.id}`}
-                    onSwitch={() =>
-                      void runAction(`env:${env.profile.id}`, () => team.switchEnvironment(env.profile.id))
-                    }
-                    onConnect={() =>
-                      void runAction(`env:${env.profile.id}`, () => team.connectEnvironment(env.profile.id))
-                    }
-                    onSettings={() => {
-                      const unpaired =
-                        env.phase === "pairing_required" || (env.profile.kind !== "local" && !env.profile.paired);
-                      onOpenEnvironmentSettings(env.profile.id, unpaired);
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           <section aria-labelledby="team-members-heading" className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
               <h2 id="team-members-heading" className="m-0 text-sm font-semibold">
@@ -451,7 +419,11 @@ export function TeamOverview({
               ) : null}
             </div>
 
-            {totalMatching === 0 && hasFilters ? (
+            {effectiveScope === "home" && groupedChats[0] && !groupedChats[0].env.connected ? (
+              <p role="status" className="m-0 text-xs text-dim">
+                {groupedChats[0].env.profile.name} is starting. Its Wisps and circles appear once it is ready.
+              </p>
+            ) : totalMatching === 0 && hasFilters ? (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-8 text-center">
                 <p className="m-0 text-sm text-dim">No Wisps or circles match these filters.</p>
                 <Button
@@ -491,8 +463,6 @@ export function TeamOverview({
                         <p role="status" className="m-0 text-xs text-dim">
                           Loading Wisps and circles…
                         </p>
-                      ) : !env.connected ? (
-                        <p className="m-0 text-xs text-dim">Connect to see Wisps and circles in {env.profile.name}.</p>
                       ) : env.error ? (
                         <p role="alert" className="m-0 text-xs text-destructive">
                           {env.error}
@@ -507,10 +477,6 @@ export function TeamOverview({
                               env={env}
                               chat={chat}
                               showEnvironment
-                              otherConnectedEnvironments={team.connectedEnvironments.filter(
-                                (profile) => profile.id !== env.profile.id,
-                              )}
-                              busy={busyKey === `copy:${env.profile.id}:${chat.id}`}
                               onOpen={() =>
                                 void runAction(`open:${env.profile.id}:${chat.id}`, () =>
                                   team.openChat(env.profile.id, chat.id),
@@ -521,14 +487,6 @@ export function TeamOverview({
                                   team.openChat(env.profile.id, chat.id, { openDetails: true }),
                                 )
                               }
-                              onCopyTo={(target) => {
-                                if (chat.kind !== "wisp") return;
-                                void runAction(
-                                  `copy:${env.profile.id}:${chat.id}`,
-                                  () => team.copyWispToEnvironment(env.profile.id, chat, target),
-                                  `Copied ${chat.wisp.name} as a template to ${target.name}.`,
-                                );
-                              }}
                             />
                           ))}
                         </div>
@@ -547,10 +505,6 @@ export function TeamOverview({
                       env={env}
                       chat={chat}
                       showEnvironment={false}
-                      otherConnectedEnvironments={team.connectedEnvironments.filter(
-                        (profile) => profile.id !== env.profile.id,
-                      )}
-                      busy={busyKey === `copy:${env.profile.id}:${chat.id}`}
                       onOpen={() =>
                         void runAction(`open:${env.profile.id}:${chat.id}`, () =>
                           team.openChat(env.profile.id, chat.id),
@@ -561,14 +515,6 @@ export function TeamOverview({
                           team.openChat(env.profile.id, chat.id, { openDetails: true }),
                         )
                       }
-                      onCopyTo={(target) => {
-                        if (chat.kind !== "wisp") return;
-                        void runAction(
-                          `copy:${env.profile.id}:${chat.id}`,
-                          () => team.copyWispToEnvironment(env.profile.id, chat, target),
-                          `Copied ${chat.wisp.name} as a template to ${target.name}.`,
-                        );
-                      }}
                     />
                   );
                 })}
@@ -635,133 +581,19 @@ function EnvironmentPill({ kind, name }: { kind: ConnectionProfileView["kind"]; 
   );
 }
 
-function EnvironmentCard({
-  env,
-  busy,
-  onSwitch,
-  onConnect,
-  onSettings,
-}: {
-  env: TeamEnvironmentEntry;
-  busy: boolean;
-  onSwitch: () => void;
-  onConnect: () => void;
-  onSettings: () => void;
-}) {
-  const unpaired = env.phase === "pairing_required" || (env.profile.kind !== "local" && !env.profile.paired);
-  const inProgress = env.phase === "connecting" || env.phase === "reconnecting" || busy;
-  const { workingWisps, pendingApprovals, unreadConversations, wispCount, circleCount } = env.summary;
-
-  return (
-    <article
-      aria-label={env.profile.name}
-      className="flex flex-col justify-between gap-3 rounded-xl border border-border bg-card p-3.5"
-    >
-      <div className="space-y-2">
-        <div className="flex items-start gap-2.5">
-          <span className="flex size-8 flex-none items-center justify-center rounded-lg bg-muted text-dim">
-            <ProfileIcon kind={env.profile.kind} className="size-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-semibold">{env.profile.name}</span>
-              {env.isActive ? (
-                <span className="shrink-0 rounded-full bg-accent px-1.5 py-px text-2xs font-medium text-accent-foreground">
-                  Active
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-dim">
-              <StatusDot tone={phaseTone(env.phase)} />
-              <span>{environmentPhaseText(env.phase, env.profile)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 text-2xs text-dim">
-          {env.connected ? (
-            <span>
-              {wispCount} {wispCount === 1 ? "Wisp" : "Wisps"}
-              {circleCount > 0 ? ` · ${circleCount} ${circleCount === 1 ? "circle" : "circles"}` : ""}
-            </span>
-          ) : null}
-          {pendingApprovals > 0 ? (
-            <span className="rounded-full bg-warning-solid/15 px-1.5 py-0.5 font-medium text-warning tabular-nums">
-              {pendingApprovals} {pendingApprovals === 1 ? "approval" : "approvals"}
-            </span>
-          ) : null}
-          {workingWisps > 0 ? (
-            <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
-              {workingWisps} working
-            </span>
-          ) : null}
-          {unreadConversations > 0 ? (
-            <span className="rounded-full bg-[#ff3b30]/15 px-1.5 py-0.5 font-medium text-[#ff3b30] tabular-nums">
-              {unreadConversations} unread
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {!env.isActive && env.connected ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            aria-label={`Switch to ${env.profile.name}`}
-            disabled={inProgress}
-            onClick={onSwitch}
-          >
-            {busy ? "Switching…" : "Switch to"}
-          </Button>
-        ) : null}
-        {!env.isActive && !env.connected && !unpaired ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            aria-label={`Connect ${env.profile.name}`}
-            disabled={inProgress}
-            onClick={onConnect}
-          >
-            {inProgress ? "Connecting…" : "Connect"}
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost"
-          aria-label={`Settings for ${env.profile.name}`}
-          onClick={onSettings}
-        >
-          Settings
-        </Button>
-      </div>
-    </article>
-  );
-}
-
 function TeamMemberCard({
   env,
   chat,
   showEnvironment,
-  otherConnectedEnvironments,
-  busy,
   onOpen,
   onOpenSettings,
-  onCopyTo,
 }: {
   env: TeamEnvironmentEntry;
   chat: ChatView;
   showEnvironment: boolean;
-  otherConnectedEnvironments: ReadonlyArray<ConnectionProfileView>;
-  busy: boolean;
   onOpen: () => void;
   onOpenSettings: () => void;
-  onCopyTo: (target: ConnectionProfileView) => void;
 }) {
-  const [copyOpen, setCopyOpen] = useState(false);
   const name = chatName(chat);
   const status = env.statuses[chat.id];
   const working = status === "working";
@@ -811,19 +643,6 @@ function TeamMemberCard({
         </button>
 
         <div className="flex flex-none items-center gap-1">
-          {chat.kind === "wisp" && otherConnectedEnvironments.length > 0 ? (
-            <CopyWispMenu
-              wisp={chat}
-              targets={otherConnectedEnvironments}
-              open={copyOpen}
-              busy={busy}
-              onOpenChange={setCopyOpen}
-              onSelect={(target) => {
-                setCopyOpen(false);
-                onCopyTo(target);
-              }}
-            />
-          ) : null}
           <Button
             type="button"
             size="icon-xs"
@@ -873,57 +692,5 @@ function TeamMemberCard({
         ) : null}
       </div>
     </article>
-  );
-}
-
-function CopyWispMenu({
-  wisp,
-  targets,
-  open,
-  busy,
-  onOpenChange,
-  onSelect,
-}: {
-  wisp: WispChatView;
-  targets: ReadonlyArray<ConnectionProfileView>;
-  open: boolean;
-  busy: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSelect: (target: ConnectionProfileView) => void;
-}) {
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
-        render={
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            disabled={busy}
-            aria-label={`Copy ${wisp.wisp.name} to another environment`}
-          >
-            <SendIcon data-icon="inline-start" aria-hidden="true" className="size-3" />
-            Copy to…
-          </Button>
-        }
-      />
-      <PopoverContent side="bottom" align="end" className="w-56 p-1">
-        <p className="m-0 px-2 py-1 text-2xs text-dim">Copy as template (no credentials or grants)</p>
-        <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label={`Copy ${wisp.wisp.name} to environment`}>
-          {targets.map((target) => (
-            <li key={target.id}>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md border-0 bg-transparent px-2 py-1.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => onSelect(target)}
-              >
-                <ProfileIcon kind={target.kind} className="size-3.5 shrink-0 text-dim" />
-                <span className="truncate">{target.name}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </PopoverContent>
-    </Popover>
   );
 }

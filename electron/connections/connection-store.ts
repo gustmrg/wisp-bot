@@ -27,8 +27,6 @@ interface ProfilesFile {
   activeId: string;
   /** Whether the person has chosen where Wisps run. */
   chosen: boolean;
-  /** Whether Wisps on this computer stay running in the background when another server is active. */
-  keepLocalRunning?: boolean;
   profiles: RemoteConnectionProfile[];
   /** Updates of a server this app started and has not confirmed yet, by profile ID. */
   updates?: Record<string, PendingServerUpdate>;
@@ -123,7 +121,6 @@ export class ConnectionStore {
   private profiles: RemoteConnectionProfile[] = [];
   private activeId = LOCAL_CONNECTION_ID;
   private chosen = false;
-  private keepLocal = true;
   private credentials = new Map<string, DeviceCredentials>();
   private updates = new Map<string, PendingServerUpdate>();
   private writes = Promise.resolve();
@@ -150,7 +147,6 @@ export class ConnectionStore {
       }
       if (this.get(profiles.activeId)) this.activeId = profiles.activeId;
       this.chosen = profiles.chosen === true;
-      if (typeof profiles.keepLocalRunning === "boolean") this.keepLocal = profiles.keepLocalRunning;
       for (const [id, update] of Object.entries(profiles.updates ?? {})) {
         if (
           this.get(id) &&
@@ -191,18 +187,6 @@ export class ConnectionStore {
   /** False until the person first chooses where Wisps run. */
   get hasChoice(): boolean {
     return this.chosen;
-  }
-
-  /** Whether Wisps on this computer stay running in the background when another server is active. */
-  get keepLocalRunning(): boolean {
-    return this.keepLocal;
-  }
-
-  async setKeepLocalRunning(enabled: boolean): Promise<void> {
-    if (typeof enabled !== "boolean") throw invalid();
-    if (this.keepLocal === enabled) return;
-    this.keepLocal = enabled;
-    await this.persistProfiles();
   }
 
   get active(): ConnectionProfile {
@@ -288,7 +272,6 @@ export class ConnectionStore {
       version: 1,
       activeId: this.activeId,
       chosen: this.chosen,
-      keepLocalRunning: this.keepLocal,
       profiles: this.profiles,
       ...(this.updates.size ? { updates: Object.fromEntries(this.updates) } : {}),
     };

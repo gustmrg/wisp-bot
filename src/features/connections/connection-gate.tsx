@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { APP_METADATA } from "@/config/app-metadata";
+import { EnvironmentDirectoryProvider } from "@/features/environments/environment-directory";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { cn } from "@/lib/utils";
 import { LOCAL_CONNECTION_ID, type ConnectionsView, type ServerUpdateView } from "../../../shared/connections";
@@ -77,8 +78,10 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   // Whether this window has reached a backend yet; opening the app connects without announcing it.
   const reached = useRef(false);
   useEffect(() => {
-    const next = view ? toastFor(previous.current, view, !reached.current) : undefined;
+    const fallback = view ? fallbackFor(previous.current, view) : undefined;
+    const next = fallback?.toast ?? (view ? toastFor(previous.current, view, !reached.current) : undefined);
     if (next) setToast(next);
+    if (fallback) void window.wisp.activateConnection({ id: LOCAL_CONNECTION_ID }).catch(() => undefined);
     previous.current = view;
     if (view?.status.phase === "local" || view?.status.phase === "connected") reached.current = true;
   }, [view]);
@@ -152,7 +155,10 @@ function GateContent({
           )}
         >
           <ActiveConnectionContext.Provider value={view}>
-            <Fragment key={`${view.activeId}:${status.epoch}`}>{children}</Fragment>
+            {/* Above the keyed app, so what it knows of every environment survives a switch. */}
+            <EnvironmentDirectoryProvider>
+              <Fragment key={`${view.activeId}:${status.epoch}`}>{children}</Fragment>
+            </EnvironmentDirectoryProvider>
           </ActiveConnectionContext.Provider>
         </div>
       </div>
@@ -508,7 +514,32 @@ type ToastContent = {
   durationMs: number;
   /** A plain "Connected to" a server, which the person can turn off; setups and updates always show. */
   connected?: boolean;
+  /** A server that stopped working, which the app left for This computer. */
+  failed?: boolean;
 };
+
+/**
+ * Leaves a server in use that fails for good, such as one that no longer
+ * accepts this device, for This computer while it runs: its conversations are
+ * listed with the others, so one server should not hide them all. A server
+ * that fails while connecting or pairing keeps its connection screen.
+ */
+function fallbackFor(previous: ConnectionsView | null, view: ConnectionsView): { toast: ToastContent } | undefined {
+  if (!previous || view.canManage === false || view.activeId === LOCAL_CONNECTION_ID) return undefined;
+  if (view.status.phase !== "error" || previous.activeId !== view.activeId) return undefined;
+  if (previous.status.phase !== "connected" && previous.status.phase !== "reconnecting") return undefined;
+  if (view.environments?.[LOCAL_CONNECTION_ID]?.phase !== "local") return undefined;
+  const name = activeName(view);
+  return {
+    toast: {
+      key: `${view.activeId}:${view.status.epoch}:failed`,
+      title: `${name} stopped working`,
+      detail: view.status.message ?? `Its conversations return once it connects again.`,
+      durationMs: UPDATED_TOAST_MS,
+      failed: true,
+    },
+  };
+}
 
 /**
  * What the last change of connection deserves a toast for: a server just
@@ -519,6 +550,10 @@ type ToastContent = {
 function toastFor(previous: ConnectionsView | null, view: ConnectionsView, opening: boolean): ToastContent | undefined {
   if (!previous || view.status.phase !== "connected" || previous.status.phase === "connected") return undefined;
   if (previous.status.phase === "reconnecting") return undefined;
+  // Opening a conversation of a server that was already connected in the background is not news.
+  if (previous.activeId !== view.activeId && previous.environments?.[view.activeId]?.phase === "connected") {
+    return undefined;
+  }
   const profile = activeProfile(view);
   if (!profile) return undefined;
   const version = view.status.serverVersion;
@@ -552,7 +587,11 @@ function ConnectionToast({ toast, onDismiss }: { toast: ToastContent; onDismiss:
   }, [toast, onDismiss]);
   return (
     <ToastFrame>
-      <CircleCheckIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-green" />
+      {toast.failed ? (
+        <WifiOffIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+      ) : (
+        <CircleCheckIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-green" />
+      )}
       <div className="grid min-w-0 gap-0.5">
         <strong className="text-sm">{toast.title}</strong>
         <span className="truncate text-xs text-dim">{toast.detail}</span>
