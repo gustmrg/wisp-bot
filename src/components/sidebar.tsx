@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useContext, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BellIcon,
   BellOffIcon,
+  ChevronRightIcon,
+  LayoutGridIcon,
   MailCheckIcon,
   MailIcon,
   PanelLeftCloseIcon,
@@ -20,12 +22,14 @@ import { MobileNavigation } from "@/components/mobile-navigation";
 import { NeedsYou } from "@/components/needs-you";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { WispTemplateEntry } from "../../shared/wisp-template";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { messagePreview } from "../../shared/workspace";
 import type { CurrentUser } from "@/config/app-metadata";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import { useClock } from "@/hooks/use-clock";
 import type { ChatListOrder } from "@/lib/app-preferences";
 import { sortChats } from "@/lib/chat-order";
@@ -72,6 +76,10 @@ interface SidebarProps {
   onCreateFromTemplateClosed?: () => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
+  /** Opens the Team overview in the main panel; without it the pinned Team item is omitted. */
+  onOpenTeam?: () => void;
+  /** Whether the Team overview is currently shown in the main panel. */
+  teamActive?: boolean;
   onOpenTemplates?: () => void;
   /** Opens the connections in Settings; without it, Settings opens where it does for the profile. */
   onManageConnections?: () => void;
@@ -115,6 +123,8 @@ function Sidebar({
   onCreateFromTemplateClosed,
   onOpenSearch,
   onOpenSettings,
+  onOpenTeam,
+  teamActive = false,
   onOpenTemplates,
   onManageConnections,
   onOpenApprovals,
@@ -122,6 +132,7 @@ function Sidebar({
   onSelectChat,
   onChatAction,
 }: SidebarProps) {
+  const connectionsView = useContext(ActiveConnectionContext);
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
   const [menuChatId, setMenuChatId] = useState<ChatId | null>(null);
   const asideRef = useRef<HTMLElement>(null);
@@ -146,9 +157,35 @@ function Sidebar({
   const timeFormat = useTimeFormat();
   const allChatIds = Object.keys(chats);
   const unreadCount = allChatIds.filter((id) => chats[id]?.unread).length;
+  const activeWorkingCount = allChatIds.filter((id) => statuses[id] === "working").length;
+  const activeApprovalCount = allChatIds.reduce((count, id) => count + (approvals[id]?.length ?? 0), 0);
+
+  let otherEnvApprovals = 0;
+  let otherEnvWorking = 0;
+  if (connectionsView?.environments) {
+    for (const [profileId, summary] of Object.entries(connectionsView.environments)) {
+      if (profileId === connectionsView.activeId) continue;
+      otherEnvApprovals += summary.pendingApprovals;
+      otherEnvWorking += summary.workingWisps;
+    }
+  }
+  const teamApprovals = activeApprovalCount + otherEnvApprovals;
+  const teamWorking = activeWorkingCount + otherEnvWorking;
+  const teamBadgeState = teamApprovals > 0 ? "approval" : teamWorking > 0 ? "working" : null;
+  const teamBadgeCount = teamApprovals > 0 ? teamApprovals : teamWorking;
+  const teamStatusText =
+    teamApprovals > 0
+      ? `${teamApprovals} pending ${teamApprovals === 1 ? "approval" : "approvals"}`
+      : teamWorking > 0
+        ? `${teamWorking} working`
+        : null;
+
+  const showDesktopFilters = !mobile && !rail && allChatIds.length >= 2;
+  const applyFilter = !rail && (mobile || showDesktopFilters);
   const chatIds = sortChats(
     Object.values(chats).filter(
-      (chat) => !mobile || filter === "all" || (filter === "unread" ? chat.unread : statuses[chat.id] === "working"),
+      (chat) =>
+        !applyFilter || filter === "all" || (filter === "unread" ? chat.unread : statuses[chat.id] === "working"),
     ),
     order,
   ).map((chat) => chat.id);
@@ -230,6 +267,74 @@ function Sidebar({
           </div>
         )}
 
+        {onOpenTeam ? (
+          rail ? (
+            <div className="flex flex-none justify-center border-t border-border px-1 pt-2 pb-1">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      className={cn(
+                        "relative flex size-10 items-center justify-center rounded-[10px] border-0 bg-transparent text-dim transition-colors hover:bg-muted hover:text-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:size-[18px]",
+                      )}
+                      data-selected={teamActive || undefined}
+                      aria-current={teamActive ? "page" : undefined}
+                      aria-label={teamStatusText ? `Team, ${teamStatusText}` : "Team"}
+                      title={teamStatusText ? `Team (${teamStatusText})` : "Team"}
+                      onClick={onOpenTeam}
+                    >
+                      <LayoutGridIcon aria-hidden="true" />
+                      {teamBadgeState ? (
+                        <span
+                          data-slot="team-badge"
+                          aria-hidden="true"
+                          className={cn(
+                            "absolute top-1 right-1 size-2 rounded-full border border-sidebar",
+                            teamBadgeState === "approval" ? "bg-warning-solid" : "bg-emerald-500",
+                          )}
+                        />
+                      ) : null}
+                    </button>
+                  }
+                />
+                <TooltipContent side="right">{teamStatusText ? `Team · ${teamStatusText}` : "Team"}</TooltipContent>
+              </Tooltip>
+            </div>
+          ) : (
+            <div className={cn("flex-none", mobile ? "px-3 pb-1" : "px-2.5 pb-1")}>
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-[10px] border-0 bg-transparent text-left text-sm font-medium text-foreground transition-colors hover:bg-muted data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground",
+                  mobile ? "min-h-11 px-3 py-2" : "px-2.5 py-2",
+                )}
+                data-selected={(!mobile && teamActive) || undefined}
+                aria-current={!mobile && teamActive ? "page" : undefined}
+                onClick={onOpenTeam}
+              >
+                <LayoutGridIcon aria-hidden="true" className="size-4 shrink-0 text-dim" />
+                <span className="min-w-0 flex-1 truncate">Team</span>
+                {teamBadgeState ? (
+                  <span
+                    data-slot="team-badge"
+                    className={cn(
+                      "inline-flex shrink-0 items-center rounded-full px-1.5 py-px text-2xs font-semibold tabular-nums",
+                      teamBadgeState === "approval"
+                        ? "bg-warning-solid/15 text-warning"
+                        : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+                    )}
+                  >
+                    <span aria-hidden="true">{teamBadgeCount > 99 ? "99+" : teamBadgeCount}</span>
+                    <span className="sr-only">{`, ${teamStatusText}`}</span>
+                  </span>
+                ) : null}
+                {mobile ? <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-faint" /> : null}
+              </button>
+            </div>
+          )
+        ) : null}
+
         {mobile ? (
           <div className="mobile-list-filters" role="group" aria-label="Filter conversations">
             {(
@@ -244,13 +349,47 @@ function Sidebar({
               </button>
             ))}
           </div>
+        ) : showDesktopFilters ? (
+          <div
+            className="flex flex-none items-center gap-1 px-2.5 pt-0.5 pb-1.5"
+            role="group"
+            aria-label="Filter conversations"
+          >
+            {(
+              [
+                ["all", "All", 0],
+                ["active", "Working", activeWorkingCount],
+                ["unread", "Unread", unreadCount],
+              ] as const
+            ).map(([id, label, count]) => (
+              <button
+                type="button"
+                key={id}
+                aria-pressed={filter === id}
+                onClick={() => setFilter(id)}
+                className={cn(
+                  "inline-flex h-6 items-center gap-1 rounded-full border-0 px-2.5 text-2xs font-medium transition-colors",
+                  filter === id
+                    ? "bg-accent text-accent-foreground"
+                    : "bg-transparent text-dim hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {label}
+                {count > 0 ? (
+                  <span aria-hidden="true" className="text-[10px] opacity-75 tabular-nums">
+                    {count}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
         ) : null}
 
         <nav
           ref={listRef}
           className={cn(
             "conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0",
-            rail ? "border-t border-border px-1 pt-2" : "px-2.5",
+            rail ? (onOpenTeam ? "px-1 pt-1" : "border-t border-border px-1 pt-2") : "px-2.5",
           )}
           aria-label="Wisps and circles"
         >
@@ -258,7 +397,7 @@ function Sidebar({
             const chat = chats[chatId];
             if (!chat) return null;
             // On a phone the list is its own page, so no conversation is open beside it.
-            const selected = !mobile && chatId === activeChatId;
+            const selected = !mobile && !teamActive && chatId === activeChatId;
             const pendingApproval = Boolean(approvals[chatId]?.length);
             const failed = !pendingApproval && Boolean(failedChats[chatId]);
             const working = statuses[chatId] === "working";
@@ -387,6 +526,20 @@ function Sidebar({
                       : "No Wisps are working right now."
                     : "Create a Wisp to get started."))}
             </p>
+          ) : null}
+          {!mobile && !rail && !chatIds.length && allChatIds.length > 0 && filter !== "all" ? (
+            <div className="flex flex-col items-center gap-2 px-3 py-6 text-center" role="status">
+              <p className="m-0 text-xs text-dim">
+                {filter === "unread" ? "No unread conversations" : "No working conversations"}
+              </p>
+              <button
+                type="button"
+                className="rounded-md border border-border bg-transparent px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                onClick={() => setFilter("all")}
+              >
+                Show all
+              </button>
+            </div>
           ) : null}
         </nav>
 

@@ -426,13 +426,26 @@ the browser app answers 404 until you set `WISP_WEB: "1"`.
 ## Connect the desktop app
 
 With more than one connection saved, the bottom of the sidebar shows the one in
-use and how it is doing. Selecting it lists the others, and selecting one
-switches to it right away, with **Manage connections** going to **Settings →
-Connections**. In **Settings**, every panel under **Environment** also offers an
-environment selector in its header so you can inspect or change another
-connected server's settings without switching your active conversation. Under
-**Settings → Connections → Background**, **Keep this computer's Wisps running in
-the background** controls whether **This computer**'s server stays running while
+use, its status dot, and a subtle badge whenever another connected environment
+has pending approvals or unread messages. Selecting it lists every saved
+environment with its live status dot and counts (pending approvals, working
+Wisps, and unread conversations); selecting another switches to it right away,
+with **Manage connections** going to **Settings → Connections**. If **Keep this
+computer's Wisps running in the background** is turned off (and remote access is
+off), the switcher warns before leaving **This computer**.
+
+At the top of the sidebar, **Team** opens a main-panel overview of your Wisps,
+circles, and pending approvals. With two or more environments saved, switch
+between **This environment** and **All environments** to review and resolve
+approvals, inspect connected servers, jump straight to any conversation across
+environments, or copy a Wisp's credential-free, grant-free template definition
+to another connected environment (**Copy to…**).
+
+In **Settings**, every panel under **Environment** also offers an environment
+selector in its header so you can inspect or change another connected server's
+settings without switching your active conversation. Under **Settings →
+Connections → Background**, **Keep this computer's Wisps running in the
+background** controls whether **This computer**'s server stays running while
 another server is active (remote access keeps it running while turned on). With
 a single connection nothing extra shows.
 

@@ -100,21 +100,104 @@ describe("ConnectionSwitcher", () => {
     expect(screen.getByRole("button", { name: "Switch to Home server" })).toBeEnabled();
   });
 
-  it("warns that leaving this computer stops its Wisps", async () => {
+  it("warns that leaving this computer stops its Wisps only when keepLocalRunning is false and remote access is off", async () => {
+    const user = userEvent.setup();
+    renderSwitcher(view({ keepLocalRunning: false }));
+    await user.click(screen.getByRole("button", { name: /Switch connection/ }));
+    expect(await screen.findByText(/stops the Wisps on this computer/)).toBeVisible();
+  });
+
+  it("does not warn when keepLocalRunning is true or omitted", async () => {
     const user = userEvent.setup();
     renderSwitcher(view());
     await user.click(screen.getByRole("button", { name: /Switch connection/ }));
-    expect(await screen.findByText(/stops the Wisps on this computer/)).toBeVisible();
+    await screen.findByRole("list", { name: "Connections" });
+    expect(getRemoteAccess).not.toHaveBeenCalled();
+    expect(screen.queryByText(/stops the Wisps on this computer/)).toBeNull();
   });
 
   it("does not warn when remote access keeps this computer's server running", async () => {
     const user = userEvent.setup();
     getRemoteAccess.mockResolvedValue({ ok: true, value: { enabled: true } });
-    renderSwitcher(view());
+    renderSwitcher(view({ keepLocalRunning: false }));
     await user.click(screen.getByRole("button", { name: /Switch connection/ }));
     await screen.findByRole("list", { name: "Connections" });
     await waitFor(() => expect(getRemoteAccess).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText(/stops the Wisps on this computer/)).toBeNull());
+  });
+
+  it("shows live per-environment badges in the list and an aggregate indicator on the trigger", async () => {
+    const user = userEvent.setup();
+    renderSwitcher(
+      view({
+        environments: {
+          local: {
+            profileId: "local",
+            phase: "local",
+            workingWisps: 2,
+            pendingApprovals: 0,
+            unreadConversations: 0,
+            wispCount: 2,
+            circleCount: 0,
+          },
+          home: {
+            profileId: "home",
+            phase: "connected",
+            workingWisps: 1,
+            pendingApprovals: 3,
+            unreadConversations: 4,
+            wispCount: 2,
+            circleCount: 1,
+          },
+        },
+      }),
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: "Using This computer. 3 pending approvals in another environment, 4 unread in another environment. Switch connection",
+    });
+    expect(trigger.querySelector("[data-slot='other-env-indicator']")).toHaveTextContent("3");
+
+    await user.click(trigger);
+    const list = await screen.findByRole("list", { name: "Connections" });
+    expect(within(list).getByText("2 working")).toBeInTheDocument();
+    expect(within(list).getByText("3 pending approvals")).toBeInTheDocument();
+    expect(within(list).getByText("1 working")).toBeInTheDocument();
+    expect(within(list).getByText("4 unread")).toBeInTheDocument();
+  });
+
+  it("shows a compact activity dot on the rail trigger when another environment has unread messages", () => {
+    renderSwitcher(
+      view({
+        environments: {
+          local: {
+            profileId: "local",
+            phase: "local",
+            workingWisps: 0,
+            pendingApprovals: 0,
+            unreadConversations: 0,
+            wispCount: 1,
+            circleCount: 0,
+          },
+          home: {
+            profileId: "home",
+            phase: "connected",
+            workingWisps: 0,
+            pendingApprovals: 0,
+            unreadConversations: 2,
+            wispCount: 1,
+            circleCount: 0,
+          },
+        },
+      }),
+      vi.fn(),
+      true,
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: "Using This computer. 2 unread in another environment. Switch connection",
+    });
+    expect(trigger.querySelector("[data-slot='other-env-indicator']")).toBeInTheDocument();
   });
 
   it("does not warn when leaving a server, whose Wisps keep working", async () => {

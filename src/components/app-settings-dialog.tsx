@@ -310,6 +310,8 @@ interface AppSettingsDialogProps {
   userProfile: UserProfileController;
   open: boolean;
   initialSection?: SettingsEntrySection;
+  /** Environment to preselect when opening an Environment panel. */
+  initialEnvironmentId?: string;
   /** Plugin to open directly when the dialog starts at Plugins. */
   initialPluginId?: SettingsPluginId;
   /** Workspace to show when the dialog starts at Storage. */
@@ -331,6 +333,7 @@ const navButton =
 function AppSettingsDialog({
   appMetadata,
   initialSection = "general",
+  initialEnvironmentId,
   initialPluginId,
   initialStorageConversationId,
   wisps,
@@ -363,8 +366,8 @@ function AppSettingsDialog({
     }
     setSection(initialSection);
     setMobileSectionOpen(initialSection !== "general");
-    setChosenEnvId(null);
-  }, [open, initialSection]);
+    setChosenEnvId(initialEnvironmentId ?? null);
+  }, [open, initialSection, initialEnvironmentId]);
 
   const openSection = useCallback((nextSection: SettingsSection) => {
     setSection(nextSection);
