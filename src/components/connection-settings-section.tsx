@@ -24,7 +24,7 @@ export function ConnectionSettingsSection() {
       {view?.canManage === false ? (
         <ServerSession view={view} />
       ) : view ? (
-        <ConnectionsPanel view={view} showBackgroundSetting />
+        <ConnectionsPanel view={view} />
       ) : error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

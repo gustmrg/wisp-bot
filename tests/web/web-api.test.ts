@@ -133,10 +133,6 @@ describe("browser WispApi", () => {
     // Desktop-only actions explain themselves instead of failing silently.
     expect(await api.checkForUpdates()).toMatchObject({ ok: false, error: { code: "unsupported" } });
     expect(await api.saveConnection({ kind: "url", name: "x", url: "https://x" })).toMatchObject({ ok: false });
-    expect(await api.setKeepLocalRunning({ enabled: false })).toMatchObject({
-      ok: false,
-      error: { code: "unsupported" },
-    });
     expect(await api.connectEnvironment({ id: "server" })).toMatchObject({ ok: false, error: { code: "unsupported" } });
     expect(await api.openWorkspaceFolder({ conversationId: "atlas" })).toMatchObject({
       ok: false,
@@ -355,10 +351,6 @@ describe("browser WispApi", () => {
     expect(
       await api.invokeConnectionOperation({ connectionId: "server", operation: "saveConnection" as never }),
     ).toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    expect(await api.setKeepLocalRunning({ enabled: false })).toMatchObject({
-      ok: false,
-      error: { code: "unsupported" },
-    });
     expect(await api.connectEnvironment({ id: "server" })).toMatchObject({
       ok: false,
       error: { code: "unsupported" },

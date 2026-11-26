@@ -1,5 +1,5 @@
-import type { ChatId, ChatViewCollection } from "@/chat-data";
-import type { BackendError } from "../../../shared/contracts";
+import type { ChatId, ChatListAction, ChatView, ChatViewCollection } from "@/chat-data";
+import type { BackendError, WispApi } from "../../../shared/contracts";
 import { getDefaultChatId } from "@/lib/chat-schema";
 
 export type ChatIdFactory = (chats: ChatViewCollection) => ChatId;
@@ -36,4 +36,32 @@ export function unseenFailures(
     if (error && chatId !== activeChatId && seen[chatId] !== error) failed[chatId] = true;
   }
   return failed;
+}
+
+/**
+ * A list action on a conversation of another environment, sent straight to
+ * it; its pushed changes update the list.
+ */
+export async function applyEnvironmentChatAction(
+  api: WispApi,
+  chat: ChatView,
+  action: ChatListAction,
+): Promise<boolean> {
+  const conversationId = chat.id;
+  try {
+    const result =
+      action === "pin" || action === "unpin"
+        ? await api.updateConversation({ conversationId, changes: { kind: chat.kind, pinned: action === "pin" } })
+        : action === "mute" || action === "unmute"
+          ? await api.updateConversation({
+              conversationId,
+              changes: { kind: chat.kind, notifyOnUpdatesEnabled: action === "unmute" },
+            })
+          : action === "read"
+            ? await api.markConversationRead({ conversationId })
+            : await api.markConversationUnread({ conversationId });
+    return result.ok;
+  } catch {
+    return false;
+  }
 }

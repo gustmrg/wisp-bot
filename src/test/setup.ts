@@ -4,6 +4,7 @@ import { afterEach, vi } from "vitest";
 
 import { clearComposerDrafts } from "@/lib/composer-drafts";
 import { clearKeptRecordings } from "@/lib/kept-voice-recordings";
+import { clearWorkspaceMemory } from "@/lib/workspace-memory";
 
 class MatchMediaMock implements MediaQueryList {
   readonly matches = false;
@@ -36,6 +37,7 @@ afterEach(() => {
   window.localStorage.clear();
   clearComposerDrafts();
   clearKeptRecordings();
+  clearWorkspaceMemory();
   document.documentElement.className = "";
   document.documentElement.removeAttribute("style");
 });

@@ -113,7 +113,6 @@ import type {
   ConnectionRequest,
   ConnectionsView,
   SaveConnectionRequest,
-  SetKeepLocalRunningRequest,
 } from "./connections.js";
 
 export const WISP_IPC_CHANNELS = {
@@ -254,7 +253,6 @@ export const WISP_IPC_CHANNELS = {
   cancelServerInstall: "wisp:connections:cancel-server-install",
   cancelConnection: "wisp:connections:cancel",
   answerSshPrompt: "wisp:connections:answer-ssh-prompt",
-  setKeepLocalRunning: "wisp:connections:keep-local-running",
   connectEnvironment: "wisp:connections:connect-environment",
   invokeConnectionOperation: "wisp:connections:invoke-operation",
   connectionsChanged: "wisp:connections:changed",
@@ -1115,8 +1113,6 @@ export interface WispApi {
   cancelConnection(): Promise<BackendResult<ConnectionsView>>;
   /** Answers the question OpenSSH asks while connecting, shown in `ConnectionsView.sshPrompt`. */
   answerSshPrompt(request: AnswerSshPromptRequest): Promise<BackendResult<ConnectionsView>>;
-  /** Sets whether Wisps on this computer stay running in the background when another server is active. */
-  setKeepLocalRunning(request: SetKeepLocalRunningRequest): Promise<BackendResult<ConnectionsView>>;
   /** Connects a saved environment in the background without changing the active connection. */
   connectEnvironment(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   /** Runs one allowlisted runtime operation against a specific connected environment. */

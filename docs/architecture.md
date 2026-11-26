@@ -46,13 +46,15 @@ URL.
 - `electron/connections/` manages the pool of server sessions. The main process
   routes active workspace operations to the chosen server, keeps **This
   computer**'s server and already-paired remote servers connected politely in
-  the background (with an opt-out toggle for keeping **This computer** running),
-  tracks live per-environment operational summaries, and allows scoped dispatch
+  the background, tracks live per-environment operational summaries, and allows scoped dispatch
   of allowlisted `RUNTIME_OPERATIONS` to any connected environment. It answers
   the local server's requests for screen actions (folders, file pickers, sign-in
   pages), and keeps only desktop concerns itself: updates and launch at login.
   The renderer's `ConnectionGate` remounts the app whenever the active server
-  changes. See [ADR 050](decisions/050-multi-environment-settings-and-team.md).
+  changes; `EnvironmentDirectoryProvider`, above that remount, keeps every
+  connected environment's conversations for the shared sidebar and **Team**. See
+  [ADR 050](decisions/050-multi-environment-settings-and-team.md) and
+  [ADR 051](decisions/051-unified-environment-sidebar.md).
 - The backend is the only writer of agent-driven conversation state (reply
   text, outgoing delivery status, context notices). After persisting a change it
   pushes what changed on `wisp:conversations:changed`: the conversation's

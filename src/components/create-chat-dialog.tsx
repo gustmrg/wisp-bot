@@ -1,11 +1,22 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 
 import type { ModelSelection } from "../../shared/contracts";
+import { LOCAL_CONNECTION_ID } from "../../shared/connections";
 import type { WispTemplateEntry } from "../../shared/wisp-template";
 import type { NewCircle, NewWisp, Wisp } from "@/chat-data";
 import { CreateCirclePanel } from "@/components/create-circle-panel";
 import { CreateWispPanel, type CreatePanelStatus } from "@/components/create-wisp-panel";
+import {
+  EnvironmentSelect,
+  environmentPhase,
+  isEnvironmentConnected,
+} from "@/components/settings/settings-environment-selector";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
+import { isMultiEnvironment, useEnvironmentDirectory } from "@/features/environments/environment-directory";
+import { newCircleConversation } from "@/hooks/use-conversations";
+import { createEnvironmentApi, WispApiProvider } from "@/lib/environment-api";
+import { openEnvironmentChat } from "@/lib/pending-environment-open";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,7 +38,7 @@ interface CreateChatDialogProps {
   ) => Promise<string | null>;
   /** Resolves true once the circle exists; with it, the dialog offers a circle as well as a Wisp. */
   onCreateCircle?: (circle: NewCircle) => Promise<boolean>;
-  /** The Wisps a new circle can gather. */
+  /** The Wisps a new circle can gather in the environment in use; others come from the environment directory. */
   wisps?: ReadonlyArray<Wisp>;
   /** Opens the templates, for someone who wants a Wisp ready for a job; without it they aren't offered. */
   onOpenTemplates?: () => void;
@@ -44,7 +55,11 @@ interface CreateChatDialogProps {
 const TITLES: Record<CreateKind, string> = { wisp: "Create new Wisp", circle: "Create new circle" };
 const IDLE: CreatePanelStatus = { description: "", saving: false, done: false };
 
-/** Creates a Wisp or a circle; both drafts are kept while switching between them, and dropped on close. */
+/**
+ * Creates a Wisp or a circle; both drafts are kept while switching between
+ * them, and dropped on close. With several environments it asks where, This
+ * computer first; one created elsewhere opens once the dialog closes.
+ */
 function CreateChatDialog({
   onCreate,
   onCreateCircle,
@@ -66,6 +81,57 @@ function CreateChatDialog({
   const status = statuses[kind];
   const switchable = Boolean(onCreateCircle) && !statuses.wisp.done;
 
+  const view = useContext(ActiveConnectionContext);
+  const directory = useEnvironmentDirectory();
+  const multiEnvironment = isMultiEnvironment(view);
+  const activeId = view?.activeId ?? LOCAL_CONNECTION_ID;
+  const defaultEnvironmentId =
+    multiEnvironment && isEnvironmentConnected(environmentPhase(view, LOCAL_CONNECTION_ID))
+      ? LOCAL_CONNECTION_ID
+      : activeId;
+  const [chosenEnvironmentId, setEnvironmentId] = useState<string | null>(null);
+  const environmentId = multiEnvironment ? (chosenEnvironmentId ?? defaultEnvironmentId) : activeId;
+  const elsewhere = environmentId !== activeId;
+  const environmentWisps = useMemo(() => {
+    if (!elsewhere) return wisps;
+    const entry = directory.environments.find(({ profile }) => profile.id === environmentId);
+    return Object.values(entry?.chats ?? {}).flatMap((chat) => (chat.kind === "wisp" ? [chat.wisp] : []));
+  }, [elsewhere, wisps, directory.environments, environmentId]);
+  /** A conversation created in another environment, opened once the dialog closes. */
+  const createdElsewhere = useRef<{ environmentId: string; conversationId: string } | null>(null);
+
+  const createWisp: CreateChatDialogProps["onCreate"] = async (wisp, options) => {
+    if (!elsewhere) return onCreate(wisp, options);
+    const id = crypto.randomUUID();
+    try {
+      const result = await createEnvironmentApi(environmentId, activeId).createWisp({
+        wisp: { ...wisp, id },
+        notifyOnUpdatesEnabled: options.notifyOnUpdatesEnabled,
+        model: options.model,
+      });
+      if (!result.ok) return null;
+    } catch {
+      return null;
+    }
+    createdElsewhere.current = { environmentId, conversationId: id };
+    return id;
+  };
+
+  const createCircle = async (circle: NewCircle): Promise<boolean> => {
+    if (!elsewhere) return onCreateCircle ? onCreateCircle(circle) : false;
+    const id = crypto.randomUUID();
+    try {
+      const result = await createEnvironmentApi(environmentId, activeId).createConversation({
+        conversation: newCircleConversation(id, circle),
+      });
+      if (!result.ok) return false;
+    } catch {
+      return false;
+    }
+    createdElsewhere.current = { environmentId, conversationId: id };
+    return true;
+  };
+
   useEffect(() => {
     if (!open || !initialKind) return;
     setKind(initialKind === "circle" && onCreateCircle ? "circle" : "wisp");
@@ -86,6 +152,10 @@ function CreateChatDialog({
     if (nextOpen) return;
     setKind("wisp");
     setDraftKey((key) => key + 1);
+    setEnvironmentId(null);
+    const created = createdElsewhere.current;
+    createdElsewhere.current = null;
+    if (created) void openEnvironmentChat(created.environmentId, created.conversationId);
   }
 
   return (
@@ -126,51 +196,67 @@ function CreateChatDialog({
                 </TabsList>
               ) : null}
             </div>
+            {multiEnvironment ? (
+              <div className="flex items-center gap-2 text-xs text-dim">
+                <span>Create in</span>
+                <EnvironmentSelect
+                  view={view}
+                  value={environmentId}
+                  connectedOnly
+                  onChange={(next) => {
+                    if (!saving) setEnvironmentId(next);
+                  }}
+                />
+              </div>
+            ) : null}
             <DialogDescription>
-              {kind === "circle" && wisps.length === 0
+              {kind === "circle" && environmentWisps.length === 0
                 ? "A circle gathers Wisps you already have."
                 : status.description}
             </DialogDescription>
           </DialogHeader>
-          <TabsContent className="flex min-h-0 flex-1 flex-col" value="wisp" keepMounted>
-            <CreateWispPanel
-              // Starting from another template is a new draft.
-              key={`${draftKey}:${template?.id ?? ""}`}
-              {...(template ? { template: template.template } : {})}
-              active={open}
-              onCreate={onCreate}
-              onStatusChange={onWispStatus}
-              onDone={() => setOpen(false)}
-              {...(onOpenTemplates
-                ? {
-                    onOpenTemplates: () => {
-                      setOpen(false);
-                      onOpenTemplates();
-                    },
-                  }
-                : {})}
-            />
-          </TabsContent>
-          {onCreateCircle ? (
-            <TabsContent className="flex min-h-0 flex-1 flex-col" value="circle" keepMounted>
-              {wisps.length > 0 ? (
-                <CreateCirclePanel
-                  key={draftKey}
-                  wisps={wisps}
-                  onCreate={onCreateCircle}
-                  onStatusChange={onCircleStatus}
-                  onDone={() => setOpen(false)}
-                />
-              ) : (
-                <div className="flex flex-col items-start gap-3 px-1">
-                  <p className="m-0 text-base text-dim">Create a Wisp first, then bring it into a circle.</p>
-                  <Button variant="outline" type="button" onClick={() => setKind("wisp")}>
-                    Create a Wisp
-                  </Button>
-                </div>
-              )}
+          <WispApiProvider connectionId={environmentId} activeConnectionId={activeId}>
+            <TabsContent className="flex min-h-0 flex-1 flex-col" value="wisp" keepMounted>
+              <CreateWispPanel
+                // Starting from another template is a new draft.
+                key={`${draftKey}:${template?.id ?? ""}`}
+                {...(template ? { template: template.template } : {})}
+                active={open}
+                onCreate={createWisp}
+                onStatusChange={onWispStatus}
+                onDone={() => setOpen(false)}
+                {...(onOpenTemplates
+                  ? {
+                      onOpenTemplates: () => {
+                        setOpen(false);
+                        onOpenTemplates();
+                      },
+                    }
+                  : {})}
+              />
             </TabsContent>
-          ) : null}
+            {onCreateCircle ? (
+              <TabsContent className="flex min-h-0 flex-1 flex-col" value="circle" keepMounted>
+                {environmentWisps.length > 0 ? (
+                  <CreateCirclePanel
+                    // A circle gathers Wisps of one environment, so another one starts a new draft.
+                    key={`${draftKey}:${environmentId}`}
+                    wisps={environmentWisps}
+                    onCreate={createCircle}
+                    onStatusChange={onCircleStatus}
+                    onDone={() => setOpen(false)}
+                  />
+                ) : (
+                  <div className="flex flex-col items-start gap-3 px-1">
+                    <p className="m-0 text-base text-dim">Create a Wisp first, then bring it into a circle.</p>
+                    <Button variant="outline" type="button" onClick={() => setKind("wisp")}>
+                      Create a Wisp
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+            ) : null}
+          </WispApiProvider>
         </Tabs>
       </DialogContent>
     </Dialog>

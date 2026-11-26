@@ -496,10 +496,9 @@ describe("desktop connections", () => {
     ).toBeUndefined();
   });
 
-  it("reopens the last connection on restart without starting Wisps on this computer when opted out", async () => {
+  it("reopens the last connection on restart and starts Wisps on this computer in the background", async () => {
     const { server, directory: serverDirectory } = await startServer();
     const first = await desktop();
-    await first.invoke(WISP_IPC_CHANNELS.setKeepLocalRunning, { enabled: false });
     const { profiles } = await first.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "url",
       name: "Home server",
@@ -515,7 +514,10 @@ describe("desktop connections", () => {
     expect((await second.view()).activeId).toBe(remote.id);
     await second.waitForPhase("connected");
     expect(await second.chats()).toEqual([]);
-    expect(second.localServer.starts).toBe(0);
+    await vi.waitFor(async () => expect((await second.view()).environments?.local?.phase).toBe("local"), {
+      timeout: 8_000,
+    });
+    expect(second.localServer.starts).toBe(1);
   });
 
   it("connects over SSH, pairing through wispctl on the server", async () => {
@@ -1241,11 +1243,10 @@ describe("remote access to this computer", () => {
     await expect(phone(`http://127.0.0.1:${port}`).pair(pairing.code, "Again")).rejects.toThrow();
   });
 
-  it("keeps Wisps on this computer running while another connection is chosen, until it is turned off", async () => {
+  it("keeps Wisps on this computer running while another connection is chosen, after remote access turns off", async () => {
     const { server } = await startServer();
     const app = await desktop();
     await app.waitForPhase("local");
-    await app.invoke(WISP_IPC_CHANNELS.setKeepLocalRunning, { enabled: false });
     const port = await freePort();
     // As if tailscale serve --bg had been run by hand.
     app.tailscale.serveByHand(port);
@@ -1262,7 +1263,8 @@ describe("remote access to this computer", () => {
     expect(await answers(port)).toBe(true);
 
     await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: false, port, publicOrigin: origin });
-    expect(app.localServer.server).toBeUndefined();
+    expect(app.localServer.server).toBeDefined();
+    expect(await answers(port)).toBe(false);
     // The address is kept for the next time it is turned on.
     expect(await app.invoke(WISP_IPC_CHANNELS.getRemoteAccess)).toMatchObject({
       enabled: false,

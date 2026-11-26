@@ -224,7 +224,6 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     cancelServerInstall: desktopOnly,
     cancelConnection: desktopOnly,
     answerSshPrompt: desktopOnly,
-    setKeepLocalRunning: desktopOnly,
     connectEnvironment: desktopOnly,
     invokeConnectionOperation: async (request: ConnectionOperationRequest) => {
       if (request?.connectionId !== WEB_CONNECTION_ID) {

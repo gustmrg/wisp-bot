@@ -138,7 +138,6 @@ const REQUIRED_WISP_METHODS = [
   "cancelServerInstall",
   "cancelConnection",
   "answerSshPrompt",
-  "setKeepLocalRunning",
   "connectEnvironment",
   "invokeConnectionOperation",
   "subscribeToConnections",

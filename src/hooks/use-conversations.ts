@@ -54,6 +54,14 @@ import {
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
 
+/** A new circle's stored conversation, the same in whichever environment it is created. */
+export function newCircleConversation(
+  id: string,
+  circle: NewCircle,
+): Parameters<WispApi["createConversation"]>[0]["conversation"] {
+  return { ...circle, id, preview: "Ready for the first task.", messages: [] };
+}
+
 /**
  * A page request in flight. Changes that arrive meanwhile are applied again
  * once the page lands, because the page may have been read before them.
@@ -560,16 +568,7 @@ export function useConversations(): ConversationsController {
     deleteWisp: useCallback((wispId: string) => enqueue(() => window.wisp.deleteWisp({ wispId })), [enqueue]),
     createCircle: useCallback(
       (id: string, circle: NewCircle) =>
-        enqueue(() =>
-          window.wisp.createConversation({
-            conversation: {
-              ...circle,
-              id,
-              preview: "Ready for the first task.",
-              messages: [],
-            },
-          }),
-        ),
+        enqueue(() => window.wisp.createConversation({ conversation: newCircleConversation(id, circle) })),
       [enqueue],
     ),
     update: useCallback(

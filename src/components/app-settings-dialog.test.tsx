@@ -37,7 +37,6 @@ function multiEnvView(overrides: Partial<ConnectionsView> = {}): ConnectionsView
     ],
     status: { profileId: activeId, phase: activeId === "local" ? "local" : "connected", epoch: 1 },
     secureStorageAvailable: true,
-    keepLocalRunning: true,
     environments: {
       local: {
         profileId: "local",

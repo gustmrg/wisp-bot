@@ -190,8 +190,6 @@ export interface ConnectionsView {
   status: ConnectionStatus;
   /** Whether pairing credentials are kept across restarts on this device. */
   secureStorageAvailable: boolean;
-  /** Whether Wisps on this computer stay running in the background when another server is active. */
-  keepLocalRunning?: boolean;
   /** Live operational summaries for each saved environment, keyed by profile ID. */
   environments?: Record<string, EnvironmentSummary>;
   /**
@@ -250,10 +248,6 @@ export interface ActivateConnectionRequest {
   pairingCode?: string;
   /** The name to pair under, shown in `wispctl devices`; the browser app asks for it when pairing from a link. */
   deviceName?: string;
-}
-
-export interface SetKeepLocalRunningRequest {
-  enabled: boolean;
 }
 
 export interface ConnectionOperationRequest {
