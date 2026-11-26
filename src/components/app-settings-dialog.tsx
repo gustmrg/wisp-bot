@@ -3,7 +3,7 @@ import { isBrowserApp } from "@/lib/platform";
 import { UserProfileSettings } from "@/components/user-profile-settings";
 import { UserMemorySettings } from "@/components/wisp-memory-settings";
 import type { UserProfileController } from "@/hooks/use-user-profile";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   BarChart3Icon,
   BellIcon,
@@ -28,6 +28,7 @@ import {
   SettingsIcon,
   ShieldCheckIcon,
   SmartphoneIcon,
+  UserIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -52,6 +53,13 @@ import { WispAvatar } from "@/components/chat-avatar";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import {
+  environmentPhase,
+  isEnvironmentConnected,
+  OfflineEnvironmentPanel,
+  SettingsEnvironmentContext,
+  type SettingsEnvironmentContextValue,
+} from "@/components/settings/settings-environment-selector";
+import {
   SettingsCard,
   SettingsGroup,
   SettingsRow,
@@ -60,43 +68,49 @@ import {
   SettingsRowTitle,
   SoonBadge,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
+import { useSettingsEnvironmentData } from "@/components/settings/use-settings-environment-data";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import type { AppPreferences, ChatListOrder, ReplyPace } from "@/lib/app-preferences";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { createWispFromTemplate, type TemplateUseResult } from "@/lib/create-wisp-from-template";
+import { createEnvironmentApi, WispApiProvider } from "@/lib/environment-api";
 import { normalizeTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../shared/contracts";
 import type { SettingsPluginId } from "@/lib/plugin-access";
 import type { WispOption } from "@/lib/plugin-access";
 import type { ChatView } from "@/chat-data";
-import type { TemplateUseResult } from "@/lib/create-wisp-from-template";
 import type { WispTemplateEntry } from "../../shared/wisp-template";
 
 type SettingsSection =
   | "general"
   | "notifications"
+  | "shortcuts"
   | "connections"
   | "remote-access"
+  | "about"
+  | "profile"
   | "model"
   | "providers"
   | "voice"
   | "plugins"
   | "mcp"
   | "permissions"
-  | "shortcuts"
-  | "about"
-  | "usage"
-  | "storage"
+  | "templates"
   | "jobs"
-  | "templates";
+  | "storage"
+  | "usage";
+
 /** Sections other parts of the app can open the dialog at. */
 export type SettingsEntrySection =
   | "general"
+  | "profile"
   | "connections"
   | "model"
   | "providers"
@@ -119,8 +133,22 @@ const NAV_ITEMS: ReadonlyArray<
     section: "general",
     panelId: "general-settings-panel",
     label: "General",
-    description: "You, what your Wisps know about you, and how Wisp looks",
+    description: "Appearance, conversation list, and date and time",
     icon: SettingsIcon,
+  },
+  {
+    section: "notifications",
+    panelId: "notification-settings-panel",
+    label: "Notifications",
+    description: "Sounds and alerts for new messages",
+    icon: BellIcon,
+  },
+  {
+    section: "shortcuts",
+    panelId: "shortcut-settings-panel",
+    label: "Shortcuts",
+    description: "Keyboard shortcuts for common actions",
+    icon: KeyboardIcon,
   },
   {
     section: "connections",
@@ -135,6 +163,20 @@ const NAV_ITEMS: ReadonlyArray<
     label: "Remote access",
     description: "Use this computer's Wisps from your phone",
     icon: SmartphoneIcon,
+  },
+  {
+    section: "about",
+    panelId: "about-settings-panel",
+    label: "About",
+    description: "Version, release notes, and support",
+    icon: InfoIcon,
+  },
+  {
+    section: "profile",
+    panelId: "profile-settings-panel",
+    label: "Profile & memory",
+    description: "Your name and what every Wisp knows about you",
+    icon: UserIcon,
   },
   {
     section: "model",
@@ -193,13 +235,6 @@ const NAV_ITEMS: ReadonlyArray<
     icon: CalendarClockIcon,
   },
   {
-    section: "usage",
-    panelId: "usage-settings-panel",
-    label: "Token usage",
-    description: "How many tokens each Wisp used",
-    icon: BarChart3Icon,
-  },
-  {
     section: "storage",
     panelId: "storage-settings-panel",
     label: "Storage",
@@ -207,35 +242,33 @@ const NAV_ITEMS: ReadonlyArray<
     icon: HardDriveIcon,
   },
   {
-    section: "notifications",
-    panelId: "notification-settings-panel",
-    label: "Notifications",
-    description: "Sounds and alerts for new messages",
-    icon: BellIcon,
-  },
-  {
-    section: "shortcuts",
-    panelId: "shortcut-settings-panel",
-    label: "Shortcuts",
-    description: "Keyboard shortcuts for common actions",
-    icon: KeyboardIcon,
-  },
-  {
-    section: "about",
-    panelId: "about-settings-panel",
-    label: "About",
-    description: "Version, release notes, and support",
-    icon: InfoIcon,
+    section: "usage",
+    panelId: "usage-settings-panel",
+    label: "Token usage",
+    description: "How many tokens each Wisp used",
+    icon: BarChart3Icon,
   },
 ];
 
-/** How the navigation groups the sections, on the desktop and under the profile card on mobile. */
+/** Clean App vs Environment navigation split, shared on desktop and mobile. */
 const NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
-  { label: "Account and server", sections: ["general", "connections", "remote-access"] },
-  { label: "Wisps", sections: ["model", "providers", "voice", "plugins", "mcp", "permissions", "templates", "jobs"] },
-  { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
-  { label: "Storage and data", sections: ["storage", "usage"] },
-  { label: "App", sections: ["about"] },
+  { label: "App", sections: ["general", "notifications", "shortcuts", "connections", "remote-access", "about"] },
+  {
+    label: "Environment",
+    sections: [
+      "profile",
+      "model",
+      "providers",
+      "voice",
+      "plugins",
+      "mcp",
+      "permissions",
+      "templates",
+      "jobs",
+      "storage",
+      "usage",
+    ],
+  },
 ];
 
 const REPLY_PACE_OPTIONS: ReadonlyArray<{ value: ReplyPace; label: string }> = [
@@ -319,12 +352,98 @@ function AppSettingsDialog({
 }: AppSettingsDialogProps) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mobileSectionOpen, setMobileSectionOpen] = useState(initialSection !== "general");
+  const [chosenEnvId, setChosenEnvId] = useState<string | null>(null);
+  const connectionsView = useContext(ActiveConnectionContext);
+  const activeId = connectionsView?.activeId ?? "";
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setChosenEnvId(null);
+      return;
+    }
     setSection(initialSection);
     setMobileSectionOpen(initialSection !== "general");
+    setChosenEnvId(null);
   }, [open, initialSection]);
+
+  const openSection = useCallback((nextSection: SettingsSection) => {
+    setSection(nextSection);
+    setMobileSectionOpen(true);
+  }, []);
+
+  const hasChosenProfile =
+    chosenEnvId !== null && Boolean(connectionsView?.profiles.some(({ id }) => id === chosenEnvId));
+  const selectedEnvironmentId = hasChosenProfile ? chosenEnvId : activeId;
+  const selectedProfile = connectionsView?.profiles.find(({ id }) => id === selectedEnvironmentId);
+  const selectedPhase = connectionsView ? environmentPhase(connectionsView, selectedEnvironmentId) : "local";
+  const isSelectedConnected = !connectionsView || isEnvironmentConnected(selectedPhase);
+  const isActiveEnvironment = !connectionsView || selectedEnvironmentId === activeId;
+
+  const selectedEnvApi = useMemo(
+    () => createEnvironmentApi(selectedEnvironmentId || undefined, activeId || undefined),
+    [selectedEnvironmentId, activeId],
+  );
+
+  const settingsEnvContext = useMemo<SettingsEnvironmentContextValue | null>(
+    () =>
+      connectionsView
+        ? {
+            connectionsView,
+            selectedEnvironmentId,
+            activeEnvironmentId: activeId,
+            selectedProfile,
+            selectedPhase,
+            isSelectedConnected,
+            isActiveEnvironment,
+            onSelectEnvironment: setChosenEnvId,
+            onOpenConnections: () => openSection("connections"),
+          }
+        : null,
+    [
+      connectionsView,
+      selectedEnvironmentId,
+      activeId,
+      selectedProfile,
+      selectedPhase,
+      isSelectedConnected,
+      isActiveEnvironment,
+      openSection,
+    ],
+  );
+
+  const envData = useSettingsEnvironmentData({
+    open,
+    isActiveEnvironment,
+    isSelectedConnected,
+    selectedEnvironmentId,
+    api: selectedEnvApi,
+    activeWisps: wisps,
+    activeConversations: conversations,
+    activeUserProfile: userProfile,
+  });
+
+  const handleUseTemplate = useCallback(
+    async (entry: WispTemplateEntry): Promise<TemplateUseResult> => {
+      if (isActiveEnvironment && onUseTemplate) return onUseTemplate(entry);
+      const takenNames = (envData.wisps ?? []).map(({ name }) => name);
+      return createWispFromTemplate(
+        entry.template,
+        takenNames,
+        async (wisp, options) => {
+          const id = crypto.randomUUID();
+          const result = await selectedEnvApi.createWisp({
+            wisp: { id, ...wisp },
+            notifyOnUpdatesEnabled: options.notifyOnUpdatesEnabled,
+            model: options.model ?? null,
+          });
+          return result.ok ? id : null;
+        },
+        selectedEnvApi,
+      );
+    },
+    [isActiveEnvironment, onUseTemplate, envData.wisps, selectedEnvApi],
+  );
+
   const showOverview = mobile && !mobileSectionOpen;
   const mobileHeadingRef = useRef<HTMLHeadingElement>(null);
   // Updates, launch at login, and remote access belong to the desktop app.
@@ -332,28 +451,25 @@ function AppSettingsDialog({
   const navItems = browserApp
     ? NAV_ITEMS.filter((item) => !("section" in item) || item.section !== "remote-access")
     : NAV_ITEMS;
-  const sectionTitles = {
+  const sectionTitles: Record<SettingsSection, string> = {
     general: "General",
     notifications: "Notifications",
+    shortcuts: "Shortcuts",
     connections: "Connections",
     "remote-access": "Remote access",
+    about: "About",
+    profile: "Profile & memory",
     model: "AI Model",
     providers: "Providers",
     voice: "Voice input",
-    shortcuts: "Shortcuts",
     plugins: "Plugins",
     mcp: "MCP servers",
     permissions: "Permissions",
-    about: "About",
-    usage: "Token usage",
-    storage: "Storage",
-    jobs: "Jobs",
     templates: "Templates",
+    jobs: "Jobs",
+    storage: "Storage",
+    usage: "Token usage",
   };
-  function openSection(nextSection: typeof section) {
-    setSection(nextSection);
-    setMobileSectionOpen(true);
-  }
   const focusSection = mobile && open ? (showOverview ? "Settings" : sectionTitles[section]) : null;
   useEffect(() => {
     if (focusSection) mobileHeadingRef.current?.focus();
@@ -432,12 +548,27 @@ function AppSettingsDialog({
     if (!result.ok) setUpdateState((current) => ({ ...current, phase: "error", message: result.error.message }));
   }
 
+  const envKey = selectedEnvironmentId || "active";
+  function renderEnvironmentPanel(panelId: string, titleId: string, title: string, content: ReactNode) {
+    if (!isSelectedConnected) {
+      return <OfflineEnvironmentPanel key={envKey} panelId={panelId} titleId={titleId} title={title} />;
+    }
+    return (
+      <WispApiProvider key={envKey} api={selectedEnvApi}>
+        {content}
+      </WispApiProvider>
+    );
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen);
-        if (!nextOpen) setSection("general");
+        if (!nextOpen) {
+          setSection("general");
+          setChosenEnvId(null);
+        }
       }}
     >
       <DialogContent
@@ -478,7 +609,7 @@ function AppSettingsDialog({
               <MobileSettingsProfile
                 currentUser={currentUser}
                 appVersion={appMetadata.version}
-                onOpenProfile={() => openSection("general")}
+                onOpenProfile={() => openSection("profile")}
                 onOpenConnection={() => openSection("connections")}
               />
               {wisps?.length ? (
@@ -530,31 +661,135 @@ function AppSettingsDialog({
             </div>
           ))}
         </nav>
-        {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
-        {section === "jobs" && open && !showOverview ? <JobsSettingsSection wisps={wisps} /> : null}
-        {section === "templates" && open && !showOverview ? (
-          <TemplateSettingsSection
-            onUseTemplate={onUseTemplate}
-            onCustomizeTemplate={onCustomizeTemplate}
-            onOpenModelSettings={() => openSection("model")}
-            onClose={() => onOpenChange(false)}
-          />
-        ) : null}
-        {section === "storage" && open && !showOverview ? (
-          <StorageSettingsSection
-            key={initialStorageConversationId ?? "all"}
-            initialConversationId={initialStorageConversationId}
-            conversations={conversations}
-          />
-        ) : null}
-        {section === "plugins" && open && !showOverview ? (
-          <PluginSettingsSection
-            wisps={wisps}
-            initialPluginId={initialPluginId}
-            onOpenMcpSettings={() => openSection("mcp")}
-          />
-        ) : null}
-        {section === "mcp" && open && !showOverview ? <McpSettingsSection wisps={wisps} /> : null}
+        <SettingsEnvironmentContext.Provider value={settingsEnvContext}>
+          {section === "profile" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "profile-settings-panel",
+                "profile-settings-title",
+                "Profile & memory",
+                <section
+                  className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
+                  id="profile-settings-panel"
+                  aria-labelledby="profile-settings-title"
+                >
+                  <SettingsPanelTitle id="profile-settings-title" scope="environment" className="mb-[22px]">
+                    Profile &amp; memory
+                  </SettingsPanelTitle>
+                  <div className="animate-panel-in">
+                    {envData.userProfile.loading ? (
+                      <p role="status">Loading profile…</p>
+                    ) : (
+                      <UserProfileSettings key={envKey} controller={envData.userProfile}>
+                        <UserMemorySettings />
+                      </UserProfileSettings>
+                    )}
+                  </div>
+                </section>,
+              )
+            : null}
+          {section === "usage" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "usage-settings-panel",
+                "usage-settings-title",
+                "Token usage",
+                <UsageSettingsSection wisps={envData.wisps} />,
+              )
+            : null}
+          {section === "jobs" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "jobs-settings-panel",
+                "jobs-settings-title",
+                "Jobs",
+                <JobsSettingsSection wisps={envData.wisps} />,
+              )
+            : null}
+          {section === "templates" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "template-settings-panel",
+                "template-settings-title",
+                "Templates",
+                <TemplateSettingsSection
+                  onUseTemplate={onUseTemplate ? handleUseTemplate : undefined}
+                  onCustomizeTemplate={isActiveEnvironment ? onCustomizeTemplate : undefined}
+                  onOpenModelSettings={() => openSection("model")}
+                  onClose={() => onOpenChange(false)}
+                />,
+              )
+            : null}
+          {section === "storage" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "storage-settings-panel",
+                "storage-settings-title",
+                "Storage",
+                <StorageSettingsSection
+                  key={`${envKey}:${isActiveEnvironment ? (initialStorageConversationId ?? "all") : "all"}`}
+                  initialConversationId={isActiveEnvironment ? initialStorageConversationId : undefined}
+                  conversations={envData.conversations}
+                />,
+              )
+            : null}
+          {section === "plugins" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "plugin-settings-panel",
+                "plugin-settings-title",
+                "Plugins",
+                <PluginSettingsSection
+                  wisps={envData.wisps}
+                  initialPluginId={isActiveEnvironment ? initialPluginId : undefined}
+                  onOpenMcpSettings={() => openSection("mcp")}
+                />,
+              )
+            : null}
+          {section === "mcp" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "mcp-settings-panel",
+                "mcp-settings-title",
+                "MCP servers",
+                <McpSettingsSection wisps={envData.wisps} />,
+              )
+            : null}
+          {section === "permissions" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "permission-settings-panel",
+                "permission-settings-title",
+                "Permissions",
+                isActiveEnvironment ? (
+                  <PermissionSettingsSection preferences={preferences} onPreferencesChange={onPreferencesChange} />
+                ) : (
+                  <PermissionSettingsSection />
+                ),
+              )
+            : null}
+          {section === "model" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "model-settings-panel",
+                "model-settings-title",
+                "AI Model",
+                <ModelSettingsSection onOpenProviders={() => openSection("providers")} />,
+              )
+            : null}
+          {section === "providers" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "provider-settings-panel",
+                "provider-settings-title",
+                "Providers",
+                <ProviderSettingsSection />,
+              )
+            : null}
+          {section === "voice" && open && !showOverview
+            ? renderEnvironmentPanel(
+                "voice-settings-panel",
+                "voice-settings-title",
+                "Voice input",
+                <VoiceSettingsSection
+                  active
+                  preferences={preferences}
+                  onPreferencesChange={onPreferencesChange}
+                  onOpenProviders={() => openSection("providers")}
+                />,
+              )
+            : null}
+        </SettingsEnvironmentContext.Provider>
         {section === "connections" && open && !showOverview ? <ConnectionSettingsSection /> : null}
         {section === "remote-access" && open && !showOverview && !browserApp ? <RemoteAccessSettingsSection /> : null}
         <section
@@ -567,14 +802,7 @@ function AppSettingsDialog({
             General
           </h2>
           <div className="animate-panel-in">
-            {userProfile.loading ? (
-              <p role="status">Loading profile…</p>
-            ) : (
-              <UserProfileSettings controller={userProfile}>
-                <UserMemorySettings />
-              </UserProfileSettings>
-            )}
-            <SettingsGroup label="Application" note={<SettingsScopeNote scope="device" />}>
+            <SettingsGroup label="Application">
               <SettingsCard variant="stacked">
                 <SettingsRow>
                   <SettingsRowCopy>
@@ -664,9 +892,6 @@ function AppSettingsDialog({
             </p>
           </div>
         </section>
-        {section === "permissions" && open && !showOverview ? (
-          <PermissionSettingsSection preferences={preferences} onPreferencesChange={onPreferencesChange} />
-        ) : null}
         {section === "notifications" && open && !showOverview ? (
           <NotificationSettingsSection
             preferences={preferences}
@@ -675,16 +900,6 @@ function AppSettingsDialog({
             persistenceError={persistenceError}
           />
         ) : null}
-        {section === "model" && open && !showOverview ? (
-          <ModelSettingsSection onOpenProviders={() => openSection("providers")} />
-        ) : null}
-        {section === "providers" && open && !showOverview ? <ProviderSettingsSection /> : null}
-        <VoiceSettingsSection
-          active={open && section === "voice" && !showOverview}
-          preferences={preferences}
-          onPreferencesChange={onPreferencesChange}
-          onOpenProviders={() => openSection("providers")}
-        />
         <ShortcutSettingsSection
           active={section === "shortcuts" && !showOverview}
           preferences={preferences}

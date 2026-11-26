@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { useWispApi } from "@/lib/environment-api";
 import type { BackendResult } from "../../shared/contracts";
 import type { Job, JobRun, JobsView } from "../../shared/jobs";
 
@@ -21,16 +22,17 @@ export interface JobsController {
 
 /** The backend's jobs, kept current by its change events (ADR 019). */
 export function useJobs(): JobsController {
+  const api = useWispApi();
   const [available, setAvailable] = useState(false);
   const [jobs, setJobs] = useState<ReadonlyArray<Job>>([]);
 
   useEffect(() => {
     let cancelled = false;
-    const unsubscribe = window.wisp.subscribeToJobs((view) => {
+    const unsubscribe = api.subscribeToJobs((view) => {
       setAvailable(true);
       setJobs(view.jobs);
     });
-    void window.wisp.getJobs().then(
+    void api.getJobs().then(
       (result) => {
         if (cancelled) return;
         setAvailable(result.ok);
@@ -44,7 +46,7 @@ export function useJobs(): JobsController {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [api]);
 
   const run = useCallback(async (call: () => Promise<BackendResult<JobsView>>) => {
     try {
@@ -57,22 +59,25 @@ export function useJobs(): JobsController {
     }
   }, []);
 
-  const pause = useCallback((jobId: string) => run(() => window.wisp.pauseJob({ jobId })), [run]);
-  const resume = useCallback((jobId: string) => run(() => window.wisp.resumeJob({ jobId })), [run]);
-  const runNow = useCallback((jobId: string) => run(() => window.wisp.runJobNow({ jobId })), [run]);
-  const remove = useCallback((jobId: string) => run(() => window.wisp.deleteJob({ jobId })), [run]);
+  const pause = useCallback((jobId: string) => run(() => api.pauseJob({ jobId })), [api, run]);
+  const resume = useCallback((jobId: string) => run(() => api.resumeJob({ jobId })), [api, run]);
+  const runNow = useCallback((jobId: string) => run(() => api.runJobNow({ jobId })), [api, run]);
+  const remove = useCallback((jobId: string) => run(() => api.deleteJob({ jobId })), [api, run]);
   const setMemory = useCallback(
-    (jobId: string, useMemory: boolean) => run(() => window.wisp.setJobMemory({ jobId, useMemory })),
-    [run],
+    (jobId: string, useMemory: boolean) => run(() => api.setJobMemory({ jobId, useMemory })),
+    [api, run],
   );
-  const loadRuns = useCallback(async (jobId: string) => {
-    try {
-      const result = await window.wisp.getJobRuns({ jobId });
-      return result.ok ? result.value.runs : result.error.message;
-    } catch {
-      return "The job's runs could not be loaded.";
-    }
-  }, []);
+  const loadRuns = useCallback(
+    async (jobId: string) => {
+      try {
+        const result = await api.getJobRuns({ jobId });
+        return result.ok ? result.value.runs : result.error.message;
+      } catch {
+        return "The job's runs could not be loaded.";
+      }
+    },
+    [api],
+  );
 
   return { available, jobs, pause, resume, runNow, remove, setMemory, loadRuns };
 }

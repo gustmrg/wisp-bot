@@ -5,6 +5,7 @@ import { AccessRow } from "@/components/access-row";
 import { Wisp } from "@/components/wisp";
 import { SettingsGroup } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { useWispApi } from "@/lib/environment-api";
 import type { WispOption } from "@/lib/plugin-access";
 
 const MCP_ACCESS_OPTIONS: ReadonlyArray<{ value: McpAccess; label: string }> = [
@@ -26,6 +27,7 @@ export interface McpAccessIndex {
  * revokes grants or moves the access revision (identity, enablement, tools).
  */
 export function useMcpAccessIndex(wisps: ReadonlyArray<WispOption>, serversKey: string): McpAccessIndex {
+  const api = useWispApi();
   const [views, setViews] = useState<Record<string, WispMcpAccessView>>({});
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -35,7 +37,7 @@ export function useMcpAccessIndex(wisps: ReadonlyArray<WispOption>, serversKey: 
   useEffect(() => {
     let cancelled = false;
     const conversationIds = ids ? ids.split("\n") : [];
-    void Promise.all(conversationIds.map((conversationId) => window.wisp.getWispMcpAccess({ conversationId })))
+    void Promise.all(conversationIds.map((conversationId) => api.getWispMcpAccess({ conversationId })))
       .then((results) => {
         if (cancelled) return;
         const next: Record<string, WispMcpAccessView> = {};
@@ -49,7 +51,7 @@ export function useMcpAccessIndex(wisps: ReadonlyArray<WispOption>, serversKey: 
     return () => {
       cancelled = true;
     };
-  }, [ids, serversKey, attempt]);
+  }, [api, ids, serversKey, attempt]);
 
   const reload = useCallback(() => setAttempt((current) => current + 1), []);
   const update = useCallback(
@@ -101,6 +103,7 @@ export function McpWispAccessPanel({
   wisps: ReadonlyArray<WispOption>;
   index: McpAccessIndex;
 }) {
+  const api = useWispApi();
   const formId = useId();
   const [draft, setDraft] = useState<Record<string, McpAccess>>({});
   const [saving, setSaving] = useState(false);
@@ -123,7 +126,7 @@ export function McpWispAccessPanel({
     setMessage("");
     try {
       for (const wisp of changes) {
-        const result = await window.wisp.saveWispMcpAccess(
+        const result = await api.saveWispMcpAccess(
           applyMcpChoice(index.views[wisp.id]!, server.serverId, draft[wisp.id]!),
         );
         if (!result.ok) {

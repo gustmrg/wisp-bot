@@ -17,6 +17,7 @@ import {
 import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { SecretInput } from "@/components/ui/secret-input";
+import { useWispApi } from "@/lib/environment-api";
 import { providerLogo } from "@/lib/provider-logo";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code";
@@ -72,6 +73,7 @@ function ProviderLogo({ id, name }: { id: string; name: string }) {
 
 /** Lists the providers that are connected, so a key never has to be entered along with a model choice. */
 function ProviderSettingsSection() {
+  const api = useWispApi();
   const [view, setView] = useState<AiSettingsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -80,13 +82,13 @@ function ProviderSettingsSection() {
 
   const load = useCallback(async (): Promise<void> => {
     try {
-      const result = await window.wisp.getAiSettings();
+      const result = await api.getAiSettings();
       if (result.ok) setView(result.value);
       else setError(result.error.message);
     } catch {
       setError("Could not load providers.");
     }
-  }, []);
+  }, [api]);
 
   useEffect(() => {
     void load();
@@ -98,7 +100,7 @@ function ProviderSettingsSection() {
   useEffect(() => {
     if (!updating) return;
     const timer = setInterval(() => {
-      void window.wisp
+      void api
         .getAiSettings()
         .then((result) => {
           if (result.ok) setView(result.value);
@@ -106,13 +108,13 @@ function ProviderSettingsSection() {
         .catch(() => undefined);
     }, SIGN_IN_POLL_MS);
     return () => clearInterval(timer);
-  }, [updating]);
+  }, [api, updating]);
 
   const signInWaiting = view?.providerSignIn?.status === "waiting";
   useEffect(() => {
     if (!signInWaiting) return;
     const timer = setInterval(() => {
-      void window.wisp
+      void api
         .getAiSettings()
         .then((result) => {
           if (!result.ok) return;
@@ -125,7 +127,7 @@ function ProviderSettingsSection() {
         .catch(() => undefined);
     }, SIGN_IN_POLL_MS);
     return () => clearInterval(timer);
-  }, [signInWaiting]);
+  }, [api, signInWaiting]);
 
   const entries = view ? providerEntries(view) : [];
   const connected = entries.filter(({ credentialConfigured }) => credentialConfigured);
@@ -270,6 +272,7 @@ function ProviderCredentialForm({
   onCredentialChange: (view: AiSettingsView, message: string | null) => void;
   onCheckAgain: () => void;
 }) {
+  const api = useWispApi();
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -282,7 +285,7 @@ function ProviderCredentialForm({
         onCheckAgain={onCheckAgain}
         onUpdate={async () => {
           try {
-            const result = await window.wisp.updateClaudeCode();
+            const result = await api.updateClaudeCode();
             if (!result.ok) return result.error.message;
             onViewChange(result.value);
             return null;
@@ -301,7 +304,7 @@ function ProviderCredentialForm({
   const voice = voiceProvider(entry.id);
 
   async function run(
-    request: () => ReturnType<typeof window.wisp.saveProviderKey>,
+    request: () => ReturnType<typeof api.saveProviderKey>,
     message: string | null,
     failure: string,
   ): Promise<void> {
@@ -320,12 +323,12 @@ function ProviderCredentialForm({
 
   const removal = () =>
     run(
-      () => window.wisp.removeProviderCredential({ providerId: entry.id }),
+      () => api.removeProviderCredential({ providerId: entry.id }),
       null,
       `Could not remove the ${entry.name} credential.`,
     );
 
-  async function signInStep(request: () => ReturnType<typeof window.wisp.startProviderSignIn>, failure: string) {
+  async function signInStep(request: () => ReturnType<typeof api.startProviderSignIn>, failure: string) {
     setError(null);
     try {
       const result = await request();
@@ -345,19 +348,13 @@ function ProviderCredentialForm({
           signIn={view.providerSignIn?.providerId === entry.id ? view.providerSignIn : null}
           disabled={saving || !view.secureStorageAvailable}
           onStart={() =>
-            void signInStep(
-              () => window.wisp.startProviderSignIn({ providerId: entry.id }),
-              "Could not start the sign-in.",
-            )
+            void signInStep(() => api.startProviderSignIn({ providerId: entry.id }), "Could not start the sign-in.")
           }
           onCancel={() =>
-            void signInStep(
-              () => window.wisp.cancelProviderSignIn({ providerId: entry.id }),
-              "Could not cancel the sign-in.",
-            )
+            void signInStep(() => api.cancelProviderSignIn({ providerId: entry.id }), "Could not cancel the sign-in.")
           }
           onFinish={async (redirectUrl) => {
-            const result = await window.wisp.finishProviderSignIn({ providerId: entry.id, redirectUrl });
+            const result = await api.finishProviderSignIn({ providerId: entry.id, redirectUrl });
             if (!result.ok) return result.error.message;
             onCredentialChange(result.value, null);
             return undefined;
@@ -410,7 +407,7 @@ function ProviderCredentialForm({
             disabled={saving || !apiKey.trim() || !view.secureStorageAvailable || !canSaveKey}
             onClick={() =>
               void run(
-                () => window.wisp.saveProviderKey({ providerId: entry.id, apiKey }),
+                () => api.saveProviderKey({ providerId: entry.id, apiKey }),
                 `${entry.name} API key saved.`,
                 `Could not save the ${entry.name} API key.`,
               )

@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
 import { AppSettingsDialog } from "@/components/app-settings-dialog";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
+import type { ConnectionsView } from "../../shared/connections";
 import type { UpdateState } from "../../shared/contracts";
 import { PLUGIN_CATALOG } from "../../shared/plugins";
 
@@ -14,7 +16,6 @@ const currentUser: CurrentUser = {
   initials: "AL",
 };
 
-/** General shows what every Wisp knows about the person. */
 const memoryApi = {
   getMemory: vi.fn(async () => ({ ok: true as const, value: { entries: [], usage: [] } })),
   subscribeToAgentEvents: vi.fn(() => () => undefined),
@@ -25,6 +26,41 @@ const appMetadata: AppMetadata = {
   packageName: "example-desktop",
   version: "9.8.7",
 };
+
+function multiEnvView(overrides: Partial<ConnectionsView> = {}): ConnectionsView {
+  const activeId = overrides.activeId ?? "local";
+  return {
+    activeId,
+    profiles: [
+      { id: "local", kind: "local", name: "This computer", paired: true },
+      { id: "prod", kind: "url", name: "Prod server", url: "https://test-host.invalid", paired: true },
+    ],
+    status: { profileId: activeId, phase: activeId === "local" ? "local" : "connected", epoch: 1 },
+    secureStorageAvailable: true,
+    keepLocalRunning: true,
+    environments: {
+      local: {
+        profileId: "local",
+        phase: "local",
+        workingWisps: 0,
+        pendingApprovals: 0,
+        unreadConversations: 0,
+        wispCount: 1,
+        circleCount: 0,
+      },
+      prod: {
+        profileId: "prod",
+        phase: "connected",
+        workingWisps: 0,
+        pendingApprovals: 0,
+        unreadConversations: 0,
+        wispCount: 1,
+        circleCount: 0,
+      },
+    },
+    ...overrides,
+  };
+}
 
 describe("AppSettingsDialog metadata", () => {
   it("opens plugins lazily and discards an unsaved key when leaving the section", async () => {
@@ -140,12 +176,14 @@ describe("AppSettingsDialog metadata", () => {
     expect(getMcpSettings).toHaveBeenCalledTimes(1);
   });
 
-  it("renders injected user and application metadata", async () => {
+  it("renders Profile & memory under Environment and keeps General device-local", async () => {
     const user = userEvent.setup();
+    const getMemory = vi.fn(async () => ({ ok: true as const, value: { entries: [], usage: [] } }));
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
         ...memoryApi,
+        getMemory,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
@@ -173,10 +211,17 @@ describe("AppSettingsDialog metadata", () => {
       />,
     );
 
+    // General no longer contains Name or About you.
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    expect(getMemory).not.toHaveBeenCalled();
+    expect(screen.getByRole("switch", { name: "Launch at login" })).toBeDisabled();
+
+    // Profile & memory lives under Environment.
+    await user.click(screen.getByRole("button", { name: "Profile & memory" }));
     expect(screen.getByLabelText("Name")).toHaveValue("Ada");
-    // What every Wisp knows about the person sits under the name, outside any Wisp.
     expect(await screen.findByRole("region", { name: "About you" })).toBeVisible();
-    expect(memoryApi.getMemory).toHaveBeenCalledWith({});
+    expect(getMemory).toHaveBeenCalledWith({});
+
     expect(screen.getByRole("button", { name: "Notifications" })).toBeEnabled();
     expect(screen.queryByRole("switch", { name: "Notification sounds" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Notifications" }));
@@ -185,7 +230,6 @@ describe("AppSettingsDialog metadata", () => {
     await user.click(screen.getByRole("button", { name: "General" }));
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Voice input" })).toBeEnabled();
-    expect(screen.getByRole("switch", { name: "Launch at login" })).toBeDisabled();
     expect(screen.queryByText("ada@example.test")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 
@@ -327,7 +371,7 @@ describe("AppSettingsDialog metadata", () => {
 });
 
 describe("AppSettingsDialog navigation", () => {
-  it("groups the sections on the desktop too, in the same groups", () => {
+  it("groups sections cleanly into App and Environment without passive scope notes", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
@@ -338,25 +382,28 @@ describe("AppSettingsDialog navigation", () => {
       },
     });
     render(
-      <AppSettingsDialog
-        appMetadata={appMetadata}
-        currentUser={currentUser}
-        userProfile={{ profile: { preferredName: "Ada" }, loading: false, error: null, save: vi.fn() }}
-        open
-        preferences={DEFAULT_PREFERENCES}
-        persistenceStatus="saved"
-        persistenceError={null}
-        onOpenChange={vi.fn()}
-        onPreferencesChange={vi.fn()}
-      />,
+      <ActiveConnectionContext.Provider value={multiEnvView({ activeId: "prod" })}>
+        <AppSettingsDialog
+          appMetadata={appMetadata}
+          currentUser={currentUser}
+          userProfile={{ profile: { preferredName: "Ada" }, loading: false, error: null, save: vi.fn() }}
+          open
+          preferences={DEFAULT_PREFERENCES}
+          persistenceStatus="saved"
+          persistenceError={null}
+          onOpenChange={vi.fn()}
+          onPreferencesChange={vi.fn()}
+        />
+      </ActiveConnectionContext.Provider>,
     );
 
     const names = (group: string) =>
       within(screen.getByRole("group", { name: group }))
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label"));
-    expect(names("Account and server")).toEqual(["General", "Connections", "Remote access"]);
-    expect(names("Wisps")).toEqual([
+    expect(names("App")).toEqual(["General", "Notifications", "Shortcuts", "Connections", "Remote access", "About"]);
+    expect(names("Environment")).toEqual([
+      "Profile & memory",
       "AI Model",
       "Providers",
       "Voice input",
@@ -365,15 +412,243 @@ describe("AppSettingsDialog navigation", () => {
       "Permissions",
       "Templates",
       "Jobs",
+      "Storage",
+      "Token usage",
     ]);
-    expect(names("Notifications and input")).toEqual(["Notifications", "Shortcuts"]);
-    expect(names("Storage and data")).toEqual(["Token usage", "Storage"]);
-    expect(names("App")).toEqual(["About"]);
+    // No passive scope badges appear on General even when connected to a remote server.
+    expect(screen.queryByText("This device")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saved on this device.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Environment" })).not.toBeInTheDocument();
+  });
+});
+
+describe("AppSettingsDialog environment selector", () => {
+  it("loads and edits another connected environment via invokeConnectionOperation without calling activateConnection", async () => {
+    const user = userEvent.setup();
+    const activateConnection = vi.fn();
+    const onPreferencesChange = vi.fn();
+    const invokeConnectionOperation = vi.fn(
+      async ({ operation, payload }: { operation: string; payload?: unknown }) => {
+        if (operation === "getUserProfile") return { ok: true, value: { preferredName: "Prod Ada" } };
+        if (operation === "saveUserProfile") return { ok: true, value: payload };
+        if (operation === "getMemory") return { ok: true, value: { entries: [], usage: [] } };
+        if (operation === "getConversationState") {
+          return {
+            ok: true,
+            value: {
+              initialized: true,
+              wisps: {
+                "prod-wisp": {
+                  id: "prod-wisp",
+                  name: "Prod Bot",
+                  role: "",
+                  soul: "",
+                  appearance: { base: "calm", eyes: "open", accessory: "none" },
+                },
+              },
+              chats: {},
+              liveMessages: {},
+            },
+          };
+        }
+        if (operation === "getToolPolicy") return { ok: true, value: { autoReview: false, rules: [] } };
+        if (operation === "saveToolPolicy") return { ok: true, value: payload };
+        return { ok: true, value: {} };
+      },
+    );
+
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        ...memoryApi,
+        activateConnection,
+        invokeConnectionOperation,
+        subscribeToConnectionEvents: vi.fn(() => () => undefined),
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
+      },
+    });
+
+    const view = multiEnvView({ activeId: "local" });
+    const props = {
+      appMetadata,
+      currentUser,
+      userProfile: { profile: { preferredName: "Local Ada" }, loading: false, error: null, save: vi.fn() },
+      open: true,
+      initialSection: "profile" as const,
+      preferences: DEFAULT_PREFERENCES,
+      persistenceStatus: "saved" as const,
+      persistenceError: null,
+      onOpenChange: vi.fn(),
+      onPreferencesChange,
+    };
+
+    const { rerender } = render(
+      <ActiveConnectionContext.Provider value={view}>
+        <AppSettingsDialog {...props} />
+      </ActiveConnectionContext.Provider>,
+    );
+
+    // Starts on active environment (local) with zero cross-environment RPC calls.
+    expect(screen.getByLabelText("Name")).toHaveValue("Local Ada");
+    expect(invokeConnectionOperation).not.toHaveBeenCalled();
+
+    // Switch Settings selector to Prod server.
+    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    await user.click(await screen.findByRole("option", { name: /Prod server/ }));
+
+    expect(await screen.findByLabelText("Name")).toHaveValue("Prod Ada");
+    expect(activateConnection).not.toHaveBeenCalled();
+    expect(invokeConnectionOperation).toHaveBeenCalledWith({ connectionId: "prod", operation: "getUserProfile" });
+
+    // Edit profile name on Prod server -> routes through invokeConnectionOperation.
+    const nameInput = screen.getByLabelText("Name");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Prod Grace");
+    await user.tab();
+    expect(invokeConnectionOperation).toHaveBeenCalledWith({
+      connectionId: "prod",
+      operation: "saveUserProfile",
+      payload: { preferredName: "Prod Grace" },
+    });
+
+    // Navigating to Permissions keeps Prod server selected and edits its tool policy without touching local preferences.
+    await user.click(screen.getByRole("button", { name: "Permissions" }));
+    expect(screen.getByRole("combobox", { name: "Environment" })).toHaveTextContent("Prod server");
+    const autoReviewSwitch = await screen.findByRole("switch", { name: "Auto-review file changes" });
+    expect(autoReviewSwitch).not.toBeChecked();
+    await user.click(autoReviewSwitch);
+    expect(invokeConnectionOperation).toHaveBeenCalledWith({
+      connectionId: "prod",
+      operation: "saveToolPolicy",
+      payload: { autoReview: true, rules: [] },
+    });
+    expect(onPreferencesChange).not.toHaveBeenCalled();
+
+    // Closing and reopening resets selected environment back to activeId.
+    rerender(
+      <ActiveConnectionContext.Provider value={view}>
+        <AppSettingsDialog {...props} open={false} />
+      </ActiveConnectionContext.Provider>,
+    );
+    rerender(
+      <ActiveConnectionContext.Provider value={view}>
+        <AppSettingsDialog {...props} open />
+      </ActiveConnectionContext.Provider>,
+    );
+    expect(screen.getByRole("combobox", { name: "Environment" })).toHaveTextContent("This computer");
+    expect(screen.getByLabelText("Name")).toHaveValue("Local Ada");
+  });
+
+  it("shows an offline banner with Connect and Open Connections for disconnected or unpaired environments", async () => {
+    const user = userEvent.setup();
+    const connectEnvironment = vi.fn(async () => ({ ok: true, value: {} }));
+    const getConnections = vi.fn(async () => ({ ok: true, value: view }));
+    const invokeConnectionOperation = vi.fn();
+
+    const view = multiEnvView({
+      activeId: "local",
+      profiles: [
+        { id: "local", kind: "local", name: "This computer", paired: true },
+        { id: "offline", kind: "url", name: "Offline box", url: "https://offline.invalid", paired: true },
+        { id: "unpaired", kind: "url", name: "New server", url: "https://new.invalid", paired: false },
+      ],
+      environments: {
+        local: {
+          profileId: "local",
+          phase: "local",
+          workingWisps: 0,
+          pendingApprovals: 0,
+          unreadConversations: 0,
+          wispCount: 1,
+          circleCount: 0,
+        },
+        offline: {
+          profileId: "offline",
+          phase: "error",
+          message: "Host unreachable.",
+          workingWisps: 0,
+          pendingApprovals: 0,
+          unreadConversations: 0,
+          wispCount: 0,
+          circleCount: 0,
+        },
+        unpaired: {
+          profileId: "unpaired",
+          phase: "pairing_required",
+          workingWisps: 0,
+          pendingApprovals: 0,
+          unreadConversations: 0,
+          wispCount: 0,
+          circleCount: 0,
+        },
+      },
+    });
+
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        ...memoryApi,
+        connectEnvironment,
+        getConnections,
+        subscribeToConnections: vi.fn(() => () => undefined),
+        invokeConnectionOperation,
+        subscribeToConnectionEvents: vi.fn(() => () => undefined),
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
+        getAiSettings: vi.fn(async () => ({
+          ok: true,
+          value: {
+            selection: null,
+            providers: [],
+            fallback: { selection: null, unavailable: null },
+            auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
+            secureStorageAvailable: true,
+          },
+        })),
+      },
+    });
+
+    render(
+      <ActiveConnectionContext.Provider value={view}>
+        <AppSettingsDialog
+          appMetadata={appMetadata}
+          currentUser={currentUser}
+          userProfile={{ profile: { preferredName: "Ada" }, loading: false, error: null, save: vi.fn() }}
+          open
+          initialSection="model"
+          preferences={DEFAULT_PREFERENCES}
+          persistenceStatus="saved"
+          persistenceError={null}
+          onOpenChange={vi.fn()}
+          onPreferencesChange={vi.fn()}
+        />
+      </ActiveConnectionContext.Provider>,
+    );
+
+    // Select offline paired server -> shows error message, Connect button, Open Connections button, and makes no RPC calls.
+    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    await user.click(await screen.findByRole("option", { name: /Offline box/ }));
+
+    expect(screen.getByText("Host unreachable.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    expect(connectEnvironment).toHaveBeenCalledWith({ id: "offline" });
+    expect(invokeConnectionOperation).not.toHaveBeenCalled();
+
+    // Select unpaired server -> shows Not paired yet and Open Connections (no Connect button).
+    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    await user.click(await screen.findByRole("option", { name: /New server/ }));
+    expect(screen.getByText(/Pair New server in Connections/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+
+    // Open Connections switches to the Connections panel.
+    await user.click(screen.getByRole("button", { name: "Open Connections" }));
+    expect(screen.getByRole("heading", { name: "Connections" })).toBeVisible();
   });
 });
 
 describe("AppSettingsDialog on mobile", () => {
-  it("shows the profile card and each section as a described card in its group", async () => {
+  it("shows the profile card and each section as a described card in App and Environment groups", async () => {
     const user = userEvent.setup();
     Object.defineProperty(window, "wisp", {
       configurable: true,
@@ -404,20 +679,31 @@ describe("AppSettingsDialog on mobile", () => {
       />,
     );
 
-    const wisps = screen.getByRole("group", { name: "Wisps" });
+    const environment = screen.getByRole("group", { name: "Environment" });
     expect(
-      within(wisps)
+      within(environment)
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["AI Model", "Providers", "Voice input", "Plugins", "MCP servers", "Permissions", "Templates", "Jobs"]);
+    ).toEqual([
+      "Profile & memory",
+      "AI Model",
+      "Providers",
+      "Voice input",
+      "Plugins",
+      "MCP servers",
+      "Permissions",
+      "Templates",
+      "Jobs",
+      "Storage",
+      "Token usage",
+    ]);
     expect(screen.getByRole("button", { name: "Storage" })).toHaveAccessibleDescription(
       "See the space used and clean up Wisp files",
     );
-    for (const group of ["Account and server", "Notifications and input", "Storage and data", "App"]) {
-      expect(screen.getByRole("group", { name: group })).toBeVisible();
-    }
+    expect(screen.getByRole("group", { name: "App" })).toBeVisible();
     expect(screen.queryByText("Your workspace")).not.toBeInTheDocument();
 
+    // Tapping the profile card opens Profile & memory.
     await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
     expect(screen.getByLabelText("Name")).toHaveValue("Ada");
   });
@@ -442,7 +728,7 @@ describe("AppSettingsDialog on mobile", () => {
       onPreferencesChange,
     };
     const { rerender } = render(<AppSettingsDialog {...props} preferences={DEFAULT_PREFERENCES} />);
-    await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
+    await user.click(screen.getByRole("button", { name: "General" }));
     const order = screen.getByRole("radiogroup", { name: "Conversation order" });
     const description = screen.getByText(/Pinned conversations always come first/);
     const text = description.textContent;

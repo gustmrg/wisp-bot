@@ -55,6 +55,7 @@ import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useTimeZone } from "@/hooks/use-time-zone";
+import { useWispApi } from "@/lib/environment-api";
 import type { WispOption } from "@/lib/plugin-access";
 
 const NO_WISPS: ReadonlyArray<WispOption> = [];
@@ -169,6 +170,7 @@ function prefixedCredential(prefix: string, value: string): string {
 }
 
 export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray<WispOption> }) {
+  const api = useWispApi();
   const [view, setView] = useState<McpSettingsView | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -184,7 +186,7 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
   useEffect(() => {
     let cancelled = false;
     setError("");
-    void window.wisp
+    void api
       .getMcpSettings()
       .then((result) => {
         if (cancelled) return;
@@ -197,17 +199,17 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [api, attempt]);
 
   // Health updates pushed by the backend after tests, refreshes, or sign-ins.
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt reloads the subscription with the view.
   useEffect(() => {
     if (!view) return;
-    const unsubscribe = window.wisp.subscribeToMcpSettings((next) => setView(next));
+    const unsubscribe = api.subscribeToMcpSettings((next) => setView(next));
     return () => {
       unsubscribe();
     };
-  }, [attempt, Boolean(view)]);
+  }, [api, attempt, Boolean(view)]);
 
   return (
     <section
@@ -384,6 +386,7 @@ export function McpServerForm({
   onCreated: (view: McpSettingsView, options?: { signIn?: boolean }) => void;
   onBack: () => void;
 }) {
+  const api = useWispApi();
   const formId = useId();
   const presetId = server ? server.preset : newPreset;
   const preset = presetId ? MCP_PRESETS[presetId] : undefined;
@@ -430,7 +433,7 @@ export function McpServerForm({
     if (!server || cancellingSignIn) return;
     setCancellingSignIn(true);
     try {
-      const result = await window.wisp.cancelMcpSignIn({ serverId: server.serverId });
+      const result = await api.cancelMcpSignIn({ serverId: server.serverId });
       if (result.ok) onSaved(result.value);
     } catch {
       // The pending sign-in call reports the outcome either way.
@@ -507,7 +510,7 @@ export function McpServerForm({
     setMessage("");
     try {
       if (action === "test") {
-        const result = await window.wisp.testMcpConnection(testRequest());
+        const result = await api.testMcpConnection(testRequest());
         if (!result.ok) {
           setError(result.error.message);
           return;
@@ -517,7 +520,7 @@ export function McpServerForm({
       }
       if (action === "toggle" && server) {
         // Nothing else to save on a sign-in preset: the switch applies at once, keeping access and tokens.
-        const result = await window.wisp.saveMcpServer({ ...saveRequest(), enabled: !draft.enabled });
+        const result = await api.saveMcpServer({ ...saveRequest(), enabled: !draft.enabled });
         if (!result.ok) {
           setError(result.error.message);
           return;
@@ -527,7 +530,7 @@ export function McpServerForm({
         return;
       }
       if (action === "connect") {
-        const result = await window.wisp.saveMcpServer({ ...saveRequest(), enabled: true });
+        const result = await api.saveMcpServer({ ...saveRequest(), enabled: true });
         if (!result.ok) {
           setError(result.error.message);
           return;
@@ -537,7 +540,7 @@ export function McpServerForm({
       }
       if (action === "save") {
         const payload = saveRequest();
-        const result = await window.wisp.saveMcpServer({ ...payload, enabled: draft.enabled });
+        const result = await api.saveMcpServer({ ...payload, enabled: draft.enabled });
         if (!result.ok) {
           setError(result.error.message);
           return;
@@ -556,10 +559,10 @@ export function McpServerForm({
       if (!server) return;
       const result =
         action === "remove"
-          ? await window.wisp.removeMcpServer({ serverId: server.serverId })
+          ? await api.removeMcpServer({ serverId: server.serverId })
           : action === "refresh"
-            ? await window.wisp.refreshMcpTools({ serverId: server.serverId })
-            : await window.wisp.startMcpSignIn({ serverId: server.serverId });
+            ? await api.refreshMcpTools({ serverId: server.serverId })
+            : await api.startMcpSignIn({ serverId: server.serverId });
       if (!result.ok) {
         // A cancel the user asked for is an outcome, not a failure.
         if (action === "signin" && result.error.code === "aborted") setMessage(result.error.message);
@@ -1055,11 +1058,12 @@ function ManualSignIn({
   signInUrl: string;
   onSaved: (view: McpSettingsView) => void;
 }) {
+  const api = useWispApi();
   return (
     <ManualSignInForm
       signInUrl={signInUrl}
       onFinish={async (redirectUrl) => {
-        const result = await window.wisp.finishMcpSignIn({ serverId: server.serverId, redirectUrl });
+        const result = await api.finishMcpSignIn({ serverId: server.serverId, redirectUrl });
         if (!result.ok) return result.error.message;
         onSaved(result.value);
         return undefined;

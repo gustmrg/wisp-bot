@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftIcon, FolderOpenIcon } from "lucide-react";
 
 import { formatMeasuredAt } from "@/lib/storage-format";
+import { useWispApi } from "@/lib/environment-api";
 import { ConfirmAction, SettingsCard } from "@/components/settings/settings-primitives";
+import { useSettingsEnvironment } from "@/components/settings/settings-environment-selector";
 import { UsageBar } from "@/components/storage-overview";
 import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
 import { Button } from "@/components/ui/button";
@@ -34,8 +36,13 @@ export function StorageInspector({
   onChanged: () => void;
   onResized: (view: WorkspaceView) => void;
 }) {
+  const api = useWispApi();
+  const settingsEnv = useSettingsEnvironment();
   const { conversationId } = workspace;
-  const screenActions = useScreenActions();
+  const activeScreenActions = useScreenActions();
+  const screenActions = settingsEnv
+    ? settingsEnv.selectedProfile?.kind === "local" && settingsEnv.connectionsView.canManage !== false
+    : activeScreenActions;
   const [folder, setFolder] = useState(initialPath);
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,11 +53,12 @@ export function StorageInspector({
   const [message, setMessage] = useState("");
   const [reload, setReload] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload explicitly refreshes the directory listing.
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError("");
-    void window.wisp
+    void api
       .listStorageDirectory({ conversationId, path: folder })
       .then((result) => {
         if (!active) return;
@@ -66,7 +74,7 @@ export function StorageInspector({
     return () => {
       active = false;
     };
-  }, [conversationId, folder, reload]);
+  }, [api, conversationId, folder, reload]);
 
   function go(next: string) {
     setFolder(next);
@@ -79,7 +87,7 @@ export function StorageInspector({
     if (!listing?.nextCursor) return;
     setLoading(true);
     try {
-      const result = await window.wisp.listStorageDirectory({
+      const result = await api.listStorageDirectory({
         conversationId,
         path: folder,
         cursor: listing.nextCursor,
@@ -99,7 +107,7 @@ export function StorageInspector({
     setError("");
     setMessage("");
     try {
-      const result = await window.wisp.prepareStorageCleanup({ conversationId, paths: [...selected] });
+      const result = await api.prepareStorageCleanup({ conversationId, paths: [...selected] });
       if (result.ok) setPreview(result.value);
       else setError(result.error.message);
     } catch {
@@ -114,7 +122,7 @@ export function StorageInspector({
     setBusy(true);
     setError("");
     try {
-      const result = await window.wisp.cleanStorage({
+      const result = await api.cleanStorage({
         conversationId,
         paths: [...selected],
         fingerprint: preview.fingerprint,
@@ -144,12 +152,12 @@ export function StorageInspector({
 
   const openFolder = useCallback(async () => {
     try {
-      const result = await window.wisp.openWorkspaceFolder({ conversationId });
+      const result = await api.openWorkspaceFolder({ conversationId });
       if (!result.ok) setError(result.error.message);
     } catch {
       setError("Could not open the folder.");
     }
-  }, [conversationId]);
+  }, [api, conversationId]);
 
   const segments = folder ? folder.split("/") : [];
   const inInbox = folder === WORKSPACE_INBOX_DIRECTORY || folder.startsWith(`${WORKSPACE_INBOX_DIRECTORY}/`);

@@ -5,6 +5,7 @@ import { AccessRow } from "@/components/access-row";
 import { Wisp } from "@/components/wisp";
 import { SettingsGroup } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { useWispApi } from "@/lib/environment-api";
 import {
   applyPluginChoice,
   pluginChoice,
@@ -22,6 +23,7 @@ export interface WispAccessIndex {
 
 /** Loads every Wisp's plugin access so Settings can count and edit grants per plugin. */
 export function useWispAccessIndex(wisps: ReadonlyArray<WispOption>): WispAccessIndex {
+  const api = useWispApi();
   const [views, setViews] = useState<Record<string, WispPluginAccessView>>({});
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -31,7 +33,7 @@ export function useWispAccessIndex(wisps: ReadonlyArray<WispOption>): WispAccess
   useEffect(() => {
     let cancelled = false;
     const conversationIds = ids ? ids.split("\n") : [];
-    void Promise.all(conversationIds.map((conversationId) => window.wisp.getWispPluginAccess({ conversationId })))
+    void Promise.all(conversationIds.map((conversationId) => api.getWispPluginAccess({ conversationId })))
       .then((results) => {
         if (cancelled) return;
         const next: Record<string, WispPluginAccessView> = {};
@@ -45,7 +47,7 @@ export function useWispAccessIndex(wisps: ReadonlyArray<WispOption>): WispAccess
     return () => {
       cancelled = true;
     };
-  }, [ids, attempt]);
+  }, [api, ids, attempt]);
 
   const reload = useCallback(() => setAttempt((current) => current + 1), []);
   const update = useCallback(
@@ -71,6 +73,7 @@ export function PluginWispAccessPanel({
   wisps: ReadonlyArray<WispOption>;
   index: WispAccessIndex;
 }) {
+  const api = useWispApi();
   const formId = useId();
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -88,7 +91,7 @@ export function PluginWispAccessPanel({
     setMessage("");
     try {
       for (const wisp of changes) {
-        const result = await window.wisp.saveWispPluginAccess(
+        const result = await api.saveWispPluginAccess(
           applyPluginChoice(index.views[wisp.id]!, plugin.id, draft[wisp.id]!),
         );
         if (!result.ok) {

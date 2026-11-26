@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useWispApi } from "@/lib/environment-api";
 import {
   WORKSPACE_DISK_RESERVE_BYTES,
   WORKSPACE_QUOTA_PRESETS,
@@ -52,6 +53,7 @@ export function WorkspaceSizeSelect({
   className?: string;
   onResized: (view: WorkspaceView) => void;
 }) {
+  const api = useWispApi();
   // Undefined while nothing waits for confirmation; `quotaBytes: null` is no size.
   const [pending, setPending] = useState<{ quotaBytes: number | null }>();
   const [saving, setSaving] = useState(false);
@@ -75,7 +77,7 @@ export function WorkspaceSizeSelect({
     setError("");
     setSaving(true);
     try {
-      const result = await window.wisp.setWorkspaceQuota({ conversationId, quotaBytes: bytes });
+      const result = await api.setWorkspaceQuota({ conversationId, quotaBytes: bytes });
       if (result.ok) onResized(result.value);
       else setError(result.error.message);
     } catch {

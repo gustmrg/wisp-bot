@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTimeZone } from "@/hooks/use-time-zone";
+import { useWispApi } from "@/lib/environment-api";
 import type { WispOption } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
 import type { ModelUsageRow, UsagePeriod, UsageReport, WispUsageRow } from "../../shared/contracts";
@@ -68,6 +69,7 @@ interface UsageReportPanelProps {
  * used in it. Choosing a model narrows the summary and the table to that model's usage.
  */
 export function UsageReportPanel({ wisps = [], conversationId, active = true }: UsageReportPanelProps) {
+  const api = useWispApi();
   const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
   const timeZone = useTimeZone();
   // The previous report stays visible (dimmed) while the next one loads, so
@@ -79,7 +81,7 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
     if (!active) return;
     let current = true;
     setState((value) => ({ report: value.report, loading: true }));
-    void window.wisp
+    void api
       .getUsageReport(conversationId ? { ...request, conversationId } : request)
       .then((result) => {
         if (current)
@@ -93,7 +95,7 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
     return () => {
       current = false;
     };
-  }, [request, conversationId, active]);
+  }, [api, request, conversationId, active]);
   const changePeriod = (period: UsagePeriod) => {
     setRequest({ period });
   };

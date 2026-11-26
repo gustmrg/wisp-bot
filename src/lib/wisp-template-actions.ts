@@ -1,3 +1,4 @@
+import type { WispApi } from "../../shared/contracts";
 import { WISP_NAME_MAX_LENGTH, type Wisp } from "../../shared/conversations";
 import type { PluginGrant } from "../../shared/plugins";
 import type { McpGrant } from "../../shared/mcp";
@@ -91,6 +92,7 @@ export async function applyTemplateChoices(
   conversationId: string,
   template: WispTemplate,
   choices: TemplateChoices,
+  api: WispApi = window.wisp,
 ): Promise<string[]> {
   const failures: string[] = [];
   const request = { conversationId };
@@ -101,21 +103,18 @@ export async function applyTemplateChoices(
   for (const [index, skill] of (template.skills ?? []).entries()) {
     if (!choices.skills.has(index)) continue;
     const name = /^name:\s*(.+)$/m.exec(skill.contents)?.[1]?.trim() ?? `skill ${index + 1}`;
-    failed(
-      `the ${name} skill`,
-      await window.wisp.importSkill({ conversationId, contents: skill.contents }).catch(() => null),
-    );
+    failed(`the ${name} skill`, await api.importSkill({ conversationId, contents: skill.contents }).catch(() => null));
   }
 
   const access = template.access;
   const files: Partial<Record<WorkspaceFileCategory, ToolPolicyBehavior>> = choices.files ? (access?.files ?? {}) : {};
   if (Object.keys(files).length || (choices.allowEverything && access?.allowEverything)) {
-    const current = await window.wisp.getWispToolPolicy(request).catch(() => null);
+    const current = await api.getWispToolPolicy(request).catch(() => null);
     if (!current?.ok) failed("its file permissions", current);
     else
       failed(
         "its file permissions",
-        await window.wisp
+        await api
           .saveWispToolPolicy({
             conversationId,
             files: { ...current.value.files, ...files },
@@ -128,7 +127,7 @@ export async function applyTemplateChoices(
 
   const plugins = (access?.plugins ?? []).filter(({ pluginId }) => choices.plugins.has(pluginId));
   if (plugins.length) {
-    const current = await window.wisp.getWispPluginAccess(request).catch(() => null);
+    const current = await api.getWispPluginAccess(request).catch(() => null);
     if (!current?.ok) failed("its plugin access", current);
     else {
       const grants: PluginGrant[] = current.value.grants.map(({ pluginId, access: level }) => {
@@ -140,16 +139,14 @@ export async function applyTemplateChoices(
       }
       failed(
         "its plugin access",
-        await window.wisp
-          .saveWispPluginAccess({ conversationId, revision: current.value.revision, grants })
-          .catch(() => null),
+        await api.saveWispPluginAccess({ conversationId, revision: current.value.revision, grants }).catch(() => null),
       );
     }
   }
 
   const servers = (access?.mcpServers ?? []).filter(({ serverId }) => choices.mcpServers.has(serverId));
   if (servers.length) {
-    const current = await window.wisp.getWispMcpAccess(request).catch(() => null);
+    const current = await api.getWispMcpAccess(request).catch(() => null);
     if (!current?.ok) failed("its MCP server access", current);
     else {
       const grants: McpGrant[] = current.value.grants.map(({ serverId, access: level }) => {
@@ -163,9 +160,7 @@ export async function applyTemplateChoices(
       }
       failed(
         "its MCP server access",
-        await window.wisp
-          .saveWispMcpAccess({ conversationId, revision: current.value.revision, grants })
-          .catch(() => null),
+        await api.saveWispMcpAccess({ conversationId, revision: current.value.revision, grants }).catch(() => null),
       );
     }
   }

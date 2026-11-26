@@ -74,8 +74,9 @@ server shuts down when it closes, so it never outlives the app, even after a
 crash. The key is random and kept encrypted by the system keychain
 (`local-server-key.json`). Once you choose a connection, the local server stays
 running in the background by default so **This computer**'s Wisps keep working
-while you use another server and switching back is instant; you can opt out so
-it stops when you switch away, unless
+while you use another server and switching back is instant; you can opt out with
+**Keep this computer's Wisps running in the background** in **Settings →
+Connections**, so it stops when you switch away unless
 [remote access](#remote-access-to-this-computer) is on. It always stops, after
 its Wisps settle, when you quit. Disabling Electron's `RunAsNode` fuse would
 break this mode.
@@ -427,10 +428,13 @@ the browser app answers 404 until you set `WISP_WEB: "1"`.
 With more than one connection saved, the bottom of the sidebar shows the one in
 use and how it is doing. Selecting it lists the others, and selecting one
 switches to it right away, with **Manage connections** going to **Settings →
-Connections**. Switching away from **This computer** stops its Wisps once they
-finish what they are doing, unless [remote
-access](#remote-access-to-this-computer) is on, and the list says so. With a
-single connection nothing shows.
+Connections**. In **Settings**, every panel under **Environment** also offers an
+environment selector in its header so you can inspect or change another
+connected server's settings without switching your active conversation. Under
+**Settings → Connections → Background**, **Keep this computer's Wisps running in
+the background** controls whether **This computer**'s server stays running while
+another server is active (remote access keeps it running while turned on). With
+a single connection nothing extra shows.
 
 A new installation first asks **Where should your Wisps run?**: **On this
 computer** (recommended) or **On a Wisp server**. Nothing runs until one is

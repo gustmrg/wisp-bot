@@ -11,10 +11,11 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { SecretInput } from "@/components/ui/secret-input";
 import type { AppPreferences } from "@/lib/app-preferences";
+import { useWispApi } from "@/lib/environment-api";
 import { formatShortcut } from "@/lib/shortcuts";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import {
@@ -80,6 +81,7 @@ function VoiceSettingsSection({
   onPreferencesChange,
   onOpenProviders,
 }: VoiceSettingsSectionProps) {
+  const api = useWispApi();
   const microphones = useMicrophones(active);
   const [view, setView] = useState<VoiceSettingsView | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -90,7 +92,7 @@ function VoiceSettingsSection({
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    void window.wisp
+    void api
       .getVoiceSettings()
       .then((result) => {
         if (cancelled) return;
@@ -103,7 +105,7 @@ function VoiceSettingsSection({
     return () => {
       cancelled = true;
     };
-  }, [active]);
+  }, [active, api]);
 
   const provider = voiceProvider(preferences.voiceProvider) ?? VOICE_PROVIDERS[0];
   const providerStatus = view?.providers.find(({ id }) => id === provider.id);
@@ -118,7 +120,7 @@ function VoiceSettingsSection({
     setError(null);
     setSaved(false);
     try {
-      const result = await window.wisp.saveVoiceCredential({ providerId: provider.id, apiKey });
+      const result = await api.saveVoiceCredential({ providerId: provider.id, apiKey });
       if (result.ok) {
         setView(result.value);
         setApiKey("");
@@ -140,7 +142,7 @@ function VoiceSettingsSection({
     setError(null);
     setSaved(false);
     try {
-      const result = await window.wisp.removeVoiceCredential({ providerId: provider.id });
+      const result = await api.removeVoiceCredential({ providerId: provider.id });
       if (!result.ok) {
         setError(result.error.message);
         return;
@@ -161,25 +163,25 @@ function VoiceSettingsSection({
       aria-labelledby="voice-settings-title"
       hidden={!active}
     >
-      <h2 id="voice-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="voice-settings-title" scope="environment">
         Voice input
-      </h2>
+      </SettingsPanelTitle>
       <p className="mb-[22px] text-dim text-xs leading-relaxed">
         Dictate with the microphone button or {formatShortcut(preferences.shortcuts.voiceInput)}. Recordings go to your
         provider for transcription and are not stored.
       </p>
       <div className="animate-panel-in">
-        <SettingsGroup label="Recording" note={<SettingsScopeNote scope="device" />}>
+        <SettingsGroup label="Recording">
           <SettingsCard variant="stacked">
             <SettingsRow>
               <SettingsRowCopy>
                 <SettingsRowTitle htmlFor="voice-microphone">Microphone</SettingsRowTitle>
                 {/* Browsers hide device names until the microphone has been used once. */}
-                {!microphones.length || microphones.some(({ label }) => label.startsWith("Microphone ")) ? (
-                  <SettingsRowDescription>
-                    Device names appear after Wisp first uses the microphone.
-                  </SettingsRowDescription>
-                ) : null}
+                <SettingsRowDescription>
+                  {!microphones.length || microphones.some(({ label }) => label.startsWith("Microphone "))
+                    ? "Microphone used on this device. Device names appear after Wisp first uses it."
+                    : "Microphone used on this device."}
+                </SettingsRowDescription>
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-microphone"
@@ -206,7 +208,7 @@ function VoiceSettingsSection({
           </SettingsCard>
         </SettingsGroup>
 
-        <SettingsGroup label="Transcription" note={<SettingsScopeNote scope="device" />}>
+        <SettingsGroup label="Transcription">
           <SettingsCard variant="stacked">
             <SettingsRow>
               <SettingsRowCopy>
@@ -253,7 +255,7 @@ function VoiceSettingsSection({
           </SettingsCard>
         </SettingsGroup>
 
-        <SettingsGroup label="API key" note={<SettingsScopeNote scope="environment" />}>
+        <SettingsGroup label="API key">
           <SettingsCard>
             {providerStatus?.credentialConfigured && providerStatus.credentialSource !== "voice" ? (
               <SettingsRow>
