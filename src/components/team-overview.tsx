@@ -74,7 +74,6 @@ export interface TeamOverviewProps {
   onOpenTemplates?: () => void;
   onResolveActiveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => Promise<boolean>;
   onOpenActiveChat: (conversationId: string, options?: { openDetails?: boolean }) => void;
-  onOpenEnvironmentSettings: (environmentId: string, unpaired: boolean) => void;
   onConversations?: () => void;
   onOpenApprovals?: () => void;
   onOpenSettings?: () => void;
@@ -134,7 +133,6 @@ export function TeamOverview({
   onOpenTemplates,
   onResolveActiveApproval,
   onOpenActiveChat,
-  onOpenEnvironmentSettings,
   onConversations,
   onOpenApprovals,
   onOpenSettings,
@@ -409,31 +407,6 @@ export function TeamOverview({
             </section>
           ) : null}
 
-          {effectiveScope === "all" && team.canShowAllEnvironments ? (
-            <section aria-labelledby="team-environments-heading" className="flex flex-col gap-2.5">
-              <h2 id="team-environments-heading" className="m-0 text-sm font-semibold">
-                Environments
-              </h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {team.environments.map((env) => (
-                  <EnvironmentCard
-                    key={env.profile.id}
-                    env={env}
-                    busy={busyKey === `env:${env.profile.id}`}
-                    onConnect={() =>
-                      void runAction(`env:${env.profile.id}`, () => team.connectEnvironment(env.profile.id))
-                    }
-                    onSettings={() => {
-                      const unpaired =
-                        env.phase === "pairing_required" || (env.profile.kind !== "local" && !env.profile.paired);
-                      onOpenEnvironmentSettings(env.profile.id, unpaired);
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           <section aria-labelledby="team-members-heading" className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
               <h2 id="team-members-heading" className="m-0 text-sm font-semibold">
@@ -490,8 +463,6 @@ export function TeamOverview({
                         <p role="status" className="m-0 text-xs text-dim">
                           Loading Wisps and circles…
                         </p>
-                      ) : !env.connected ? (
-                        <p className="m-0 text-xs text-dim">Connect to see Wisps and circles in {env.profile.name}.</p>
                       ) : env.error ? (
                         <p role="alert" className="m-0 text-xs text-destructive">
                           {env.error}
@@ -607,94 +578,6 @@ function EnvironmentPill({ kind, name }: { kind: ConnectionProfileView["kind"]; 
       <ProfileIcon kind={kind} className="size-3 shrink-0" />
       <span className="truncate">{name}</span>
     </span>
-  );
-}
-
-function EnvironmentCard({
-  env,
-  busy,
-  onConnect,
-  onSettings,
-}: {
-  env: TeamEnvironmentEntry;
-  busy: boolean;
-  onConnect: () => void;
-  onSettings: () => void;
-}) {
-  const unpaired = env.phase === "pairing_required" || (env.profile.kind !== "local" && !env.profile.paired);
-  const inProgress = env.phase === "connecting" || env.phase === "reconnecting" || busy;
-  const { workingWisps, pendingApprovals, unreadConversations, wispCount, circleCount } = env.summary;
-
-  return (
-    <article
-      aria-label={env.profile.name}
-      className="flex flex-col justify-between gap-3 rounded-xl border border-border bg-card p-3.5"
-    >
-      <div className="space-y-2">
-        <div className="flex items-start gap-2.5">
-          <span className="flex size-8 flex-none items-center justify-center rounded-lg bg-muted text-dim">
-            <ProfileIcon kind={env.profile.kind} className="size-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-semibold">{env.profile.name}</span>
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-dim">
-              <StatusDot tone={phaseTone(env.phase)} />
-              <span>{environmentPhaseText(env.phase, env.profile)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 text-2xs text-dim">
-          {env.connected ? (
-            <span>
-              {wispCount} {wispCount === 1 ? "Wisp" : "Wisps"}
-              {circleCount > 0 ? ` · ${circleCount} ${circleCount === 1 ? "circle" : "circles"}` : ""}
-            </span>
-          ) : null}
-          {pendingApprovals > 0 ? (
-            <span className="rounded-full bg-warning-solid/15 px-1.5 py-0.5 font-medium text-warning tabular-nums">
-              {pendingApprovals} {pendingApprovals === 1 ? "approval" : "approvals"}
-            </span>
-          ) : null}
-          {workingWisps > 0 ? (
-            <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
-              {workingWisps} working
-            </span>
-          ) : null}
-          {unreadConversations > 0 ? (
-            <span className="rounded-full bg-[#ff3b30]/15 px-1.5 py-0.5 font-medium text-[#ff3b30] tabular-nums">
-              {unreadConversations} unread
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {!env.connected && !unpaired ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            aria-label={`Connect ${env.profile.name}`}
-            disabled={inProgress}
-            onClick={onConnect}
-          >
-            {inProgress ? "Connecting…" : "Connect"}
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost"
-          aria-label={`Settings for ${env.profile.name}`}
-          onClick={onSettings}
-        >
-          Settings
-        </Button>
-      </div>
-    </article>
   );
 }
 

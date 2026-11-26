@@ -453,8 +453,7 @@ Manage servers in **Settings → Connections**. See
 At the top of the sidebar, **Team** opens a main-panel overview of your Wisps,
 circles, and pending approvals. With two or more environments saved, switch
 between **This computer** and **All environments** to review and resolve
-approvals, inspect connected servers, and jump straight to any conversation
-across environments.
+approvals and jump straight to any conversation across connected environments.
 
 In **Settings**, every panel under **Environment** also offers an environment
 selector in its header so you can inspect or change another connected server's

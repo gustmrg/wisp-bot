@@ -28,22 +28,11 @@ export interface ActiveWorkspaceSnapshot {
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
 
-export interface TeamEnvironmentSummary {
-  workingWisps: number;
-  pendingApprovals: number;
-  unreadConversations: number;
-  wispCount: number;
-  circleCount: number;
-}
-
 export interface TeamEnvironmentEntry {
   profile: ConnectionProfileView;
   isActive: boolean;
   phase: ConnectionPhase;
   connected: boolean;
-  message?: string;
-  serverVersion?: string;
-  summary: TeamEnvironmentSummary;
   loading: boolean;
   error: string | null;
   chats: ChatViewCollection;
@@ -97,26 +86,6 @@ function countActiveJobs(view: JobsView | null | undefined): Record<string, numb
     counts[job.conversationId] = (counts[job.conversationId] ?? 0) + 1;
   }
   return counts;
-}
-
-function summarizeWorkspace(
-  chats: ChatViewCollection,
-  statuses: Record<string, ManagedConversationStatus>,
-  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>,
-): TeamEnvironmentSummary {
-  let workingWisps = 0;
-  let pendingApprovals = 0;
-  let unreadConversations = 0;
-  let wispCount = 0;
-  let circleCount = 0;
-  for (const chat of Object.values(chats)) {
-    if (chat.kind === "wisp") wispCount += 1;
-    else circleCount += 1;
-    if (statuses[chat.id] === "working") workingWisps += 1;
-    if (chat.unread) unreadConversations += 1;
-    pendingApprovals += approvals[chat.id]?.length ?? 0;
-  }
-  return { workingWisps, pendingApprovals, unreadConversations, wispCount, circleCount };
 }
 
 function withoutApprovals(
@@ -191,17 +160,12 @@ export function useTeamOverview({
       const isActive = profile.id === activeId;
       const phase: ConnectionPhase = connectionsView ? environmentPhase(connectionsView, profile.id) : "local";
       const connected = !connectionsView || isEnvironmentConnected(phase);
-      const envInfo = connectionsView?.environments?.[profile.id];
       const listedEntry = isActive ? undefined : listed.get(profile.id);
       const source = isActive
         ? { ...activeWorkspace, loading: false, error: null }
         : listedEntry && (connected || phase === "reconnecting")
           ? listedEntry
           : null;
-      const chats = source?.chats ?? {};
-      const statuses = source?.statuses ?? {};
-      const approvals = withoutApprovals(source?.approvals ?? {}, resolvedApprovals);
-      const loaded = source && !source.loading;
       const envMeta = meta[profile.id] ?? EMPTY_META;
 
       return {
@@ -209,24 +173,13 @@ export function useTeamOverview({
         isActive,
         phase,
         connected,
-        message: envInfo?.message ?? (isActive ? connectionsView?.status.message : undefined),
-        serverVersion: envInfo?.serverVersion ?? (isActive ? connectionsView?.status.serverVersion : undefined),
-        summary: loaded
-          ? summarizeWorkspace(chats, statuses, approvals)
-          : {
-              workingWisps: envInfo?.workingWisps ?? 0,
-              pendingApprovals: envInfo?.pendingApprovals ?? 0,
-              unreadConversations: envInfo?.unreadConversations ?? 0,
-              wispCount: envInfo?.wispCount ?? 0,
-              circleCount: envInfo?.circleCount ?? 0,
-            },
         loading: Boolean(source?.loading),
         error: source?.error ?? null,
-        chats,
+        chats: source?.chats ?? {},
         wisps: source?.wisps ?? {},
-        statuses,
+        statuses: source?.statuses ?? {},
         activity: source?.activity ?? {},
-        approvals,
+        approvals: withoutApprovals(source?.approvals ?? {}, resolvedApprovals),
         defaultModelName: envMeta.defaultModelName,
         conversationModels: envMeta.conversationModels,
         jobCounts: envMeta.jobCounts,
@@ -234,10 +187,11 @@ export function useTeamOverview({
     });
   }, [profiles, activeId, connectionsView, activeWorkspace, directory.environments, meta, resolvedApprovals]);
 
+  /** All environments means the connected ones, as in the sidebar; a reconnecting one keeps what it last showed. */
   const scopedEnvironments = useMemo(
     () =>
       scope === "all" && canShowAllEnvironments
-        ? environments
+        ? environments.filter((entry) => entry.connected || entry.phase === "reconnecting")
         : environments.filter((entry) => entry.profile.id === homeId),
     [scope, canShowAllEnvironments, environments, homeId],
   );
@@ -353,25 +307,14 @@ export function useTeamOverview({
     [activeId, onOpenActiveChat],
   );
 
-  const connectEnvironment = useCallback(async (environmentId: string): Promise<string | null> => {
-    try {
-      const result = await window.wisp.connectEnvironment({ id: environmentId });
-      return result.ok ? null : result.error.message;
-    } catch {
-      return "Could not connect to the environment.";
-    }
-  }, []);
-
   return {
     connectionsView: connectionsView as ConnectionsView | null,
     activeId,
     homeId,
     canShowAllEnvironments,
-    environments,
     scopedEnvironments,
     pendingApprovals,
     resolveApproval,
     openChat,
-    connectEnvironment,
   };
 }

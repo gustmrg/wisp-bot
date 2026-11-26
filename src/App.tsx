@@ -454,10 +454,6 @@ function Workspace({
                     else showDetails(true);
                   }
                 }}
-                onOpenEnvironmentSettings={(environmentId, unpaired) => {
-                  if (unpaired) showSettings("connections");
-                  else showSettings("profile", undefined, undefined, environmentId);
-                }}
                 onConversations={showConversations}
                 onOpenApprovals={showApprovals}
                 onOpenSettings={() => showSettings("general")}

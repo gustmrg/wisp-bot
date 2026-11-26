@@ -61,9 +61,12 @@ reuse the same pieces.
   run. `keepLocalRunning`, `setKeepLocalRunning`, and its setting are removed;
   older `connections.json` files with the field still load.
 - **Team**'s scopes are **This computer** and **All environments**, whatever
-  environment is in use. Environment cards no longer offer **Switch to**, and
-  Wisp cards no longer offer **Copy to…**. Model names and job counts still load
-  only for the environments in scope.
+  environment is in use. **All environments** lists the connected (and
+  reconnecting) environments, as the sidebar does. **Team** no longer has an
+  **Environments** section: environments are managed in **Settings →
+  Connections**, and their names head each group of Wisps. Wisp cards no longer
+  offer **Copy to…**. Model names and job counts still load only for the
+  environments in scope.
 - **New Wisp** and **New circle** ask where to create, **This computer** first,
   listing only connected environments. A Wisp or circle created elsewhere is
   created through that environment's scoped API, its setup and template choices

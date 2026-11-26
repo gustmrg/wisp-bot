@@ -209,7 +209,6 @@ function activeWorkspace(overrides: Partial<ActiveWorkspaceSnapshot> = {}): Acti
 const connectionEventListeners = new Set<(event: ConnectionEventMessage) => void>();
 const invokeConnectionOperation = vi.fn();
 const activateConnection = vi.fn();
-const connectEnvironment = vi.fn();
 const getAiSettings = vi.fn();
 const getJobs = vi.fn();
 const getConversationModel = vi.fn();
@@ -254,7 +253,6 @@ beforeEach(() => {
     },
   }));
   activateConnection.mockReset().mockResolvedValue({ ok: true, value: multiEnvView({ activeId: "home" }) });
-  connectEnvironment.mockReset().mockResolvedValue({ ok: true, value: multiEnvView() });
   invokeConnectionOperation
     .mockReset()
     .mockImplementation(async ({ connectionId, operation }: { connectionId: string; operation: string }) => {
@@ -291,7 +289,6 @@ beforeEach(() => {
         value: { maxQuotaBytes: 1024, runtime: { available: false, message: "none" } },
       })),
       activateConnection,
-      connectEnvironment,
       invokeConnectionOperation,
       subscribeToJobs: vi.fn(() => () => undefined),
       subscribeToConnectionEvents: vi.fn((listener: (event: ConnectionEventMessage) => void) => {
@@ -307,7 +304,6 @@ function renderTeam({
   workspace = activeWorkspace(),
   onResolveActiveApproval = vi.fn(async () => true),
   onOpenActiveChat = vi.fn(),
-  onOpenEnvironmentSettings = vi.fn(),
   onCreateWisp = vi.fn(async () => "new-wisp"),
   onCreateCircle = vi.fn(async () => true),
 }: {
@@ -315,7 +311,6 @@ function renderTeam({
   workspace?: ActiveWorkspaceSnapshot;
   onResolveActiveApproval?: (request: ToolApprovalRequest, decision: "allow_once" | "deny") => Promise<boolean>;
   onOpenActiveChat?: (conversationId: string, options?: { openDetails?: boolean }) => void;
-  onOpenEnvironmentSettings?: (environmentId: string, unpaired: boolean) => void;
   onCreateWisp?: () => Promise<string | null>;
   onCreateCircle?: () => Promise<boolean>;
 } = {}) {
@@ -328,16 +323,15 @@ function renderTeam({
           onCreateCircle={onCreateCircle}
           onResolveActiveApproval={onResolveActiveApproval as never}
           onOpenActiveChat={onOpenActiveChat}
-          onOpenEnvironmentSettings={onOpenEnvironmentSettings}
         />
       </EnvironmentDirectoryProvider>
     </ActiveConnectionContext.Provider>,
   );
-  return { onResolveActiveApproval, onOpenActiveChat, onOpenEnvironmentSettings };
+  return { onResolveActiveApproval, onOpenActiveChat };
 }
 
 describe("TeamOverview", () => {
-  it("shows This computer by default, and every connected environment under All environments", async () => {
+  it("shows This computer by default, and every connected environment's Wisps under All environments", async () => {
     const user = userEvent.setup();
     renderTeam();
 
@@ -345,7 +339,6 @@ describe("TeamOverview", () => {
     expect(screen.getByRole("radio", { name: "This computer" })).toBeChecked();
     expect(screen.getByRole("button", { name: /^Atlas/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /^Launch Crew/ })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Environments" })).not.toBeInTheDocument();
 
     // Model names and job count hydrate for the active environment.
     expect(await screen.findByText("Claude Sonnet")).toBeVisible();
@@ -358,8 +351,10 @@ describe("TeamOverview", () => {
     );
 
     await user.click(screen.getByRole("radio", { name: "All environments" }));
-    expect(await screen.findByRole("heading", { name: "Environments" })).toBeVisible();
     expect(await screen.findByRole("button", { name: /^Nova/ })).toBeVisible();
+    // Environments are managed in Settings: Team lists only what connected ones hold.
+    expect(screen.queryByRole("heading", { name: "Environments" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Lab server")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(invokeConnectionOperation).toHaveBeenCalledWith(
         expect.objectContaining({ connectionId: "home", operation: "getConversationModel" }),
@@ -481,22 +476,6 @@ describe("TeamOverview", () => {
     expect(consumePendingEnvironmentOpen("home")).toEqual(
       expect.objectContaining({ environmentId: "home", conversationId: "nova" }),
     );
-  });
-
-  it("offers Connect and Settings actions on Environment cards, without switching", async () => {
-    const user = userEvent.setup();
-    const { onOpenEnvironmentSettings } = renderTeam();
-
-    await user.click(screen.getByRole("radio", { name: "All environments" }));
-    const envsSection = await screen.findByRole("region", { name: "Environments" });
-
-    await user.click(within(envsSection).getByRole("button", { name: "Connect Lab server" }));
-    expect(connectEnvironment).toHaveBeenCalledWith({ id: "lab" });
-
-    expect(within(envsSection).queryByRole("button", { name: /^Switch to/ })).not.toBeInTheDocument();
-
-    await user.click(within(envsSection).getByRole("button", { name: "Settings for Home server" }));
-    expect(onOpenEnvironmentSettings).toHaveBeenCalledWith("home", false);
   });
 
   it("opens the creation dialog directly on the Circle tab from New circle", async () => {
