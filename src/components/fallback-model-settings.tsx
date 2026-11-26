@@ -10,6 +10,7 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { useWispApi } from "@/lib/environment-api";
 import { modelOptions, modelOptionValue, parseModelOptionValue, unavailableModelOption } from "@/lib/model-choice";
 
 const OFF = "off";
@@ -34,6 +35,7 @@ function unavailableText(reason: FallbackModelUnavailableReason | null, provider
 
 /** Chooses the model that answers when the global model fails for good. Saves on change. */
 function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProps) {
+  const api = useWispApi();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -58,7 +60,7 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
     setError(null);
     setSaved(false);
     try {
-      const result = await window.wisp.saveFallbackModel({
+      const result = await api.saveFallbackModel({
         selection: value === OFF ? null : parseModelOptionValue(value),
       });
       if (result.ok) {

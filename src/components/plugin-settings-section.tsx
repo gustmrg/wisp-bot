@@ -41,6 +41,7 @@ import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { useWispApi } from "@/lib/environment-api";
 import { isPluginAvailable, type SettingsPluginId, type WispOption } from "@/lib/plugin-access";
 
 const NO_WISPS: ReadonlyArray<WispOption> = [];
@@ -94,6 +95,7 @@ export function PluginSettingsSection({
   initialPluginId?: SettingsPluginId;
   onOpenMcpSettings?: () => void;
 }) {
+  const api = useWispApi();
   const [view, setView] = useState<PluginSettingsView | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -114,7 +116,7 @@ export function PluginSettingsSection({
   useEffect(() => {
     let cancelled = false;
     setError("");
-    void window.wisp
+    void api
       .getPluginSettings()
       .then((result) => {
         if (cancelled) return;
@@ -127,33 +129,33 @@ export function PluginSettingsSection({
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [api, attempt]);
 
   // Sign-ins started here or in another window report their progress.
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt reloads the subscription with the view.
   useEffect(() => {
     if (!view) return;
-    const unsubscribe = window.wisp.subscribeToPluginSettings((next) => setView(next));
+    const unsubscribe = api.subscribeToPluginSettings((next) => setView(next));
     return () => {
       unsubscribe();
     };
-  }, [attempt, Boolean(view)]);
+  }, [api, attempt, Boolean(view)]);
 
   // MCP plugins load on their own, so a failure there leaves the bundled plugins usable.
   useEffect(() => {
     let cancelled = false;
-    void window.wisp
+    void api
       .getMcpSettings()
       .then((result) => {
         if (!cancelled && result.ok) setMcpView(result.value);
       })
       .catch(() => undefined);
-    const unsubscribe = window.wisp.subscribeToMcpSettings((next) => setMcpView(next));
+    const unsubscribe = api.subscribeToMcpSettings((next) => setMcpView(next));
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [api]);
 
   async function togglePreset(server: McpServerSummary) {
     if (!server.preset) return;
@@ -161,7 +163,7 @@ export function PluginSettingsSection({
     setListError("");
     try {
       // Saving without a credential or headers keeps the saved ones, so access is kept too.
-      const result = await window.wisp.saveMcpServer({
+      const result = await api.saveMcpServer({
         serverId: server.serverId,
         name: server.name,
         endpoint: server.endpoint,
@@ -182,7 +184,7 @@ export function PluginSettingsSection({
     setToggling(plugin.id);
     setListError("");
     try {
-      const result = await window.wisp.savePluginSettings({ pluginId: plugin.id, enabled: !plugin.enabled });
+      const result = await api.savePluginSettings({ pluginId: plugin.id, enabled: !plugin.enabled });
       if (result.ok) setView(result.value);
       else setListError(result.error.message);
     } catch {
@@ -494,6 +496,7 @@ function DefaultProviders({
   view: PluginSettingsView;
   onSaved: (view: PluginSettingsView) => void;
 }) {
+  const api = useWispApi();
   const formId = useId();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -509,7 +512,7 @@ function DefaultProviders({
     setSaving(true);
     setError("");
     try {
-      const result = await window.wisp.savePluginDefaults({
+      const result = await api.savePluginDefaults({
         defaultProviders: { ...view.defaultProviders, [capability]: pluginId },
       });
       if (result.ok) onSaved(result.value);
@@ -646,6 +649,7 @@ function PluginConnectForm({
   onConnected: (view: PluginSettingsView) => void;
   onBack: () => void;
 }) {
+  const api = useWispApi();
   const formId = useId();
   const [apiKey, setApiKey] = useState("");
   const [address, setAddress] = useState("");
@@ -660,12 +664,12 @@ function PluginConnectForm({
     setBusy(true);
     setError("");
     try {
-      const tested = await window.wisp.testPluginConnection({ pluginId: plugin.id, apiKey: key, ...endpoint });
+      const tested = await api.testPluginConnection({ pluginId: plugin.id, apiKey: key, ...endpoint });
       if (!tested.ok) {
         setError(tested.error.message);
         return;
       }
-      const result = await window.wisp.savePluginSettings({
+      const result = await api.savePluginSettings({
         pluginId: plugin.id,
         enabled: true,
         apiKey: key,
@@ -756,6 +760,7 @@ function PluginManageView({
   onSaved: (view: PluginSettingsView) => void;
   onBack: () => void;
 }) {
+  const api = useWispApi();
   const formId = useId();
   const [apiKey, setApiKey] = useState("");
   const [address, setAddress] = useState(plugin.endpoint ?? "");
@@ -778,13 +783,13 @@ function PluginManageView({
     setMessage("");
     try {
       if (action === "test") {
-        const result = await window.wisp.testPluginConnection({ pluginId: plugin.id });
+        const result = await api.testPluginConnection({ pluginId: plugin.id });
         if (result.ok) setMessage(result.value.message);
         else setError(result.error.message);
         return;
       }
       if (action === "replace") {
-        const tested = await window.wisp.testPluginConnection({ pluginId: plugin.id, apiKey: key, ...endpoint });
+        const tested = await api.testPluginConnection({ pluginId: plugin.id, apiKey: key, ...endpoint });
         if (!tested.ok) {
           setError(tested.error.message);
           return;
@@ -792,10 +797,10 @@ function PluginManageView({
       }
       const result =
         action === "remove"
-          ? await window.wisp.removePlugin({ pluginId: plugin.id })
+          ? await api.removePlugin({ pluginId: plugin.id })
           : action === "replace"
-            ? await window.wisp.savePluginSettings({ pluginId: plugin.id, enabled: true, apiKey: key, ...endpoint })
-            : await window.wisp.savePluginSettings({ pluginId: plugin.id, enabled: !plugin.enabled });
+            ? await api.savePluginSettings({ pluginId: plugin.id, enabled: true, apiKey: key, ...endpoint })
+            : await api.savePluginSettings({ pluginId: plugin.id, enabled: !plugin.enabled });
       if (!result.ok) {
         setError(result.error.message);
         return;
@@ -984,6 +989,7 @@ function PluginAccount({
   onSaved: (view: PluginSettingsView) => void;
   onChanged: (view: PluginSettingsView) => void;
 }) {
+  const api = useWispApi();
   const [replacingClient, setReplacingClient] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState("");
@@ -994,7 +1000,7 @@ function PluginAccount({
     setMessage("");
     setError("");
     try {
-      const result = await window.wisp.testPluginConnection({ pluginId: plugin.id });
+      const result = await api.testPluginConnection({ pluginId: plugin.id });
       if (result.ok) setMessage(result.value.message);
       else setError(result.error.message);
     } catch {
@@ -1080,6 +1086,7 @@ function PluginSignIn({
   onChanged: (view: PluginSettingsView) => void;
   extraActions?: ReactNode;
 }) {
+  const api = useWispApi();
   const formId = useId();
   const entry = pluginCatalogEntry(plugin.id);
   const [clientId, setClientId] = useState("");
@@ -1097,7 +1104,7 @@ function PluginSignIn({
     setError("");
     setMessage("");
     try {
-      const result = await window.wisp.startPluginSignIn({
+      const result = await api.startPluginSignIn({
         pluginId: plugin.id,
         ...(requireClient ? { clientId: clientId.trim(), clientSecret: clientSecret.trim() } : {}),
       });
@@ -1116,7 +1123,7 @@ function PluginSignIn({
   async function cancel() {
     setCancelling(true);
     try {
-      const result = await window.wisp.cancelPluginSignIn({ pluginId: plugin.id });
+      const result = await api.cancelPluginSignIn({ pluginId: plugin.id });
       if (result.ok) onChanged(result.value);
     } catch {
       // The waiting sign-in reports the outcome either way.
@@ -1217,7 +1224,7 @@ function PluginSignIn({
         <ManualSignInForm
           signInUrl={plugin.signInUrl}
           onFinish={async (redirectUrl) => {
-            const result = await window.wisp.finishPluginSignIn({ pluginId: plugin.id, redirectUrl });
+            const result = await api.finishPluginSignIn({ pluginId: plugin.id, redirectUrl });
             if (!result.ok) return result.error.message;
             onChanged(result.value);
             return undefined;

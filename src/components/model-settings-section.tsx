@@ -18,6 +18,7 @@ import {
 import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useWispApi } from "@/lib/environment-api";
 import {
   catalogModel,
   invalidMaxOutputTokens,
@@ -34,12 +35,13 @@ interface ModelSettingsSectionProps {
 
 /** Chooses which model does what. The providers those models come from are connected under Providers. */
 function ModelSettingsSection({ onOpenProviders }: ModelSettingsSectionProps) {
+  const api = useWispApi();
   const [view, setView] = useState<AiSettingsView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void window.wisp
+    void api
       .getAiSettings()
       .then((result) => {
         if (cancelled) return;
@@ -52,7 +54,7 @@ function ModelSettingsSection({ onOpenProviders }: ModelSettingsSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [api]);
 
   return (
     <section
@@ -98,6 +100,7 @@ function DefaultModelSettings({
   view: AiSettingsView;
   onViewChange: (view: AiSettingsView) => void;
 }) {
+  const api = useWispApi();
   const selection = view.selection;
   const savedMaxOutputTokens = String(selection?.maxOutputTokens ?? "");
   const [maxOutputTokens, setMaxOutputTokens] = useState(savedMaxOutputTokens);
@@ -120,7 +123,7 @@ function DefaultModelSettings({
     setError(null);
     setSaved(false);
     try {
-      const result = await window.wisp.saveAiSettings({ selection: next });
+      const result = await api.saveAiSettings({ selection: next });
       if (result.ok) {
         onViewChange(result.value);
         setSaved(true);

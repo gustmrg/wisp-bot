@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 
 import type { AiSettingsView, AuxiliaryModelView, AuxiliaryTask } from "../../shared/contracts";
 import { SearchableCombobox } from "@/components/searchable-combobox";
+import { useWispApi } from "@/lib/environment-api";
 import { modelOptions, modelOptionValue, parseModelOptionValue, unavailableModelOption } from "@/lib/model-choice";
 import { modelLabLogo } from "@/lib/model-lab";
 import {
@@ -82,6 +83,7 @@ function AuxiliaryModelRow({
   onViewChange: (view: AiSettingsView) => void;
   onSaved: (message: string | null) => void;
 }) {
+  const api = useWispApi();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selected = slot.selection;
@@ -92,7 +94,7 @@ function AuxiliaryModelRow({
     setError(null);
     onSaved(null);
     try {
-      const result = await window.wisp.saveAuxiliaryModel({
+      const result = await api.saveAuxiliaryModel({
         task,
         selection: value === OFF ? null : parseModelOptionValue(value),
       });

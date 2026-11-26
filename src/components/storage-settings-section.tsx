@@ -14,8 +14,11 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { useSettingsEnvironment } from "@/components/settings/settings-environment-selector";
+import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useWispApi } from "@/lib/environment-api";
 import { formatMeasuredAt } from "@/lib/storage-format";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import { Wisp } from "@/components/wisp";
@@ -30,9 +33,13 @@ export function StorageSettingsSection({
   initialConversationId?: string;
   conversations?: ReadonlyArray<ChatView>;
 }) {
+  const api = useWispApi();
+  const settingsEnv = useSettingsEnvironment();
   const connection = useContext(ActiveConnectionContext);
   const connectionName =
-    connection?.profiles.find((profile) => profile.id === connection.activeId)?.name ?? "This computer";
+    settingsEnv?.selectedProfile?.name ??
+    connection?.profiles.find((profile) => profile.id === connection.activeId)?.name ??
+    "This computer";
   const [state, setState] = useState<{ summary?: StorageSummary; error?: string; loading: boolean }>({ loading: true });
   const [refreshCount, setRefreshCount] = useState(0);
   const [query, setQuery] = useState("");
@@ -40,12 +47,13 @@ export function StorageSettingsSection({
   const [inspecting, setInspecting] = useState<InspectTarget | null>(null);
   const first = useRef(true);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshCount explicitly re-measures storage.
   useEffect(() => {
     let active = true;
     const refresh = !first.current;
     first.current = false;
     setState((current) => ({ summary: current.summary, loading: true }));
-    void window.wisp
+    void api
       .getStorageSummary(refresh ? { refresh: true } : {})
       .then((result) => {
         if (!active) return;
@@ -61,7 +69,7 @@ export function StorageSettingsSection({
     return () => {
       active = false;
     };
-  }, [refreshCount]);
+  }, [api, refreshCount]);
 
   const { summary } = state;
   const visible = useMemo(() => {
@@ -109,9 +117,9 @@ export function StorageSettingsSection({
       aria-labelledby="storage-settings-title"
       className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
     >
-      <h2 id="storage-settings-title" className="mb-1 mt-0 text-lg font-semibold">
+      <SettingsPanelTitle id="storage-settings-title" scope="environment">
         Storage
-      </h2>
+      </SettingsPanelTitle>
       <p className="mb-4 text-xs leading-relaxed text-dim">
         Files in workspaces on <strong className="font-medium text-foreground">{connectionName}</strong>. Conversations,
         settings, and sessions aren't counted.
@@ -317,6 +325,7 @@ function WorkspaceRow({
 }
 
 function ArchiveList({ archives, onDeleted }: { archives: ReadonlyArray<StorageArchive>; onDeleted: () => void }) {
+  const api = useWispApi();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
@@ -328,7 +337,7 @@ function ArchiveList({ archives, onDeleted }: { archives: ReadonlyArray<StorageA
     setPending(true);
     setMessage("");
     try {
-      const result = await window.wisp.deleteArchivedStorage({ ids: chosen });
+      const result = await api.deleteArchivedStorage({ ids: chosen });
       if (!result.ok) {
         setMessage(result.error.message);
         return;

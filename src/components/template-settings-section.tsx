@@ -1,15 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftIcon, CopyIcon, DownloadIcon, PlusIcon, SearchIcon, UploadIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CopyIcon,
+  DownloadIcon,
+  LaptopIcon,
+  PlusIcon,
+  SearchIcon,
+  SendIcon,
+  ServerIcon,
+  UploadIcon,
+} from "lucide-react";
 
 import { MarkdownView } from "@/components/markdown-view";
+import {
+  environmentPhase,
+  isEnvironmentConnected,
+  useSettingsEnvironment,
+} from "@/components/settings/settings-environment-selector";
 import { ConfirmAction, SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
 import { SettingsPanelTitle } from "@/components/settings/settings-scope";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Wisp } from "@/components/wisp";
 import { downloadTextFile } from "@/lib/download-file";
+import { createEnvironmentApi, useWispApi } from "@/lib/environment-api";
 import type { TemplateUseResult } from "@/lib/create-wisp-from-template";
+import type { ConnectionProfileView } from "../../shared/connections";
 import { WISP_NAME_MAX_LENGTH } from "../../shared/conversations";
 import { pluginCatalogEntry } from "../../shared/plugins";
 import { parseSkillFile } from "../../shared/skills";
@@ -49,6 +67,8 @@ export function TemplateSettingsSection({
   onOpenModelSettings?: () => void;
   onClose?: () => void;
 }) {
+  const api = useWispApi();
+  const settingsEnv = useSettingsEnvironment();
   const [entries, setEntries] = useState<ReadonlyArray<WispTemplateEntry> | null>(null);
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
@@ -59,9 +79,21 @@ export function TemplateSettingsSection({
   const [outcome, setOutcome] = useState<TemplateUseResult | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const otherConnectedEnvironments = useMemo<ReadonlyArray<ConnectionProfileView>>(() => {
+    if (!settingsEnv || settingsEnv.connectionsView.canManage === false) return [];
+    const { connectionsView, selectedEnvironmentId } = settingsEnv;
+    return connectionsView.profiles.filter(
+      (profile) =>
+        profile.id !== selectedEnvironmentId && isEnvironmentConnected(environmentPhase(connectionsView, profile.id)),
+    );
+  }, [settingsEnv]);
+
+  const targetEnvironmentName =
+    settingsEnv && !settingsEnv.isActiveEnvironment ? settingsEnv.selectedProfile?.name : undefined;
+
   useEffect(() => {
     let active = true;
-    void window.wisp
+    void api
       .listWispTemplates()
       .then((result) => {
         if (!active) return;
@@ -76,7 +108,7 @@ export function TemplateSettingsSection({
     return () => {
       active = false;
     };
-  }, []);
+  }, [api]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -95,7 +127,7 @@ export function TemplateSettingsSection({
   async function save(contents: string, id?: string): Promise<boolean> {
     setMessage("");
     try {
-      const result = await window.wisp.saveWispTemplate({ contents, ...(id ? { id } : {}) });
+      const result = await api.saveWispTemplate({ contents, ...(id ? { id } : {}) });
       if (!result.ok) {
         setMessage(result.error.message);
         return false;
@@ -119,7 +151,7 @@ export function TemplateSettingsSection({
   async function remove(id: string) {
     setMessage("");
     try {
-      const result = await window.wisp.deleteWispTemplate({ id });
+      const result = await api.deleteWispTemplate({ id });
       if (!result.ok) {
         setMessage(result.error.message);
         return;
@@ -131,14 +163,28 @@ export function TemplateSettingsSection({
     }
   }
 
+  async function copyToEnvironment(template: WispTemplate, target: ConnectionProfileView): Promise<string | null> {
+    if (!settingsEnv) return "Could not copy the template.";
+    // Strip access requests so only the credential-free, grant-free definition crosses environments (ADR 040).
+    const { access: _access, ...portable } = template;
+    try {
+      const targetApi = createEnvironmentApi(target.id, settingsEnv.activeEnvironmentId);
+      const result = await targetApi.saveWispTemplate({ contents: serializeWispTemplate(portable) });
+      if (!result.ok) return result.error.message;
+      return null;
+    } catch {
+      return `Could not copy the template to ${target.name}.`;
+    }
+  }
+
   async function use(entry: WispTemplateEntry) {
     if (!onUseTemplate || usingId) return;
     setOutcome(null);
     setUsingId(entry.id);
     try {
       const result = await onUseTemplate(entry);
-      // With nothing to say, the new Wisp's conversation is what comes next.
-      if (result.status === "created" && !result.notices.length) onClose?.();
+      // With nothing to say in the active environment, the new Wisp's conversation is what comes next.
+      if (result.status === "created" && !result.notices.length && !targetEnvironmentName) onClose?.();
       else setOutcome(result);
     } finally {
       setUsingId(null);
@@ -168,7 +214,14 @@ export function TemplateSettingsSection({
       <p className="mb-4 text-xs leading-relaxed text-dim">
         Ready-made Wisps, each with a specialty. Use one to start right away.
       </p>
-      {outcome ? <UseOutcome outcome={outcome} onOpenModelSettings={onOpenModelSettings} onClose={onClose} /> : null}
+      {outcome ? (
+        <UseOutcome
+          outcome={outcome}
+          targetEnvironmentName={targetEnvironmentName}
+          onOpenModelSettings={onOpenModelSettings}
+          onClose={onClose}
+        />
+      ) : null}
       {previewed ? (
         <TemplatePreview
           key={previewed.id}
@@ -179,6 +232,8 @@ export function TemplateSettingsSection({
           }}
           {...(onUseTemplate ? { onUse: (chosen: WispTemplateEntry) => void use(chosen), usingId } : {})}
           {...(onCustomizeTemplate ? { onCustomize: onCustomizeTemplate } : {})}
+          otherEnvironments={otherConnectedEnvironments}
+          onCopyToEnvironment={copyToEnvironment}
           onSave={save}
           onDelete={remove}
           message={message}
@@ -272,10 +327,12 @@ function templateSummary({ builtIn, template }: WispTemplateEntry): string {
 /** What came of using a template, when there is more to say than opening the new Wisp. */
 function UseOutcome({
   outcome,
+  targetEnvironmentName,
   onOpenModelSettings,
   onClose,
 }: {
   outcome: TemplateUseResult;
+  targetEnvironmentName?: string;
   onOpenModelSettings?: (() => void) | undefined;
   onClose?: (() => void) | undefined;
 }) {
@@ -293,7 +350,11 @@ function UseOutcome({
           <p className="m-0">Choose a default model first, so your new Wisp can respond.</p>
         ) : (
           <>
-            <p className="m-0 font-medium">{outcome.name} is ready.</p>
+            <p className="m-0 font-medium">
+              {targetEnvironmentName
+                ? `${outcome.name} was created in ${targetEnvironmentName}.`
+                : `${outcome.name} is ready.`}
+            </p>
             {outcome.notices.map((notice) => (
               <p key={notice} className="m-0 text-dim">
                 {notice}
@@ -306,7 +367,7 @@ function UseOutcome({
         <Button size="sm" onClick={onOpenModelSettings}>
           Open AI Model
         </Button>
-      ) : (
+      ) : targetEnvironmentName ? null : (
         <Button size="sm" onClick={onClose}>
           Open {outcome.name}
         </Button>
@@ -397,6 +458,8 @@ function TemplatePreview({
   onUse,
   onCustomize,
   usingId,
+  otherEnvironments,
+  onCopyToEnvironment,
   onSave,
   onDelete,
   message,
@@ -406,6 +469,8 @@ function TemplatePreview({
   onUse?: (entry: WispTemplateEntry) => void;
   onCustomize?: (entry: WispTemplateEntry) => void;
   usingId?: string | null;
+  otherEnvironments: ReadonlyArray<ConnectionProfileView>;
+  onCopyToEnvironment: (template: WispTemplate, target: ConnectionProfileView) => Promise<string | null>;
   onSave: (contents: string, id?: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<void>;
   message: string;
@@ -413,6 +478,9 @@ function TemplatePreview({
   const { template, builtIn } = entry;
   const [name, setName] = useState(template.name);
   const [busy, setBusy] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyNotice, setCopyNotice] = useState("");
+  const [copyError, setCopyError] = useState("");
 
   async function run(task: () => Promise<unknown>) {
     setBusy(true);
@@ -421,6 +489,17 @@ function TemplatePreview({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleCopyTo(target: ConnectionProfileView) {
+    setCopyOpen(false);
+    setCopyNotice("");
+    setCopyError("");
+    await run(async () => {
+      const error = await onCopyToEnvironment(template, target);
+      if (error) setCopyError(error);
+      else setCopyNotice(`Copied ${template.name} to ${target.name}.`);
+    });
   }
 
   const copyName = `${template.name} copy`.slice(0, WISP_NAME_MAX_LENGTH);
@@ -478,6 +557,37 @@ function TemplatePreview({
               <DownloadIcon data-icon="inline-start" aria-hidden="true" />
               Export
             </Button>
+            {otherEnvironments.length > 0 ? (
+              <Popover open={copyOpen} onOpenChange={setCopyOpen}>
+                <PopoverTrigger
+                  render={
+                    <Button size="sm" variant="outline" disabled={busy}>
+                      <SendIcon data-icon="inline-start" aria-hidden="true" />
+                      Copy to…
+                    </Button>
+                  }
+                />
+                <PopoverContent side="bottom" align="start" className="w-56 p-1">
+                  <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label="Copy template to environment">
+                    {otherEnvironments.map((target) => {
+                      const Icon = target.kind === "local" ? LaptopIcon : ServerIcon;
+                      return (
+                        <li key={target.id}>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md border-0 bg-transparent px-2 py-1.5 text-left text-sm outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={() => void handleCopyTo(target)}
+                          >
+                            <Icon aria-hidden="true" className="size-3.5 shrink-0 text-dim" />
+                            <span className="truncate">{target.name}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </PopoverContent>
+              </Popover>
+            ) : null}
             <ConfirmAction
               label="Delete"
               confirmLabel={`Delete ${template.name}`}
@@ -514,9 +624,14 @@ function TemplatePreview({
           </form>
         </>
       )}
-      {message ? (
+      {copyNotice ? (
+        <p role="status" className="m-0 text-xs text-dim">
+          {copyNotice}
+        </p>
+      ) : null}
+      {copyError || message ? (
         <p role="alert" className="m-0 text-xs text-destructive">
-          {message}
+          {copyError || message}
         </p>
       ) : null}
 

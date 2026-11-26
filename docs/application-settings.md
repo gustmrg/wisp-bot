@@ -1,13 +1,11 @@
 # Application settings and status
 
-**Settings** (application-level) groups its panels the same way on the desktop
-and on a phone:
+**Settings** (application-level) splits device-local preferences and
+environment-scoped settings into two groups, the same way on the desktop and on
+a phone:
 
-- **Account and server**: **General**, **Connections**, **Remote access**
-- **Wisps**: **AI Model**, **Providers**, **Voice input**, **Plugins**, **MCP servers**, **Permissions**, **Templates**, **Jobs**
-- **Notifications and input**: **Notifications**, **Shortcuts**
-- **Storage and data**: **Token usage**, **Storage**
-- **App**: **About**
+- **App**: **General**, **Notifications**, **Shortcuts**, **Connections**, **Remote access**, **About**
+- **Environment**: **Profile & memory**, **AI Model**, **Providers**, **Voice input**, **Plugins**, **MCP servers**, **Permissions**, **Templates**, **Jobs**, **Storage**, **Token usage**
 
 Where they are covered elsewhere:
 
@@ -21,38 +19,41 @@ Where they are covered elsewhere:
 
 ## Where each setting lives
 
-A setting is saved in one of two places. On the **device**, it applies only to
-this app or browser. In the **environment**, it applies to **This computer** or
-to the server in use, and every device connected to that server shares it. Each
-environment keeps its own, and nothing is copied between them.
+A setting is saved in one of two places. **App** settings live on this
+**device** and apply only to this app or browser. **Environment** settings live
+on **This computer** or on a Wisp server, and every device connected to that
+environment shares them. Each environment keeps its own, and nothing is copied
+between them automatically.
 
-With the Wisps on **This computer**, the device and the environment are the same
-machine, so the panels say nothing about it. On a server, or in the browser app,
-each panel's title shows the server's name or **This device**. **General** and
-**Voice input**, which hold both, show it for each group.
+When the desktop app has two or more environments saved, every panel under
+**Environment** shows an environment selector in its header. Changing it lets
+you inspect and edit another connected environment's settings without switching
+your active conversation. If the chosen environment is not connected yet, the
+panel shows its status with **Connect** and **Open Connections**. With a single
+environment, or in the browser app, no selector is shown.
 
 | Panel | Settings | Saved |
 | --- | --- | --- |
-| **General** | **Name**, **About you** | Environment |
 | **General** | **Theme**, **Wisp colors**, **Conversation order**, **Reply speed**, **Tools in circles**, **Time format** | Device |
-| **General** | **Timezone** | Device, and reported to the environment |
+| **General** | **Timezone** | Device, and reported to the active environment |
 | **General** | **Launch at login** | This computer's system |
-| **Connections** | Saved servers and their pairing | Device |
+| **Notifications** | Sounds, **Volume**, **System notifications**, **Mute the open conversation**, **Server connection notice** | Device |
+| **Shortcuts** | **Voice input** shortcut | Device |
+| **Connections** | Saved servers, their pairing, and **Keep this computer's Wisps running in the background** | Device |
 | **Remote access** | **Remote access**, **Address**, **Paired devices** | This computer |
+| **About** | Nothing to set; checks for updates | Device |
+| **Profile & memory** | **Name**, **About you** | Environment |
 | **AI Model** | **Default model**, **Reasoning**, **Maximum output tokens**, **Fallback**, **Background tasks** | Environment |
 | **Providers** | API keys, subscription sign-in, Claude Code's status | Environment |
-| **Voice input** | **Microphone**, **Send automatically**, **Provider**, **Model**, **Language**, **Fallback model** | Device |
+| **Voice input** | **Microphone** (device-local), **Send automatically**, **Provider**, **Model**, **Language**, **Fallback model** | Device |
 | **Voice input** | API key | Environment |
 | **Plugins** | Connections and their keys, **Default web providers**, which Wisps can use each one | Environment |
 | **MCP servers** | Servers, their credentials, which Wisps can use each one | Environment |
 | **Permissions** | **Auto-review file changes**, **Create files**, **Modify files**, **Integration blocks** | Environment |
 | **Templates** | Saved templates | Environment |
 | **Jobs** | Every Wisp's jobs | Environment |
-| **Token usage** | Nothing to set; shows the environment's usage | Environment |
 | **Storage** | Workspace size limits, and removing files and archives | Environment |
-| **Notifications** | Sounds, **Volume**, **System notifications**, **Mute the open conversation**, **Server connection notice** | Device |
-| **Shortcuts** | **Voice input** shortcut | Device |
-| **About** | Nothing to set; checks for updates | Device |
+| **Token usage** | Nothing to set; shows the environment's usage | Environment |
 
 A few things can be reached from two places on purpose, and both change the
 same value:
@@ -82,19 +83,23 @@ saved key.
 
 ## General
 
-- **You** — your **Name**, which your Wisps call you by and send to their AI
-  provider when you chat. It also supplies the sidebar name and initials. It is
-  required, saved locally in `user-profile.json`, and saved when you leave the
-  field or press Enter. Busy Wisps pick up a new name after their current turn.
-  Below it, **About you** lists what every Wisp knows about you: add, edit,
-  remove, or export it as `USER.md`. See [memory](context-and-memory.md#memory).
-- **Application** — theme, Wisp colors, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
+- **Application** — theme, Wisp colors, conversation order, reply speed, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
 - **Tools in circles** — under **Settings → General → Application**, choose **Show**
   (the default) or **Hide** for tool steps in all circles on this device.
   Approval requests, reply errors, and the working indicator stay visible.
   Hidden steps remain in the saved transcript and return when **Show** is selected.
   A Wisp's own conversation is unchanged.
 - **Date and time** — timezone and time format.
+
+## Profile & memory
+
+- **You** — your **Name**, which your Wisps call you by and send to their AI
+  provider when you chat. It also supplies the sidebar name and initials. It is
+  required, saved in the selected environment's `user-profile.json`, and saved
+  when you leave the field or press Enter. Busy Wisps pick up a new name after
+  their current turn. Below it, **About you** lists what every Wisp in that
+  environment knows about you: add, edit, remove, or export it as `USER.md`.
+  See [memory](context-and-memory.md#memory).
 
 **Timezone** defaults to auto-detect, which follows this device. Every date
 and time in the app is shown in it: message times, day dividers, the
@@ -223,8 +228,10 @@ it asks for ([ADR 040](decisions/040-wisp-templates.md)).
 - Saved templates can be duplicated, renamed, and deleted. Built-in templates
   come with the app and cannot be changed.
 - **Import** reads a `.wisp-template.json` file, and **Export** in a saved
-  template's preview writes one. Templates stay on the server they were
-  saved on; exporting and importing is how one moves to another.
+  template's preview writes one. When two or more environments are connected in
+  the desktop app, **Copy to…** copies a saved template's credential-free,
+  grant-free definition to another connected environment without copying
+  credentials, access grants, or history.
 
 A Wisp's settings and its profile page have **Save as template**, which keeps
 the Wisp's current setup as a template on its server.

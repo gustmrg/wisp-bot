@@ -1,3 +1,4 @@
+import type { WispApi } from "../../shared/contracts";
 import type { ExecutionMode, WispSetupView } from "../../shared/execution";
 import {
   COMMAND_WORKSPACE_QUOTA_BYTES,
@@ -33,16 +34,18 @@ export const DEFAULT_WISP_SETUP: WispSetupDraft = { quotaBytes: WORKSPACE_QUOTA_
  * Applies the setup to a Wisp that was just created. Resolves with what could
  * not be applied, as a sentence fragment, or an empty string when all of it was.
  */
-export async function applyWispSetup(conversationId: string, setup: WispSetupDraft): Promise<string> {
+export async function applyWispSetup(
+  conversationId: string,
+  setup: WispSetupDraft,
+  api: WispApi = window.wisp,
+): Promise<string> {
   const failures: string[] = [];
   if (setup.quotaBytes !== DEFAULT_WISP_SETUP.quotaBytes) {
-    const result = await window.wisp
-      .setWorkspaceQuota({ conversationId, quotaBytes: setup.quotaBytes })
-      .catch(() => null);
+    const result = await api.setWorkspaceQuota({ conversationId, quotaBytes: setup.quotaBytes }).catch(() => null);
     if (!result?.ok) failures.push(`its workspace size (${result ? result.error.message : "no answer"})`);
   }
   if (setup.executionMode !== DEFAULT_WISP_SETUP.executionMode) {
-    const result = await window.wisp
+    const result = await api
       .saveWispExecution({ conversationId, mode: setup.executionMode, image: null, localNetwork: false })
       .catch(() => null);
     if (!result?.ok) failures.push(`its commands (${result ? result.error.message : "no answer"})`);

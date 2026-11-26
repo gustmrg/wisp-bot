@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { downloadTextFile } from "@/lib/download-file";
+import { useWispApi } from "@/lib/environment-api";
 import { describeMemoryTextEdit, planMemoryTextEdit, type MemoryTextEdit } from "@/lib/memory-text-edit";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,7 @@ type Apply = (operations: MemoryOperationRequest[]) => Promise<boolean>;
  * person's, which every Wisp shares (ADR 029).
  */
 function useMemory(conversationId: string | undefined) {
+  const api = useWispApi();
   const [view, setView] = useState<MemoryView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -51,7 +53,7 @@ function useMemory(conversationId: string | undefined) {
 
   const load = useCallback(async () => {
     try {
-      const result = await window.wisp.getMemory(conversationId === undefined ? {} : { conversationId });
+      const result = await api.getMemory(conversationId === undefined ? {} : { conversationId });
       if (result.ok) {
         setView(result.value);
         setError("");
@@ -59,12 +61,12 @@ function useMemory(conversationId: string | undefined) {
     } catch {
       setError("Could not load memory.");
     }
-  }, [conversationId]);
+  }, [api, conversationId]);
 
   useEffect(() => {
     void load();
     // A memory a Wisp just saved shows up without reopening settings. Any Wisp may save about the person.
-    return window.wisp.subscribeToAgentEvents((event) => {
+    return api.subscribeToAgentEvents((event) => {
       if (
         (conversationId === undefined || event.conversationId === conversationId) &&
         event.type === "turn_item" &&
@@ -74,13 +76,13 @@ function useMemory(conversationId: string | undefined) {
         void load();
       }
     });
-  }, [conversationId, load]);
+  }, [api, conversationId, load]);
 
   const apply: Apply = async (operations) => {
     setBusy(true);
     setError("");
     try {
-      const result = await window.wisp.applyMemory({ ...owner, operations });
+      const result = await api.applyMemory({ ...owner, operations });
       if (!result.ok) {
         setError(result.error.message);
         return false;
@@ -98,7 +100,7 @@ function useMemory(conversationId: string | undefined) {
   async function exportScope(scope: MemoryScope) {
     setError("");
     try {
-      const result = await window.wisp.exportMemory({ ...owner, scope });
+      const result = await api.exportMemory({ ...owner, scope });
       if (result.ok) download(result.value);
       else setError(result.error.message);
     } catch {
@@ -133,7 +135,7 @@ function MemoryScopePanel({ scope, memory }: { scope: MemoryScope; memory: Memor
   );
 }
 
-/** What every Wisp knows about the person, in Settings → General (ADR 029). */
+/** What every Wisp knows about the person, in Settings → Profile & memory (ADR 029). */
 export function UserMemorySettings() {
   const memory = useMemory(undefined);
   return (
@@ -149,7 +151,7 @@ interface WispMemorySettingsProps {
   memoryOff: boolean;
   /** Saves the switch; false when it could not be saved. */
   onChangeMemoryOff: (memoryOff: boolean) => Promise<boolean> | void;
-  /** Opens Settings → General, where the person's own memory is kept. */
+  /** Opens Settings → Profile & memory, where the person's own memory is kept. */
   onOpenAboutYou?: () => void;
 }
 
@@ -206,7 +208,7 @@ function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff, onOpenAbout
           <SettingsRowCopy>
             <SettingsRowTitle>About you</SettingsRowTitle>
             <SettingsRowDescription>
-              What every Wisp knows about you is kept in Settings → General.
+              What every Wisp knows about you is kept in Settings → Profile &amp; memory.
             </SettingsRowDescription>
           </SettingsRowCopy>
           {onOpenAboutYou ? (

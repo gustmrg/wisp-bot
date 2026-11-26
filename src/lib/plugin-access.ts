@@ -34,6 +34,7 @@ export type IntegrationSettingsTarget =
   | { section: "storage"; conversationId: string }
   | { section: "jobs" }
   | { section: "usage" }
+  | { section: "profile" }
   | { section: "general" };
 
 export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {

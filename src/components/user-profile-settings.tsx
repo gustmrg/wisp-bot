@@ -9,7 +9,6 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { SettingsScopeNote } from "@/components/settings/settings-scope";
 import { FormStatus } from "@/components/ui/form-status";
 import { Input } from "@/components/ui/input";
 
@@ -37,7 +36,7 @@ export function UserProfileSettings({
   }
 
   return (
-    <SettingsGroup label="You" note={<SettingsScopeNote scope="environment" />}>
+    <SettingsGroup label="You">
       <SettingsCard>
         <SettingsRow className="max-[620px]:flex-col max-[620px]:items-stretch">
           <SettingsRowCopy>

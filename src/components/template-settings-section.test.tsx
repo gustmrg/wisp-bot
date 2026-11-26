@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BUILTIN_WISP_TEMPLATES } from "../../shared/builtin-wisp-templates";
+import type { ConnectionsView } from "../../shared/connections";
 import { parseWispTemplate, type WispTemplateEntry } from "../../shared/wisp-template";
+import {
+  environmentPhase,
+  isEnvironmentConnected,
+  SettingsEnvironmentContext,
+} from "@/components/settings/settings-environment-selector";
 import { TemplateSettingsSection } from "./template-settings-section";
 
 const builtIns: WispTemplateEntry[] = BUILTIN_WISP_TEMPLATES.map(({ id, template }) => ({
@@ -344,4 +350,79 @@ it("explains that an older server has no templates", async () => {
   });
   render(<TemplateSettingsSection />);
   expect(await screen.findByRole("alert")).toHaveTextContent("This server is older than this app and has no templates");
+});
+
+it("copies a saved template without access grants to another connected environment", async () => {
+  const user = userEvent.setup();
+  const invokeConnectionOperation = vi.fn(async () => ({
+    ok: true as const,
+    value: { id: "remote-copy", builtIn: false, template: saved.template, updatedAt: "now" },
+  }));
+  install({ invokeConnectionOperation });
+
+  const view: ConnectionsView = {
+    activeId: "local",
+    profiles: [
+      { id: "local", kind: "local", name: "This computer", paired: true },
+      { id: "prod", kind: "url", name: "Prod server", url: "https://test-host.invalid", paired: true },
+    ],
+    status: { profileId: "local", phase: "local", epoch: 1 },
+    secureStorageAvailable: true,
+    environments: {
+      local: {
+        profileId: "local",
+        phase: "local",
+        workingWisps: 0,
+        pendingApprovals: 0,
+        unreadConversations: 0,
+        wispCount: 1,
+        circleCount: 0,
+      },
+      prod: {
+        profileId: "prod",
+        phase: "connected",
+        workingWisps: 0,
+        pendingApprovals: 0,
+        unreadConversations: 0,
+        wispCount: 1,
+        circleCount: 0,
+      },
+    },
+  };
+  const phase = environmentPhase(view, "local");
+  render(
+    <SettingsEnvironmentContext.Provider
+      value={{
+        connectionsView: view,
+        selectedEnvironmentId: "local",
+        activeEnvironmentId: "local",
+        selectedProfile: view.profiles[0],
+        selectedPhase: phase,
+        isSelectedConnected: isEnvironmentConnected(phase),
+        isActiveEnvironment: true,
+        onSelectEnvironment: vi.fn(),
+        onOpenConnections: vi.fn(),
+      }}
+    >
+      <TemplateSettingsSection />
+    </SettingsEnvironmentContext.Provider>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "Preview Release Manager" }));
+  await user.click(screen.getByRole("button", { name: "Copy to…" }));
+  await user.click(await screen.findByRole("button", { name: "Prod server" }));
+
+  expect(invokeConnectionOperation).toHaveBeenCalledTimes(1);
+  const [call] = invokeConnectionOperation.mock.calls as unknown as [
+    [{ connectionId: string; operation: string; payload: { contents: string } }],
+  ];
+  expect(call[0].connectionId).toBe("prod");
+  expect(call[0].operation).toBe("saveWispTemplate");
+  const parsed = parseWispTemplate(call[0].payload.contents);
+  expect(parsed.ok).toBe(true);
+  if (parsed.ok) {
+    expect(parsed.template.name).toBe("Release Manager");
+    expect(parsed.template.access).toBeUndefined();
+  }
+  expect(await screen.findByText("Copied Release Manager to Prod server.")).toBeVisible();
 });

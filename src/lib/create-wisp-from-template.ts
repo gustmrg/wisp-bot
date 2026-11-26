@@ -13,7 +13,7 @@ import {
   templateAsksForAccess,
   uniqueWispName,
 } from "@/lib/wisp-template-actions";
-import type { ModelSelection } from "../../shared/contracts";
+import type { ModelSelection, WispApi } from "../../shared/contracts";
 import type { WispSetupView } from "../../shared/execution";
 import type { WispTemplate } from "../../shared/wisp-template";
 
@@ -64,11 +64,12 @@ export async function createWispFromTemplate(
     wisp: NewWisp,
     options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
   ) => Promise<string | null>,
+  api: WispApi = window.wisp,
 ): Promise<TemplateUseResult> {
   const name = uniqueWispName(template.name, takenNames);
   const failedToCreate = { status: "failed", message: `Could not create ${name}. Try again.` } as const;
   try {
-    const settings = await window.wisp.getAiSettings();
+    const settings = await api.getAiSettings();
     if (!settings.ok) return { status: "failed", message: settings.error.message };
 
     const notices: string[] = [];
@@ -81,7 +82,7 @@ export async function createWispFromTemplate(
     if (isWispModelDraftInvalid(model, settings.value)) return { status: "needs_model" };
 
     // Without this answer, as on an older server, the setup is tried and any failure reported below.
-    const setupView = await window.wisp.getWispSetup().catch(() => null);
+    const setupView = await api.getWispSetup().catch(() => null);
     const usable = usableSetup(template, setupView?.ok ? setupView.value : null, name);
     notices.push(...usable.notices);
 
@@ -99,8 +100,8 @@ export async function createWispFromTemplate(
     if (!conversationId) return failedToCreate;
 
     const failed = [
-      ...[await applyWispSetup(conversationId, usable.setup)].filter(Boolean),
-      ...(await applyTemplateChoices(conversationId, template, initialTemplateChoices(template))),
+      ...[await applyWispSetup(conversationId, usable.setup, api)].filter(Boolean),
+      ...(await applyTemplateChoices(conversationId, template, initialTemplateChoices(template), api)),
     ].join(" and ");
     if (failed) notices.push(`${name} was created, but ${failed} could not be set. Change it in the Wisp's settings.`);
     if (templateAsksForAccess(template)) {
