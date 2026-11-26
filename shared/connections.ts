@@ -1,7 +1,11 @@
+import type { RemoteEventType } from "./remote-protocol.js";
+import type { RuntimeOperation } from "./runtime-operations.js";
+
 /**
  * Where the desktop app's backend runs: on this computer, or on a Wisp
  * server reached over SSH or a private HTTPS URL. The main process routes
- * every backend call to the active connection.
+ * every backend call to the active connection, while keeping pooled sessions
+ * open for background monitoring and scoped cross-environment operations.
  */
 export const LOCAL_CONNECTION_ID = "local";
 
@@ -164,12 +168,32 @@ export interface ServerUpdateView {
   message?: string;
 }
 
+/** Pushed runtime event types forwarded from any connected environment. */
+export type ConnectionPushedEventType = Exclude<RemoteEventType, "resync" | "hostRequest">;
+
+/** Live operational summary for one saved environment, maintained in the main process. */
+export interface EnvironmentSummary {
+  profileId: string;
+  phase: ConnectionPhase;
+  message?: string;
+  serverVersion?: string;
+  workingWisps: number;
+  pendingApprovals: number;
+  unreadConversations: number;
+  wispCount: number;
+  circleCount: number;
+}
+
 export interface ConnectionsView {
   activeId: string;
   profiles: ConnectionProfileView[];
   status: ConnectionStatus;
   /** Whether pairing credentials are kept across restarts on this device. */
   secureStorageAvailable: boolean;
+  /** Whether Wisps on this computer stay running in the background when another server is active. */
+  keepLocalRunning?: boolean;
+  /** Live operational summaries for each saved environment, keyed by profile ID. */
+  environments?: Record<string, EnvironmentSummary>;
   /**
    * Whether this client can add, switch, or remove connections. False in the
    * browser app, which always talks to the server that served it.
@@ -226,4 +250,20 @@ export interface ActivateConnectionRequest {
   pairingCode?: string;
   /** The name to pair under, shown in `wispctl devices`; the browser app asks for it when pairing from a link. */
   deviceName?: string;
+}
+
+export interface SetKeepLocalRunningRequest {
+  enabled: boolean;
+}
+
+export interface ConnectionOperationRequest {
+  connectionId: string;
+  operation: RuntimeOperation;
+  payload?: unknown;
+}
+
+export interface ConnectionEventMessage {
+  connectionId: string;
+  type: ConnectionPushedEventType;
+  payload: unknown;
 }

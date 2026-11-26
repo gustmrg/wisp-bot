@@ -104,15 +104,40 @@ describe("browser WispApi", () => {
     expect(browser.cookies()).toBe("wisp_access,wisp_refresh");
 
     const events: string[] = [];
+    const scopedEvents: Array<{ connectionId: string; type: string }> = [];
     api.subscribeToAgentEvents((event) => events.push(event.type));
+    api.subscribeToConnectionEvents((event) =>
+      scopedEvents.push({ connectionId: event.connectionId, type: event.type }),
+    );
     await api.saveAiSettings({ selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" }, apiKey: "sk" });
     expect(await api.createWisp({ wisp: atlas, notifyOnUpdatesEnabled: true })).toMatchObject({ ok: true });
     await api.sendMessage({ conversationId: "atlas", requestId: "r1", text: "Hi" });
     await until(() => events.includes("assistant_message_completed"), "the reply");
+    expect(scopedEvents.some((event) => event.connectionId === "server" && event.type === "agentEvent")).toBe(true);
+
+    // Scoped operation dispatch works for the server and enforces the runtime allowlist.
+    expect(await api.invokeConnectionOperation({ connectionId: "server", operation: "getAiSettings" })).toMatchObject({
+      ok: true,
+    });
+    expect(await api.invokeConnectionOperation({ connectionId: "other", operation: "getAiSettings" })).toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+    expect(
+      await api.invokeConnectionOperation({
+        connectionId: "server",
+        operation: "saveConnection" as never,
+      }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_request" } });
 
     // Desktop-only actions explain themselves instead of failing silently.
     expect(await api.checkForUpdates()).toMatchObject({ ok: false, error: { code: "unsupported" } });
     expect(await api.saveConnection({ kind: "url", name: "x", url: "https://x" })).toMatchObject({ ok: false });
+    expect(await api.setKeepLocalRunning({ enabled: false })).toMatchObject({
+      ok: false,
+      error: { code: "unsupported" },
+    });
+    expect(await api.connectEnvironment({ id: "server" })).toMatchObject({ ok: false, error: { code: "unsupported" } });
     expect(await api.openWorkspaceFolder({ conversationId: "atlas" })).toMatchObject({
       ok: false,
       error: { code: "unsupported" },
@@ -274,5 +299,69 @@ describe("browser WispApi", () => {
     expect(browserDeviceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) Version/18.0 Safari/605.1.15")).toBe(
       "Safari on Mac",
     );
+  });
+
+  it("routes scoped connection operations to the server and forwards tagged connection events", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-web-scoped-"));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    const server = await createWispServer({
+      dataDirectory: directory,
+      host: "127.0.0.1",
+      port: 0,
+      encryption: new MasterKeyEncryption(randomBytes(32)),
+      logger: silent,
+      agentMode: "fake",
+      appVersion: "1.0.0",
+      allowModelNetwork: false,
+      adminSocket: false,
+      requirePrivateDirectory: false,
+    });
+    cleanups.push(() => server.close());
+    const browser = browserFetch(server.url);
+    const api = createWebWispApi({
+      origin: server.url,
+      storage: memoryStorage(),
+      deviceName: "Chrome on Windows",
+      appVersion: "1.0.0",
+      fetch: browser.fetch,
+    });
+    const phase = async () => ((await api.getConnections()) as { ok: true; value: ConnectionsView }).value.status.phase;
+    await until(async () => (await phase()) === "pairing_required", "pairing to be required");
+    const { code } = (await server.admin({ command: "pair" })) as { code: string };
+    await api.activateConnection({ id: "server", pairingCode: code });
+    await until(async () => (await phase()) === "connected", "the connection");
+
+    const scopedEvents: Array<{ connectionId: string; type: string }> = [];
+    const unsubscribe = api.subscribeToConnectionEvents((event) =>
+      scopedEvents.push({ connectionId: event.connectionId, type: event.type }),
+    );
+    expect(
+      await api.invokeConnectionOperation({
+        connectionId: "server",
+        operation: "createWisp",
+        payload: { wisp: atlas, notifyOnUpdatesEnabled: true },
+      }),
+    ).toMatchObject({ ok: true });
+    await until(
+      () => scopedEvents.some((e) => e.connectionId === "server" && e.type === "wispsChanged"),
+      "wisps event",
+    );
+    unsubscribe();
+
+    expect(await api.invokeConnectionOperation({ connectionId: "other", operation: "getAiSettings" })).toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+    expect(
+      await api.invokeConnectionOperation({ connectionId: "server", operation: "saveConnection" as never }),
+    ).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(await api.setKeepLocalRunning({ enabled: false })).toMatchObject({
+      ok: false,
+      error: { code: "unsupported" },
+    });
+    expect(await api.connectEnvironment({ id: "server" })).toMatchObject({
+      ok: false,
+      error: { code: "unsupported" },
+    });
   });
 });

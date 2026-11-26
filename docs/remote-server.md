@@ -72,10 +72,13 @@ created by earlier versions stay where they are. The first stdin line carries
 the credential key and a one-time pairing code; stdin stays open, and the
 server shuts down when it closes, so it never outlives the app, even after a
 crash. The key is random and kept encrypted by the system keychain
-(`local-server-key.json`). The local server starts only while **This computer** is
-the chosen connection and stops, after its Wisps settle, when you switch away
-or quit, unless [remote access](#remote-access-to-this-computer) is on.
-Disabling Electron's `RunAsNode` fuse would break this mode.
+(`local-server-key.json`). Once you choose a connection, the local server stays
+running in the background by default so **This computer**'s Wisps keep working
+while you use another server and switching back is instant; you can opt out so
+it stops when you switch away, unless
+[remote access](#remote-access-to-this-computer) is on. It always stops, after
+its Wisps settle, when you quit. Disabling Electron's `RunAsNode` fuse would
+break this mode.
 
 Later stdin lines are administrative commands, the same ones `admin.sock`
 serves plus `expose`, which opens or closes the remote access port, each
@@ -487,12 +490,15 @@ approval to that server; the app reloads from it. Over SSH, pairing runs
 or on the PATH of non-interactive SSH sessions. Otherwise, or for an HTTPS
 address, enter a code from `wispctl pair` when asked.
 
-The app reopens the last connection on its next start, and starts its local
-server only while **This computer** is chosen. If the server cannot be
+The app reopens the last connection on its next start and keeps already-paired
+environments (and **This computer**, unless you opt out and remote access is
+off) connected quietly in the background without triggering interactive SSH
+prompts or automatic pairing. Switching to an already-connected environment is
+instant. If the server cannot be
 reached, a banner says so and the app reconnects with backoff; Wisps on the
 server keep working meanwhile. When the computer wakes from sleep or moves to
-another network or VPN, the app checks the connection right away instead of
-waiting for the next retry. If the server does not answer within 5 seconds,
+another network or VPN, the app checks every open connection right away instead
+of waiting for the next retry. If the server does not answer within 5 seconds,
 the app opens a new SSH tunnel. If the server answers but no updates arrive
 for 25 seconds, the app reopens only the updates. Updates missed in between
 are replayed without reloading, and nothing you sent is sent again. A healthy

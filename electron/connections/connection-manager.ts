@@ -12,28 +12,6 @@ import {
   type RemoteTransport,
 } from "../../client/remote-session.js";
 import {
-  LOCAL_CONNECTION_ID,
-  type ConnectionFailure,
-  type ConnectionPhase,
-  type ConnectionProfile,
-  type ConnectionProgress,
-  type ConnectionRetry,
-  type ConnectionStatus,
-  type ConnectionsView,
-  type ServerUpdateView,
-  type SshConnectionProfile,
-  type SshPromptView,
-} from "../../shared/connections.js";
-import { type ServerUpdateRecord, UNFINISHED_UPDATE_STATES } from "../../shared/server-update.js";
-import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
-import {
-  REMOTE_HOST_REQUESTS,
-  type DeviceCredentials,
-  type HostRequest,
-  type HostResponse,
-} from "../../shared/remote-protocol.js";
-import type { LocalServer, LocalServerExposure } from "../local-server/local-server.js";
-import {
   advance,
   connectSteps,
   createProgress,
@@ -41,21 +19,55 @@ import {
   failedAttempt,
   INSTALL_STEPS,
 } from "../../shared/connection-progress.js";
-import type { ConnectionStore } from "./connection-store.js";
+import {
+  LOCAL_CONNECTION_ID,
+  type ConnectionEventMessage,
+  type ConnectionFailure,
+  type ConnectionPhase,
+  type ConnectionProfile,
+  type ConnectionProgress,
+  type ConnectionPushedEventType,
+  type ConnectionRetry,
+  type ConnectionStatus,
+  type ConnectionsView,
+  type EnvironmentSummary,
+  type RemoteConnectionProfile,
+  type ServerUpdateView,
+  type SshConnectionProfile,
+  type SshPromptView,
+} from "../../shared/connections.js";
+import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
+import type { ConversationStateView } from "../../shared/conversations.js";
+import {
+  REMOTE_HOST_REQUESTS,
+  type DeviceCredentials,
+  type HostRequest,
+  type HostResponse,
+} from "../../shared/remote-protocol.js";
+import { isRuntimeOperation, type RuntimeOperation } from "../../shared/runtime-operations.js";
+import { type ServerUpdateRecord, UNFINISHED_UPDATE_STATES } from "../../shared/server-update.js";
+import type { LocalServer, LocalServerExposure } from "../local-server/local-server.js";
+import { LOCAL_PROFILE, type ConnectionStore } from "./connection-store.js";
+import { EnvironmentSummaryTracker } from "./environment-summary.js";
 import { type InstallOutcome, type InstallStep, SetupOutcomeUnknownError } from "./ssh-install.js";
 
 export interface ConnectionManagerOptions {
   store: ConnectionStore;
   /**
-   * The Wisp server on this computer, started only while it is the chosen
-   * connection, or for as long as the app runs while remote access is on.
+   * The Wisp server on this computer, kept running in the background while
+   * `keepLocalRunning` or remote access is enabled, and while it is active.
    */
   localServer: LocalServer;
-  /** Opens a tunnel; `onServerPort` hears the port `wispctl status` reports when it differs from the profile's. */
+  /**
+   * Opens a tunnel; `onServerPort` hears the port `wispctl status` reports when
+   * it differs from the profile's. Background sessions pass `interactive: false`
+   * so OpenSSH runs in BatchMode and never asks interactive prompts.
+   */
   openSshTunnel(
     profile: SshConnectionProfile,
     signal: AbortSignal,
     onServerPort: (port: number) => Promise<void>,
+    options?: { interactive?: boolean },
   ): Promise<RemoteTransport>;
   /**
    * Installs and starts the Wisp server on the machine behind an SSH profile,
@@ -87,14 +99,14 @@ export interface ConnectionManagerOptions {
 // sshd gives up on a login after two minutes by default.
 const SSH_PROMPT_TIMEOUT_MS = 120_000;
 const MAX_SSH_ANSWER = 1024;
-// While remote access is on, a local server that stopped starts again after this long, or longer after a failed start.
+// While local persistence or remote access is on, a local server that stopped restarts after this delay.
 const LOCAL_RESTART_DELAY_MS = 2_000;
 const LOCAL_RETRY_DELAY_MS = 30_000;
 
 const OPERATIONS_BY_CHANNEL = new Map<string, string>(
   Object.entries(WISP_IPC_CHANNELS).map(([operation, channel]) => [channel, operation]),
 );
-const PUSHED = new Set([
+const PUSHED: ReadonlySet<string> = new Set<ConnectionPushedEventType>([
   "agentEvent",
   "conversationChanged",
   "wispsChanged",
@@ -104,20 +116,48 @@ const PUSHED = new Set([
   "messageQueueChanged",
   "jobsChanged",
 ]);
+/** Operations that return a complete `ConversationStateView` snapshot without always emitting `wispsChanged`. */
+const STATE_RETURNING_OPERATIONS: ReadonlySet<RuntimeOperation> = new Set([
+  "getConversationState",
+  "initializeConversations",
+  "createWisp",
+  "updateWisp",
+  "deleteWisp",
+  "createConversation",
+  "updateConversation",
+  "deleteConversation",
+]);
+
+interface ManagedSession {
+  profile: ConnectionProfile;
+  session: RemoteSession;
+  summary: EnvironmentSummaryTracker;
+  connected: boolean;
+  phase: ConnectionPhase;
+  message?: string;
+  serverVersion?: string;
+  /** Whether this session was opened interactively for the active workspace. */
+  interactive: boolean;
+  hydrating: boolean;
+  hydrateQueued: boolean;
+}
 
 /**
  * Owns where the backend runs. The app is always a client: "This computer"
  * is a Wisp server the app starts as a child process, reached exactly like a
- * server over SSH or HTTPS. Renderer requests go to the active session, and
- * only its events reach the renderer.
+ * server over SSH or HTTPS. A session pool keeps the active environment and
+ * polite background environments connected so switching is instant, summaries
+ * stay live, and scoped runtime operations can target any connected environment.
  */
 export class ConnectionManager {
+  private activeId = LOCAL_CONNECTION_ID;
   private status: ConnectionStatus = { profileId: LOCAL_CONNECTION_ID, phase: "connecting", epoch: 0 };
-  /** The steps of the attempt in progress, or of the last one that failed. */
+  /** The steps of the active attempt in progress, or of the last one that failed. */
   private progress: ConnectionProgress | undefined;
-  /** Automatic retries since the connection failed or dropped. */
+  /** Automatic retries since the active connection failed or dropped. */
   private retrying: ConnectionRetry | undefined;
-  private session: RemoteSession | undefined;
+  /** Open sessions keyed by profile ID. */
+  private readonly sessions = new Map<string, ManagedSession>();
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
   private installation: { profileId: string; controller: AbortController } | undefined;
@@ -137,14 +177,16 @@ export class ConnectionManager {
   constructor(private readonly options: ConnectionManagerOptions) {}
 
   /**
-   * Opens the connection chosen last time. On a first run nothing starts:
-   * the person chooses this computer or a server first.
+   * Opens the connection chosen last time and quietly connects other paired
+   * environments (plus `local` when `keepLocalRunning` is enabled). On a first
+   * run nothing starts until the person chooses this computer or a server.
    */
   start(): Promise<void> {
     return this.serialized(async () => {
       const { store } = this.options;
       this.started = true;
       if (!store.hasChoice) {
+        this.activeId = LOCAL_CONNECTION_ID;
         this.setStatus({ profileId: LOCAL_CONNECTION_ID, phase: "choosing" });
       } else {
         await this.open(store.active.id, undefined, false);
@@ -164,17 +206,113 @@ export class ConnectionManager {
       this.exposure = exposure;
       await this.options.localServer.setExposure(exposure);
       if (!this.started || this.disposed) return;
-      // Turned off while a server is chosen: Wisps on this computer stop, as they did before.
-      if (!exposure && this.status.profileId !== LOCAL_CONNECTION_ID) await this.options.localServer.stop();
-      this.keepLocalServerRunning();
+      if (!this.shouldKeepLocalRunning() && this.activeId !== LOCAL_CONNECTION_ID) {
+        clearTimeout(this.localRestart);
+        await this.closeSession(LOCAL_CONNECTION_ID);
+        await this.options.localServer.stop();
+        this.publish();
+      } else {
+        this.keepLocalServerRunning();
+        if (this.shouldKeepLocalRunning() && this.options.store.hasChoice && !this.sessions.has(LOCAL_CONNECTION_ID)) {
+          this.openPooledSession(LOCAL_PROFILE, { active: false, userInitiated: false });
+          this.publish();
+        }
+      }
+    });
+  }
+
+  /**
+   * Sets whether Wisps on this computer stay running in the background when
+   * another server is active. Remote access overrides an opt-out while active.
+   */
+  setKeepLocalRunning(enabled: boolean): Promise<ConnectionsView> {
+    return this.serialized(async () => {
+      if (typeof enabled !== "boolean") {
+        throw new WispBackendError("invalid_request", "The background setting is invalid.");
+      }
+      await this.options.store.setKeepLocalRunning(enabled);
+      if (this.started && !this.disposed) {
+        if (enabled) {
+          this.keepLocalServerRunning();
+          if (this.options.store.hasChoice && !this.sessions.has(LOCAL_CONNECTION_ID)) {
+            this.openPooledSession(LOCAL_PROFILE, { active: false, userInitiated: false });
+          }
+        } else if (this.activeId !== LOCAL_CONNECTION_ID && !this.exposure) {
+          clearTimeout(this.localRestart);
+          await this.closeSession(LOCAL_CONNECTION_ID);
+          await this.options.localServer.stop();
+        }
+      }
+      this.publish();
+      return this.view();
+    });
+  }
+
+  /**
+   * Requests connecting a saved environment in the background without changing
+   * the active workspace. Background connections never auto-pair or prompt SSH.
+   */
+  connectEnvironment(id: string): Promise<ConnectionsView> {
+    return this.serialized(async () => {
+      const profile = this.options.store.get(id);
+      if (!profile) throw new WispBackendError("not_found", "That connection no longer exists.");
+      if (this.installation?.profileId === id) return this.view();
+      if (id === this.activeId) {
+        const active = this.sessions.get(id);
+        if (active) {
+          if (!active.connected) active.session.start();
+        } else if (this.status.phase !== "choosing") {
+          await this.open(id, undefined, true);
+        }
+        return this.view();
+      }
+      const existing = this.sessions.get(id);
+      if (existing) {
+        if (!existing.connected) existing.session.start(undefined, profile.kind === "local");
+      } else {
+        this.openPooledSession(profile, { active: false, userInitiated: false });
+      }
+      this.publish();
+      return this.view();
     });
   }
 
   view(): ConnectionsView {
     const { store } = this.options;
+    const profiles = store.list();
+    const environments: Record<string, EnvironmentSummary> = {};
+    for (const profile of profiles) {
+      const managed = this.sessions.get(profile.id);
+      if (managed) {
+        environments[profile.id] = managed.summary.snapshot();
+      } else if (profile.id === this.status.profileId) {
+        environments[profile.id] = {
+          profileId: profile.id,
+          phase: this.status.phase,
+          ...(this.status.message ? { message: this.status.message } : {}),
+          ...(this.status.serverVersion ? { serverVersion: this.status.serverVersion } : {}),
+          workingWisps: 0,
+          pendingApprovals: 0,
+          unreadConversations: 0,
+          wispCount: 0,
+          circleCount: 0,
+        };
+      } else {
+        const unpaired = profile.kind !== "local" && !store.loadCredentials(profile.id);
+        environments[profile.id] = {
+          profileId: profile.id,
+          phase: unpaired ? "pairing_required" : "choosing",
+          workingWisps: 0,
+          pendingApprovals: 0,
+          unreadConversations: 0,
+          wispCount: 0,
+          circleCount: 0,
+        };
+      }
+    }
     return {
       activeId: store.active.id,
-      profiles: store.list().map((profile) => ({
+      profiles: profiles.map((profile) => ({
         ...profile,
         paired: profile.kind === "local" || Boolean(store.loadCredentials(profile.id)),
       })),
@@ -185,6 +323,8 @@ export class ConnectionManager {
         ...(this.update?.profileId === this.status.profileId ? { update: { ...this.update.view } } : {}),
       },
       secureStorageAvailable: store.secureStorageAvailable,
+      keepLocalRunning: store.keepLocalRunning,
+      environments,
       ...(this.sshPrompts[0] ? { sshPrompt: this.sshPrompts[0].view } : {}),
     };
   }
@@ -235,19 +375,65 @@ export class ConnectionManager {
   /** Runs a renderer request on the active server. */
   async dispatch(channel: string, payload: unknown): Promise<BackendResult<unknown>> {
     const operation = OPERATIONS_BY_CHANNEL.get(channel);
-    // A server on another computer cannot open this computer's file picker: the app does, and sends the files.
-    if (
-      this.session &&
-      channel === WISP_IPC_CHANNELS.attachWorkspaceFiles &&
-      this.status.profileId !== LOCAL_CONNECTION_ID
-    ) {
-      return this.attachFromThisComputer(this.session, payload);
+    const active = this.sessions.get(this.activeId);
+    if (active && operation && isRuntimeOperation(operation)) {
+      return this.callSession(active, operation, payload);
     }
-    if (this.session && operation) return this.session.call(operation, payload);
     return {
       ok: false,
       error: { code: "unavailable", message: "Wisp is switching connections. Try again.", retryable: true },
     };
+  }
+
+  /**
+   * Runs one allowlisted runtime operation against a specific connected
+   * environment in the session pool. Never accepts desktop-only channels or
+   * arbitrary operation names.
+   */
+  async dispatchTo(connectionId: unknown, operation: unknown, payload: unknown): Promise<BackendResult<unknown>> {
+    if (typeof connectionId !== "string" || connectionId.length === 0 || connectionId.length > 64) {
+      return invalidResult("The connection is invalid.");
+    }
+    if (!isRuntimeOperation(operation)) {
+      return invalidResult("The requested operation is not allowed.");
+    }
+    const profile = this.options.store.get(connectionId);
+    if (!profile) {
+      return {
+        ok: false,
+        error: { code: "not_found", message: "That connection no longer exists.", retryable: false },
+      };
+    }
+    const managed = this.sessions.get(connectionId);
+    if (!managed || !managed.connected) {
+      return {
+        ok: false,
+        error: {
+          code: "unavailable",
+          message: `${profile.name} is not connected right now. Try again once it connects.`,
+          retryable: true,
+        },
+      };
+    }
+    return this.callSession(managed, operation, payload);
+  }
+
+  private async callSession(
+    managed: ManagedSession,
+    operation: RuntimeOperation,
+    payload: unknown,
+  ): Promise<BackendResult<unknown>> {
+    // A server on another computer cannot open this computer's file picker: the app does, and sends the files.
+    const result =
+      operation === "attachWorkspaceFiles" && managed.profile.id !== LOCAL_CONNECTION_ID
+        ? await this.attachFromThisComputer(managed.session, payload)
+        : await managed.session.call(operation, payload);
+    if (result.ok && STATE_RETURNING_OPERATIONS.has(operation) && this.sessions.get(managed.profile.id) === managed) {
+      if (managed.summary.applySnapshot(result.value as ConversationStateView)) {
+        this.publish();
+      }
+    }
+    return result;
   }
 
   private async attachFromThisComputer(session: RemoteSession, payload: unknown): Promise<BackendResult<unknown>> {
@@ -270,22 +456,27 @@ export class ConnectionManager {
     this.installation?.controller.abort();
     return this.serialized(async () => {
       if (!this.options.store.get(id)) throw new WispBackendError("not_found", "That connection no longer exists.");
-      if (id === this.status.profileId && this.session) this.session.start(pairingCode);
-      else await this.open(id, pairingCode, true);
+      const active = this.sessions.get(id);
+      if (id === this.activeId && active && active.interactive) {
+        active.session.start(pairingCode);
+      } else {
+        await this.open(id, pairingCode, true);
+      }
       return this.view();
     });
   }
 
-  /** This computer woke or changed network: the active connection checks it still works. */
+  /** This computer woke or changed network: every open connection checks it still works. */
   checkConnection(): void {
-    this.session?.check();
+    for (const managed of this.sessions.values()) managed.session.check();
   }
 
   /** Retries the active connection now. */
   retry(): Promise<ConnectionsView> {
     return this.serialized(async () => {
-      if (this.session) this.session.start();
-      else if (this.status.phase !== "choosing") await this.open(this.status.profileId, undefined, true);
+      const active = this.sessions.get(this.activeId);
+      if (active && active.interactive) active.session.start();
+      else if (this.status.phase !== "choosing") await this.open(this.activeId, undefined, true);
       return this.view();
     });
   }
@@ -295,11 +486,11 @@ export class ConnectionManager {
    * shows as cancelled, and `retry` connects again.
    */
   cancel(): Promise<ConnectionsView> {
-    if (this.installation?.profileId === this.status.profileId) this.installation.controller.abort();
+    if (this.installation?.profileId === this.activeId) this.installation.controller.abort();
     return this.serialized(async () => {
       const { phase, profileId, serverVersion } = this.status;
-      if (this.session && (phase === "connecting" || phase === "reconnecting")) {
-        await this.close();
+      if (this.sessions.has(profileId) && (phase === "connecting" || phase === "reconnecting")) {
+        await this.closeSession(profileId, true);
         // Between attempts nothing runs: the last failed attempt stays on screen.
         if (this.progress?.steps.some(({ state }) => state === "active")) {
           this.progress = fail(this.progress, "cancelled");
@@ -319,10 +510,31 @@ export class ConnectionManager {
 
   save(request: unknown): Promise<ConnectionsView> {
     return this.serialized(async () => {
+      const requestedId = (request as { id?: unknown } | null)?.id;
+      const before = typeof requestedId === "string" ? this.options.store.get(requestedId) : undefined;
       const profile = await this.options.store.save(request);
-      // New settings for the active server take effect right away.
-      if (profile.id === this.status.profileId) await this.open(profile.id, undefined, true);
-      else this.publish();
+      if (profile.id === this.activeId) {
+        // New settings for the active server take effect right away.
+        await this.closeSession(profile.id, true);
+        await this.open(profile.id, undefined, true);
+      } else {
+        const addressChanged =
+          before !== undefined && before.kind !== "local" && addressOf(before) !== addressOf(profile);
+        if (addressChanged) {
+          await this.closeSession(profile.id);
+        } else {
+          const existing = this.sessions.get(profile.id);
+          if (existing) existing.profile = profile;
+        }
+        if (
+          this.options.store.hasChoice &&
+          !this.sessions.has(profile.id) &&
+          this.options.store.loadCredentials(profile.id)
+        ) {
+          this.openPooledSession(profile, { active: false, userInitiated: false });
+        }
+        this.publish();
+      }
       return this.view();
     });
   }
@@ -347,12 +559,12 @@ export class ConnectionManager {
           throw new WispBackendError("invalid_request", "Only a server reached over SSH can be set up from this app.");
         }
         if (signal.aborted) throw new WispBackendError("unavailable", "Setting up the server was cancelled.", true);
-        const active = profile.id === this.status.profileId;
-        // Reconnecting to a server that is being installed would only fail again.
+        const active = profile.id === this.activeId;
+        // Stop any pooled session for this target so it does not fight the installer.
+        await this.closeSession(id, active);
         if (active) {
           // A server that answered before is updated; otherwise it is installed.
           const fromVersion = this.status.serverVersion;
-          await this.close();
           this.retrying = undefined;
           this.progress = advance(
             createProgress(fromVersion ? "update" : "install", INSTALL_STEPS, fromVersion),
@@ -369,7 +581,7 @@ export class ConnectionManager {
         return { profile, active };
       });
       // Still the screen of this setup: nobody chose another connection meanwhile.
-      const showing = (): boolean => active && !this.disposed && this.status.profileId === id && !this.session;
+      const showing = (): boolean => active && !this.disposed && this.activeId === id && !this.sessions.has(id);
       // Recorded before the setup starts, so the app can ask how it ended even after a restart.
       const updateId = randomUUID();
       const { appVersion: targetVersion, store } = this.options;
@@ -516,6 +728,11 @@ export class ConnectionManager {
     if (profile?.kind !== "ssh" || profile.serverPort === port) return;
     this.options.logger.info("server_port_found", { profileId: id, from: profile.serverPort, port });
     await this.options.store.setServerPort(id, port);
+    const managed = this.sessions.get(id);
+    if (managed) {
+      const updated = this.options.store.get(id);
+      if (updated) managed.profile = updated;
+    }
     this.publish();
   }
 
@@ -529,22 +746,23 @@ export class ConnectionManager {
     if (this.installation?.profileId === id) this.installation.controller.abort();
     return this.serialized(async () => {
       if (id === LOCAL_CONNECTION_ID) throw new WispBackendError("invalid_request", "This computer cannot be removed.");
-      const active = id === this.status.profileId;
+      const active = id === this.activeId;
       await this.options.store.remove(id);
+      await this.closeSession(id, active);
       if (active) await this.open(LOCAL_CONNECTION_ID, undefined, true);
       else this.publish();
       return this.view();
     });
   }
 
-  /** Disconnects and stops the local server; Wisps on other servers keep running. */
+  /** Disconnects every pooled session and stops the local server; Wisps on other servers keep running. */
   dispose(): Promise<void> {
     this.disposed = true;
     clearTimeout(this.localRestart);
     this.installation?.controller.abort();
-    for (const pending of [...this.sshPrompts]) pending.finish(undefined);
+    this.declineAllSshPrompts();
     return this.serialized(async () => {
-      await this.close();
+      await this.closeAllSessions();
       await this.options.localServer.stop();
       await this.options.store.flush();
     });
@@ -556,37 +774,107 @@ export class ConnectionManager {
     userInitiated: boolean,
     setup?: ConnectionProgress,
   ): Promise<void> {
-    await this.close();
-    // Wisps on this computer run only while it is chosen, or while remote access is on.
-    if (id !== LOCAL_CONNECTION_ID && !this.exposure) await this.options.localServer.stop();
     if (this.disposed) return;
     const { store } = this.options;
     const profile = store.get(id) ?? store.active;
+    const previousId = this.activeId;
+    const switching = previousId !== profile.id;
     if (profile.id !== store.active.id || !store.hasChoice) await store.setActive(profile.id);
-    this.openSession(profile, pairingCode, userInitiated, setup);
+
+    if (switching) {
+      this.declineAllSshPrompts();
+      const previous = this.sessions.get(previousId);
+      if (previous) {
+        this.options.onSessionClosed?.();
+        if (previousId === LOCAL_CONNECTION_ID && !this.shouldKeepLocalRunning()) {
+          await this.closeSession(LOCAL_CONNECTION_ID);
+          await this.options.localServer.stop();
+        } else if (!previous.connected && (previous.phase !== "reconnecting" || !this.isPaired(previous.profile))) {
+          // Do not leave an unfinished interactive attempt or unpaired session running in background.
+          await this.closeSession(previousId);
+        }
+      } else if (previousId === LOCAL_CONNECTION_ID && !this.shouldKeepLocalRunning()) {
+        await this.options.localServer.stop();
+      }
+    } else if (profile.id !== LOCAL_CONNECTION_ID && !this.shouldKeepLocalRunning()) {
+      await this.options.localServer.stop();
+    }
+
+    if (this.disposed) return;
+
+    const existing = this.sessions.get(profile.id);
+    if (existing && existing.connected && !setup && pairingCode === undefined) {
+      // Already connected in the pool: promote instantaneously without reopening transport.
+      existing.interactive = true;
+      this.activeId = profile.id;
+      this.progress = undefined;
+      this.retrying = undefined;
+      this.setStatus(
+        {
+          profileId: profile.id,
+          phase: existing.phase,
+          ...(existing.message ? { message: existing.message } : {}),
+          ...(existing.serverVersion ? { serverVersion: existing.serverVersion } : {}),
+        },
+        switching,
+      );
+      this.connectBackgroundProfiles();
+      this.keepLocalServerRunning();
+      return;
+    }
+
+    if (existing) {
+      await this.closeSession(profile.id, !switching);
+    }
+    if (this.disposed) return;
+
+    this.activeId = profile.id;
+    this.openPooledSession(profile, { active: true, pairingCode, userInitiated, setup });
+    this.connectBackgroundProfiles();
+    this.keepLocalServerRunning();
   }
 
-  private openSession(
+  /**
+   * Quietly starts background sessions for already-paired remote servers and
+   * for `local` when `keepLocalRunning` or remote access is enabled.
+   */
+  private connectBackgroundProfiles(): void {
+    const { store } = this.options;
+    if (!store.hasChoice || this.disposed) return;
+    for (const profile of store.list()) {
+      if (profile.id === this.activeId) continue;
+      if (this.sessions.has(profile.id)) continue;
+      if (this.installation?.profileId === profile.id) continue;
+      if (profile.kind === "local") {
+        if (!this.shouldKeepLocalRunning()) continue;
+      } else if (!store.loadCredentials(profile.id)) {
+        continue;
+      }
+      this.openPooledSession(profile, { active: false, userInitiated: false });
+    }
+  }
+
+  private openPooledSession(
     profile: ConnectionProfile,
-    pairingCode: string | undefined,
-    userInitiated: boolean,
-    setup?: ConnectionProgress,
+    options: {
+      active: boolean;
+      pairingCode?: string;
+      userInitiated: boolean;
+      setup?: ConnectionProgress;
+    },
   ): void {
     const { store, localServer } = this.options;
     const local = profile.kind === "local";
+    const initialMessage = local ? "Starting Wisps on this computer…" : `Connecting to ${profile.name}…`;
     // After a setup, its last step stands for the whole connection.
     const steps = (): ConnectionProgress =>
-      setup
-        ? advance(setup, "connect")
+      options.setup
+        ? advance(options.setup, "connect")
         : createProgress("connect", connectSteps(profile.kind, Boolean(store.loadCredentials(profile.id))));
-    this.progress = steps();
-    this.retrying = undefined;
-    this.setStatus({
-      profileId: profile.id,
-      phase: "connecting",
-      message: local ? "Starting Wisps on this computer…" : `Connecting to ${profile.name}…`,
-    });
-    let serverVersion: string | undefined;
+
+    const summary = new EnvironmentSummaryTracker(profile.id, "connecting", initialMessage);
+    let managed!: ManagedSession;
+
     const session = new RemoteSession({
       serverName: local ? "Wisp on this computer" : profile.name,
       deviceName: this.options.deviceName,
@@ -594,9 +882,12 @@ export class ConnectionManager {
         if (profile.kind === "ssh") {
           // Connecting may have found the server on another port since this session started.
           const current = store.get(profile.id);
-          return this.options.openSshTunnel(current?.kind === "ssh" ? current : profile, signal, (port) =>
-            this.recordServerPort(profile.id, port),
-          );
+          const sshProfile = current?.kind === "ssh" ? current : profile;
+          // Background sessions must never pop up interactive OpenSSH prompts.
+          const interactive = this.activeId === profile.id;
+          return this.options.openSshTunnel(sshProfile, signal, (port) => this.recordServerPort(profile.id, port), {
+            interactive,
+          });
         }
         if (profile.kind === "url") return directTransport(profile.url);
         const running = await localServer.ensureRunning();
@@ -613,36 +904,51 @@ export class ConnectionManager {
         save: async (credentials) => {
           // The desktop app always pairs with bearer tokens, never cookies.
           await store.saveCredentials(profile.id, credentials as DeviceCredentials | undefined);
-          if (this.session === session) this.publish();
+          if (this.sessions.get(profile.id) === managed) this.publish();
         },
       },
       onStatus: (phase, message, failure) => {
-        if (this.session !== session) return;
-        const now = Date.now();
+        if (this.sessions.get(profile.id) !== managed) return;
+        const mappedPhase = phaseOf(phase, local);
+        const wasConnected = managed.connected;
+        managed.connected = phase === "connected";
+        managed.phase = mappedPhase;
+        managed.message = message;
+        const summaryChanged = managed.summary.setConnection(mappedPhase, message, managed.serverVersion);
+
         if (phase === "connected") {
-          this.progress = undefined;
-          this.retrying = undefined;
-        } else if (phase === "connecting" || phase === "reconnecting" || phase === "error") {
-          // A server that does not come back after an update may have failed it.
-          if (profile.kind === "ssh" && failure) void this.checkPendingUpdate(profile, undefined);
-          // Only a failed attempt, or a dropped connection, reports these: the first status is set above.
-          if (this.progress) this.progress = fail(this.progress, failure?.failure, { now });
-          const dropped = this.status.phase === "connected" || this.status.phase === "local";
-          if (phase === "error") this.retrying = undefined;
-          else if (dropped) this.retrying = { since: now, attempt: 0, failures: [] };
-          else if (message) this.retrying = failedAttempt(this.retrying, message, now);
+          this.refreshSummary(managed);
         }
-        this.setStatus({
-          profileId: profile.id,
-          phase: phaseOf(phase, local),
-          ...(message ? { message } : {}),
-          ...(failure?.failure ? { failure: failure.failure } : {}),
-          ...(failure?.details ? { details: failure.details } : {}),
-          ...(serverVersion ? { serverVersion } : {}),
-        });
+
+        if (this.activeId === profile.id) {
+          const now = Date.now();
+          if (phase === "connected") {
+            this.progress = undefined;
+            this.retrying = undefined;
+          } else if (phase === "connecting" || phase === "reconnecting" || phase === "error") {
+            // A server that does not come back after an update may have failed it.
+            if (profile.kind === "ssh" && failure) void this.checkPendingUpdate(profile, undefined);
+            // Only a failed attempt, or a dropped connection, reports these: the first status is set below.
+            if (this.progress) this.progress = fail(this.progress, failure?.failure, { now });
+            const dropped = wasConnected || this.status.phase === "connected" || this.status.phase === "local";
+            if (phase === "error") this.retrying = undefined;
+            else if (dropped) this.retrying = { since: now, attempt: 0, failures: [] };
+            else if (message) this.retrying = failedAttempt(this.retrying, message, now);
+          }
+          this.setStatus({
+            profileId: profile.id,
+            phase: mappedPhase,
+            ...(message ? { message } : {}),
+            ...(failure?.failure ? { failure: failure.failure } : {}),
+            ...(failure?.details ? { details: failure.details } : {}),
+            ...(managed.serverVersion ? { serverVersion: managed.serverVersion } : {}),
+          });
+        } else if (summaryChanged) {
+          this.publish();
+        }
       },
       onStage: (stage) => {
-        if (this.session !== session) return;
+        if (this.sessions.get(profile.id) !== managed || this.activeId !== profile.id) return;
         if (stage === "transport") {
           // A new attempt starts over; the setup's steps stay done.
           this.progress = steps();
@@ -663,7 +969,7 @@ export class ConnectionManager {
         this.publish();
       },
       onRetry: (_attempt, delayMs) => {
-        if (this.session !== session) return;
+        if (this.sessions.get(profile.id) !== managed || this.activeId !== profile.id) return;
         const now = Date.now();
         this.retrying = {
           since: this.retrying?.since ?? now,
@@ -674,13 +980,27 @@ export class ConnectionManager {
         this.publish();
       },
       onServer: (server) => {
+        if (this.sessions.get(profile.id) !== managed) return;
         if (local) return;
-        serverVersion = server.version;
-        if (profile.kind === "ssh") void this.checkPendingUpdate(profile, server.version);
+        managed.serverVersion = server.version;
+        const changed = managed.summary.setConnection(managed.phase, managed.message, server.version);
+        if (this.activeId === profile.id) {
+          if (profile.kind === "ssh") void this.checkPendingUpdate(profile, server.version);
+        } else if (changed) {
+          this.publish();
+        }
       },
       onEvent: (type, payload) => {
-        if (this.session === session && PUSHED.has(type)) {
-          this.options.broadcast(WISP_IPC_CHANNELS[type], payload);
+        if (this.sessions.get(profile.id) !== managed) return;
+        if (!PUSHED.has(type)) return;
+        const eventType = type as ConnectionPushedEventType;
+        if (this.activeId === profile.id) {
+          this.options.broadcast(WISP_IPC_CHANNELS[eventType], payload);
+        }
+        const scoped: ConnectionEventMessage = { connectionId: profile.id, type: eventType, payload };
+        this.options.broadcast(WISP_IPC_CHANNELS.connectionEvent, scoped);
+        if (managed.summary.applyEvent(eventType, payload)) {
+          this.publish();
         }
       },
       // Only the local server asks for screen actions, and only of the app that
@@ -690,17 +1010,78 @@ export class ConnectionManager {
           ? this.options.onHostRequest(request)
           : Promise.resolve({ ok: false, message: "Not available." }),
       onReset: () => {
-        if (this.session === session) this.setStatus({ ...this.status }, true);
+        if (this.sessions.get(profile.id) !== managed) return;
+        this.refreshSummary(managed);
+        if (this.activeId === profile.id) {
+          this.setStatus({ ...this.status }, true);
+        }
       },
     });
-    this.session = session;
-    // This app pairs with its own server by itself; other servers only on request.
-    session.start(pairingCode, local || userInitiated);
+
+    managed = {
+      profile,
+      session,
+      summary,
+      connected: false,
+      phase: "connecting",
+      message: initialMessage,
+      interactive: options.active,
+      hydrating: false,
+      hydrateQueued: false,
+    };
+    this.sessions.set(profile.id, managed);
+
+    if (options.active) {
+      this.progress = steps();
+      this.retrying = undefined;
+      this.setStatus({
+        profileId: profile.id,
+        phase: "connecting",
+        message: initialMessage,
+      });
+    }
+
+    // This app pairs with its own server by itself; other servers only on explicit active user request.
+    session.start(options.pairingCode, local || (options.active && options.userInitiated));
   }
 
-  /** While remote access is on, starts the local server, and starts it again whenever it stops. */
+  /** Refreshes a connected session's live summary from `getConversationState`. */
+  private refreshSummary(managed: ManagedSession): void {
+    if (this.disposed || !managed.connected || this.sessions.get(managed.profile.id) !== managed) return;
+    if (managed.hydrating) {
+      managed.hydrateQueued = true;
+      return;
+    }
+    managed.hydrating = true;
+    void managed.session
+      .call("getConversationState", undefined)
+      .then((result) => {
+        if (this.disposed || this.sessions.get(managed.profile.id) !== managed || !result.ok) return;
+        if (managed.summary.applySnapshot(result.value as ConversationStateView)) {
+          this.publish();
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        managed.hydrating = false;
+        if (managed.hydrateQueued) {
+          managed.hydrateQueued = false;
+          this.refreshSummary(managed);
+        }
+      });
+  }
+
+  private shouldKeepLocalRunning(): boolean {
+    return Boolean(this.exposure) || (this.options.store.hasChoice && this.options.store.keepLocalRunning);
+  }
+
+  private isPaired(profile: ConnectionProfile): boolean {
+    return profile.kind === "local" || Boolean(this.options.store.loadCredentials(profile.id));
+  }
+
+  /** While local persistence or remote access is on, starts the local server and restarts it if it stops. */
   private keepLocalServerRunning(): void {
-    if (!this.exposure || !this.started || this.disposed) return;
+    if (!this.shouldKeepLocalRunning() || !this.started || this.disposed) return;
     clearTimeout(this.localRestart);
     this.options.localServer.ensureRunning().then(
       (running) => {
@@ -718,17 +1099,29 @@ export class ConnectionManager {
   }
 
   private restartLocalServer(delayMs: number): void {
-    if (!this.exposure || this.disposed) return;
+    if (!this.shouldKeepLocalRunning() || this.disposed) return;
     clearTimeout(this.localRestart);
     this.localRestart = setTimeout(() => this.keepLocalServerRunning(), delayMs);
     this.localRestart.unref?.();
   }
 
-  private async close(): Promise<void> {
-    const session = this.session;
-    this.session = undefined;
-    await session?.stop();
-    if (session) this.options.onSessionClosed?.();
+  private declineAllSshPrompts(): void {
+    for (const pending of [...this.sshPrompts]) pending.finish(undefined);
+  }
+
+  private async closeSession(id: string, notifyClosed = false): Promise<void> {
+    const managed = this.sessions.get(id);
+    if (!managed) return;
+    this.sessions.delete(id);
+    await managed.session.stop();
+    if (notifyClosed) this.options.onSessionClosed?.();
+  }
+
+  private async closeAllSessions(): Promise<void> {
+    const open = [...this.sessions.values()];
+    this.sessions.clear();
+    await Promise.all(open.map((managed) => managed.session.stop()));
+    if (open.length > 0) this.options.onSessionClosed?.();
   }
 
   private setStatus(next: Omit<ConnectionStatus, "epoch" | "progress" | "retry">, reset = false): void {
@@ -760,6 +1153,12 @@ function directTransport(url: string): RemoteTransport {
 
 function invalidResult(message: string): BackendResult<never> {
   return { ok: false, error: { code: "invalid_request", message, retryable: false } };
+}
+
+function addressOf(profile: RemoteConnectionProfile): string {
+  return profile.kind === "ssh"
+    ? `${profile.user ?? ""}@${profile.host}:${profile.sshPort ?? ""}:${profile.serverPort}`
+    : profile.url;
 }
 
 /** A setup that did not complete, with the server's record of it when it could be read. */

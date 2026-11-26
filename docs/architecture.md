@@ -43,11 +43,16 @@ URL.
 - The browser app (`web/`, `src/web/`) is the same renderer served by a Wisp
   server: `src/web/web-api.ts` implements `WispApi` over HTTP with cookie
   sessions, so the app runs unchanged in a browser or installed on a phone.
-- `electron/connections/` chooses the server. The main process routes every
-  runtime operation through `client/`'s reconnecting session, answers the local
-  server's requests for screen actions (folders, file pickers, sign-in pages),
-  and keeps only desktop concerns itself: updates and launch at login. The
-  renderer's `ConnectionGate` remounts the app whenever the server changes.
+- `electron/connections/` manages the pool of server sessions. The main process
+  routes active workspace operations to the chosen server, keeps **This
+  computer**'s server and already-paired remote servers connected politely in
+  the background (with an opt-out toggle for keeping **This computer** running),
+  tracks live per-environment operational summaries, and allows scoped dispatch
+  of allowlisted `RUNTIME_OPERATIONS` to any connected environment. It answers
+  the local server's requests for screen actions (folders, file pickers, sign-in
+  pages), and keeps only desktop concerns itself: updates and launch at login.
+  The renderer's `ConnectionGate` remounts the app whenever the active server
+  changes. See [ADR 050](decisions/050-multi-environment-settings-and-team.md).
 - The backend is the only writer of agent-driven conversation state (reply
   text, outgoing delivery status, context notices). After persisting a change it
   pushes what changed on `wisp:conversations:changed`: the conversation's
