@@ -35,11 +35,12 @@ In practice, managing a multi-Wisp team hit three limits:
 and circle management behind `manage_wisp` approval cards, and a bounded,
 non-recursive `ask_wisp` consultation tool.**
 
-### 1. Richer non-secret inspection (`list_wisps`, `list_circles`)
+### 1. Richer non-secret inspection (`list_wisps`, `list_circles`, `list_models`)
 
 - `list_wisps` summary mode keeps each Wisp's ID, name, role, and model (own vs.
   app default) and adds compact hints (circle count, enabled commands/browser
-  capabilities, memory off).
+  capabilities, memory off). Models and fallbacks show their display names
+  and the provider and model IDs that `create_wisp` and `update_wisp` take.
 - `list_wisps` detail mode (`wisp_id`) adds appearance (color and body), circle
   memberships (with lead status), installed skills (names and descriptions via
   `SkillStore`), active/paused scheduled jobs (title, schedule summary, status),
@@ -52,6 +53,10 @@ non-recursive `ask_wisp` consultation tool.**
 - `list_circles` returns each circle's ID, name, description, member Wisps
   (names and IDs, marking the lead), responder mode (`lead` | `auto`), and
   whether commands are enabled.
+- `list_models` lists the models a Wisp can use: providers with a usable API
+  key or sign-in, and Claude Code while it is ready. Each model shows its name,
+  ID, and reasoning levels. Claude Code is marked as not usable for a fallback.
+  An optional `provider` limits the list to one provider.
 
 ### 2. Extended Wisp editing & circle management (`manage_wisp`)
 
@@ -60,6 +65,11 @@ non-recursive `ask_wisp` consultation tool.**
   through `ModelService`), and `fallback` (`"app"` | `"none"` | `{ provider,
   model }`, validated through `ModelService`). Validation runs before the
   approval card is shown so the user never approves an invalid selection.
+- Before `ModelService` validates a model, the tool checks it against
+  `list_models`. A display name passed for an ID gets an error naming the ID.
+  An unknown provider or model, a Claude Code fallback, and an unsupported
+  reasoning level each get their own error. Without these, a Wisp sees one
+  generic error and cannot correct itself.
 - `create_circle` and `update_circle` create or modify circles (name,
   description, validated deduplicated `member_ids`, `lead_id`, and `responder`).
   Circle changes push `wispsChanged` to all connected desktop and browser
@@ -81,7 +91,8 @@ non-recursive `ask_wisp` consultation tool.**
 - **Anti-loop and anti-recursion:** a Wisp cannot call `ask_wisp` on itself,
   job runs never receive `ask_wisp`, and a consultation session excludes all
   `WISP_TOOL_NAMES` (`ask_wisp`, `create_wisp`, `update_wisp`, `delete_wisp`,
-  `create_circle`, `update_circle`, `list_wisps`, `list_circles`), job tools,
+  `create_circle`, `update_circle`, `list_wisps`, `list_circles`,
+  `list_models`), job tools,
   `save_skill`, and `save_memory`.
 - **No privilege escalation and clear attribution:** the consulted Wisp runs
   with its own identity, soul, memory (if enabled), skills, model, workspace,

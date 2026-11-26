@@ -21,6 +21,7 @@ import {
   CREATE_WISP_PARAMETERS,
   DELETE_WISP_PARAMETERS,
   LIST_CIRCLES_PARAMETERS,
+  LIST_MODELS_PARAMETERS,
   LIST_WISPS_PARAMETERS,
   UPDATE_CIRCLE_PARAMETERS,
   UPDATE_WISP_PARAMETERS,
@@ -203,6 +204,18 @@ const object = (properties: object, required?: string[]) => ({
 const CASES: Array<[string, z.ZodType, object]> = [
   ["list_wisps", LIST_WISPS_PARAMETERS, object({ wisp_id: { type: "string", minLength: 1 } })],
   ["list_circles", LIST_CIRCLES_PARAMETERS, object({})],
+  [
+    "list_models",
+    LIST_MODELS_PARAMETERS,
+    object({
+      provider: {
+        type: "string",
+        minLength: 1,
+        maxLength: 128,
+        description: "Only list the models of this provider ID.",
+      },
+    }),
+  ],
   ["create_wisp", CREATE_WISP_PARAMETERS, object(WISP_FIELDS, ["name", "soul"])],
   [
     "update_wisp",

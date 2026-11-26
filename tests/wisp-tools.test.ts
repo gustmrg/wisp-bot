@@ -8,6 +8,7 @@ import {
   WISP_TOOL_NAMES,
   type WispCircleSummary,
   type WispCreateOptions,
+  type WispModelProvider,
   type WispSettings,
   type WispToolHost,
   type WispUpdateOptions,
@@ -29,7 +30,34 @@ function stored(id: string, name: string, soul = "", extra: Partial<Wisp> = {}):
   return { id, name, role: "", soul, appearance: DEFAULT_WISP_APPEARANCE, ...extra };
 }
 
-const SONNET = { provider: "Anthropic", model: "Claude Sonnet" };
+const SONNET = { provider: "Anthropic", model: "Claude Sonnet", providerId: "anthropic", modelId: "claude-sonnet" };
+
+const MODEL_PROVIDERS: WispModelProvider[] = [
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    fallback: true,
+    models: [
+      { id: "claude-haiku", name: "Claude Haiku", thinkingLevels: ["off"] },
+      { id: "claude-sonnet", name: "Claude Sonnet", thinkingLevels: ["off", "low", "high"] },
+    ],
+  },
+  {
+    id: "claude-code",
+    name: "Claude Code",
+    fallback: false,
+    models: [{ id: "opus", name: "Opus", thinkingLevels: ["off", "high"] }],
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    fallback: true,
+    models: [
+      { id: "gpt-4o", name: "GPT-4o", thinkingLevels: ["off"] },
+      { id: "gpt-5", name: "GPT-5", thinkingLevels: ["off", "low", "medium", "high"] },
+    ],
+  },
+];
 
 function setup(
   options: {
@@ -81,10 +109,10 @@ function setup(
         .map((circle) => ({ id: circle.id, name: circle.name, isLead: circle.memberIds[0] === wispId }));
       if (wispId === "quill") {
         const base: WispSettings = {
-          model: { provider: "OpenAI", model: "GPT-5", thinkingLevel: "high" },
+          model: { provider: "OpenAI", model: "GPT-5", providerId: "openai", modelId: "gpt-5", thinkingLevel: "high" },
           modelSource: "wisp",
           modelOverride: modelOverrides.get("quill") ?? null,
-          fallback: { provider: "Anthropic", model: "Claude Haiku" },
+          fallback: { provider: "Anthropic", model: "Claude Haiku", providerId: "anthropic", modelId: "claude-haiku" },
           circles: wispCircles,
           capabilities: { commands: true, localNetwork: false, browser: true },
         };
@@ -116,11 +144,14 @@ function setup(
         circles: wispCircles,
       };
     },
+    listModels: async () => MODEL_PROVIDERS,
     validateModel: async (selection) => {
       if (selection.providerId === "bad-provider") {
         throw new WispBackendError("invalid_configuration", "The selected provider and model are not available.");
       }
       return {
+        providerId: selection.providerId,
+        modelId: selection.modelId,
         provider: selection.providerId === "openai" ? "OpenAI" : selection.providerId,
         model: selection.modelId === "gpt-5" ? "GPT-5" : selection.modelId,
         ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
@@ -131,6 +162,8 @@ function setup(
         throw new WispBackendError("invalid_configuration", "Choose a fallback model from another provider.");
       }
       return {
+        providerId: selection.providerId,
+        modelId: selection.modelId,
         provider: selection.providerId === "anthropic" ? "Anthropic" : selection.providerId,
         model: selection.modelId === "claude-haiku" ? "Claude Haiku" : selection.modelId,
       };
@@ -179,6 +212,7 @@ describe("Wisp tools", () => {
       "create_wisp",
       "delete_wisp",
       "list_circles",
+      "list_models",
       "list_wisps",
       "update_circle",
       "update_wisp",
@@ -337,8 +371,8 @@ describe("Wisp tools", () => {
     const list = (await tool("list_wisps").execute("call-1", {})).content[0]!.text;
     expect(list).toBe(
       [
-        "Chief (you) (ID chief). Model: Claude Sonnet from Anthropic (the app's default). Circles: 1",
-        "Quill (ID quill): Editor. Model: GPT-5 from OpenAI (its own). Circles: 1. Capabilities: commands, browser. Memory: off",
+        "Chief (you) (ID chief). Model: Claude Sonnet from Anthropic (provider ID anthropic, model ID claude-sonnet; the app's default). Circles: 1",
+        "Quill (ID quill): Editor. Model: GPT-5 from OpenAI (provider ID openai, model ID gpt-5; its own). Circles: 1. Capabilities: commands, browser. Memory: off",
       ].join("\n"),
     );
 
@@ -347,9 +381,9 @@ describe("Wisp tools", () => {
       [
         "Quill (ID quill): Editor",
         "Appearance: color blue (#3c82f6), body round",
-        "Model: GPT-5 from OpenAI (its own)",
+        "Model: GPT-5 from OpenAI (provider ID openai, model ID gpt-5; its own)",
         "Reasoning: high",
-        "Fallback model: Claude Haiku from Anthropic",
+        "Fallback model: Claude Haiku from Anthropic (provider ID anthropic, model ID claude-haiku)",
         "Memory: off",
         "Circles: Newsroom (ID circle-1, lead)",
         "Skills:",
@@ -364,6 +398,58 @@ describe("Wisp tools", () => {
         "# Quill\n\nWrites.",
       ].join("\n"),
     );
+  });
+
+  it("lists the models a Wisp can use with the IDs to pass, for every provider or one", async () => {
+    const { tool } = setup();
+
+    const all = (await tool("list_models").execute("call-1", {})).content[0]!.text;
+    expect(all).toBe(
+      [
+        "Pass these IDs, not the names, as provider and model to create_wisp and update_wisp.",
+        "Anthropic (provider ID anthropic)",
+        "- Claude Haiku (model ID claude-haiku). Reasoning: off",
+        "- Claude Sonnet (model ID claude-sonnet). Reasoning: off, low, high",
+        "Claude Code (provider ID claude-code). Not as a fallback.",
+        "- Opus (model ID opus). Reasoning: off, high",
+        "OpenAI (provider ID openai)",
+        "- GPT-4o (model ID gpt-4o). Reasoning: off",
+        "- GPT-5 (model ID gpt-5). Reasoning: off, low, medium, high",
+      ].join("\n"),
+    );
+    const one = (await tool("list_models").execute("call-2", { provider: "openai" })).content[0]!.text;
+    expect(one).not.toContain("Anthropic");
+    expect(one).toContain("- GPT-5 (model ID gpt-5)");
+    await expect(tool("list_models").execute("call-3", { provider: "OpenAI" })).rejects.toThrow(
+      'Pass its ID, "openai"',
+    );
+  });
+
+  it("names the IDs to pass for names, and refuses models list_models does not show, before asking", async () => {
+    const { approvals, tool } = setup();
+    const update = (params: Record<string, unknown>) =>
+      tool("update_wisp").execute("call", { wisp_id: "quill", ...params });
+
+    await expect(update({ fallback: { provider: "anthropic", model: "Claude Haiku" } })).rejects.toThrow(
+      'Pass its ID, "claude-haiku"',
+    );
+    await expect(update({ model: { provider: "OpenAI", model: "gpt-5" } })).rejects.toThrow('Pass its ID, "openai"');
+    await expect(update({ fallback: { provider: "zai", model: "glm-5" } })).rejects.toThrow(
+      'No provider with ID "zai"',
+    );
+    await expect(update({ model: { provider: "openai", model: "gpt-9" } })).rejects.toThrow(
+      'OpenAI (provider ID openai) has no model with ID "gpt-9"',
+    );
+    await expect(update({ fallback: { provider: "claude-code", model: "opus" } })).rejects.toThrow(
+      "Claude Code models cannot be a fallback",
+    );
+    await expect(update({ model: { provider: "openai", model: "gpt-4o", thinking_level: "high" } })).rejects.toThrow(
+      "It supports: off.",
+    );
+    await expect(
+      tool("create_wisp").execute("call", { name: "Atlas", soul: "", model: { provider: "openai", model: "GPT-5" } }),
+    ).rejects.toMatchObject({ code: "invalid_configuration" });
+    expect(approvals).toEqual([]);
   });
 
   it("says when a Wisp has no model or fallback configured", async () => {

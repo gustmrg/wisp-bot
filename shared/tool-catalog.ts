@@ -102,6 +102,7 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     category: "read",
     wisps: true,
   },
+  { name: "list_models", label: "List models", activityLabel: "Checking models…", category: "read", wisps: true },
   {
     name: "create_wisp",
     label: "Create Wisp",

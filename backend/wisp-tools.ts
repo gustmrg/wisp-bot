@@ -25,6 +25,7 @@ import type { ConsultationRequest } from "./wisp-consultation.js";
 export const WISP_TOOL_NAMES: ReadonlySet<string> = new Set([
   "list_wisps",
   "list_circles",
+  "list_models",
   "create_wisp",
   "update_wisp",
   "delete_wisp",
@@ -76,6 +77,8 @@ export interface WispToolHost {
   /** Deletes a Wisp with its conversation, files, skills and jobs. */
   delete(wispId: string): Promise<void>;
   settings(wispId: string, options?: { detail?: boolean }): Promise<WispSettings>;
+  /** The providers a Wisp's model can come from now, with their models. */
+  listModels(): Promise<ReadonlyArray<WispModelProvider>>;
   /** Validates a model override selection and returns its display names. */
   validateModel?(selection: ModelSelection): Promise<WispModel>;
   /** Validates a fallback selection against the Wisp's primary model override and returns its display names. */
@@ -90,12 +93,23 @@ export interface WispToolHost {
   ask?(request: ConsultationRequest, signal?: AbortSignal): Promise<string>;
 }
 
-/** A model by the names settings show for it. */
+/** A model by the names settings show for it, with the IDs the Wisp tools take. */
 export interface WispModel {
   provider: string;
   model: string;
+  providerId: string;
+  modelId: string;
   /** Absent means "off". */
   thinkingLevel?: ThinkingLevel;
+}
+
+/** A provider whose models a Wisp can be set to, by name and ID. */
+export interface WispModelProvider {
+  id: string;
+  name: string;
+  /** False for Claude Code, whose models cannot stand in as a fallback. */
+  fallback: boolean;
+  models: ReadonlyArray<{ id: string; name: string; thinkingLevels: ReadonlyArray<ThinkingLevel> }>;
 }
 
 export interface WispCircleMembership {
@@ -167,6 +181,7 @@ export const WISP_INSTRUCTIONS = [
   "The user talks with Wisps: assistants like you, each with a name, a short role, a soul (Markdown defining who it is and how it works), and settings. Multiple Wisps can also collaborate with the user in circles with a shared workspace.",
   "Use list_wisps to see every Wisp with its ID, name, role, model, and compact status hints; pass wisp_id to read one Wisp's full non-secret settings (appearance, model, reasoning level, fallback, memory, circles, skills, scheduled jobs, capabilities, workspace usage, and plugin/MCP access levels) and its soul in full. Use list_circles to see circles, their members, leads, responder modes, and whether commands are enabled. Credentials, tokens, headers, and secret endpoints are never shown.",
   "You can create, update, and delete the user's other Wisps with create_wisp, update_wisp (including memory_off, model override, and fallback model), and delete_wisp, and create or update circles with create_circle and update_circle.",
+  "To set a model or fallback, pass provider and model IDs, never their display names. list_wisps shows the IDs of the models Wisps use, and list_models every model a Wisp can use with its reasoning levels.",
   "When the user wants a new Wisp, or a team of them, ask briefly what each should help with if it is not clear, then create them. Write each soul in the user's language, with sections for its identity and expertise, personality, how it works, and boundaries, so it stands alone: the new Wisp does not see this conversation.",
   "The user approves every Wisp or circle creation, change, and deletion in a card that shows all fields being set or changed, so do not repeat a soul in the chat or ask for confirmation; call the tool directly and confirm in one short sentence. Only delete a Wisp when the user asked for it. You cannot change or delete yourself; the user does that in your settings.",
   "Use ask_wisp to consult another existing Wisp directly with a self-contained question or request and receive its reply within this turn. The consulted Wisp runs with its own identity, memory, skills, workspace, and permissions; if it needs user approval for an action, the approval card appears here attributed to that Wisp. Never pass secrets in ask_wisp, and you cannot consult yourself.",
@@ -259,6 +274,9 @@ const CIRCLE_FIELDS = {
 
 export const LIST_WISPS_PARAMETERS = z.strictObject({ wisp_id: WISP_ID.optional() });
 export const LIST_CIRCLES_PARAMETERS = z.strictObject({});
+export const LIST_MODELS_PARAMETERS = z.strictObject({
+  provider: z.string().trim().min(1).max(128).describe("Only list the models of this provider ID.").optional(),
+});
 export const CREATE_WISP_PARAMETERS = z.strictObject({
   name: WISP_FIELDS.name,
   role: WISP_FIELDS.role.optional(),
@@ -330,6 +348,37 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
     return wisp;
   };
 
+  /**
+   * Checks a model against what list_models shows before the backend validates
+   * it, so a display name passed for an ID gets an error naming the ID.
+   */
+  const assertListedModel = async (selection: ModelSelection, use: "model" | "fallback"): Promise<void> => {
+    const provider = listedProvider(await host.listModels(), selection.providerId);
+    if (use === "fallback" && !provider.fallback) {
+      throw new WispBackendError(
+        "invalid_configuration",
+        `${provider.name} models cannot be a fallback. Choose one from another provider in list_models.`,
+      );
+    }
+    const model = provider.models.find(({ id }) => id === selection.modelId);
+    if (!model) {
+      const named = provider.models.find((candidate) => sameName(candidate, selection.modelId));
+      throw new WispBackendError(
+        "invalid_configuration",
+        named
+          ? `"${selection.modelId}" is a model name. Pass its ID, "${named.id}".`
+          : `${provider.name} (provider ID ${provider.id}) has no model with ID "${selection.modelId}". Call list_models for its model IDs.`,
+      );
+    }
+    const level = selection.thinkingLevel;
+    if (level && level !== "off" && !model.thinkingLevels.includes(level)) {
+      throw new WispBackendError(
+        "invalid_configuration",
+        `${model.name} does not support the reasoning level "${level}". It supports: ${model.thinkingLevels.join(", ")}.`,
+      );
+    }
+  };
+
   const resolveModelParam = async (
     value: z.output<typeof WISP_FIELDS.model> | undefined,
   ): Promise<{ selection?: ModelSelection | null; label?: string }> => {
@@ -340,6 +389,7 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
       modelId: value.model,
       ...(value.thinking_level ? { thinkingLevel: value.thinking_level } : {}),
     };
+    await assertListedModel(selection, "model");
     const described = host.validateModel
       ? await host.validateModel(selection)
       : {
@@ -360,6 +410,7 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
     if (value === "app") return { fallback: "global", label: "App default" };
     if (value === "none") return { fallback: "off", label: "None" };
     const selection: ModelSelection = { providerId: value.provider, modelId: value.model };
+    await assertListedModel(selection, "fallback");
     const described = host.validateFallback
       ? await host.validateFallback(selection, primaryModelOverride)
       : { provider: selection.providerId, model: selection.modelId };
@@ -445,6 +496,26 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
         if (!circles.length) return text("There are no circles yet.");
         const names = new Map(host.list().map(({ id, name }) => [id, name]));
         return text(circles.map((circle) => formatCircleSummary(circle, names)).join("\n\n"));
+      },
+    }),
+    defineWispTool({
+      name: "list_models",
+      label: "List models",
+      description:
+        "List the models a Wisp can use, by provider, with the provider and model IDs that create_wisp and update_wisp take and each model's reasoning levels. Only providers with an API key or sign-in are listed.",
+      parameters: LIST_MODELS_PARAMETERS,
+      execute: async (_toolCallId, params) => {
+        const providers = await host.listModels();
+        if (!providers.length) {
+          return text("No provider has an API key or sign-in yet. The user adds one in Settings → AI Model.");
+        }
+        const shown = params.provider === undefined ? providers : [listedProvider(providers, params.provider)];
+        return text(
+          [
+            "Pass these IDs, not the names, as provider and model to create_wisp and update_wisp.",
+            ...shown.flatMap(formatModelProvider),
+          ].join("\n"),
+        );
       },
     }),
     defineWispTool({
@@ -712,13 +783,44 @@ function describeWisp(wisp: Wisp, selfId: string): string {
   return `${wisp.name}${wisp.id === selfId ? " (you)" : ""} (ID ${wisp.id})${wisp.role ? `: ${wisp.role}` : ""}`;
 }
 
-function modelName({ model, provider }: WispModel): string {
+function modelName({ model, provider }: Pick<WispModel, "provider" | "model">): string {
   return `${model} from ${provider}`;
+}
+
+function modelIds({ providerId, modelId }: WispModel): string {
+  return `provider ID ${providerId}, model ID ${modelId}`;
 }
 
 function describeModel({ model, modelSource }: WispSettings): string {
   if (!model) return "none configured";
-  return `${modelName(model)} (${modelSource === "wisp" ? "its own" : "the app's default"})`;
+  return `${modelName(model)} (${modelIds(model)}; ${modelSource === "wisp" ? "its own" : "the app's default"})`;
+}
+
+function sameName(candidate: { id: string; name: string }, value: string): boolean {
+  const wanted = value.trim().toLowerCase();
+  return candidate.name.toLowerCase() === wanted || candidate.id.toLowerCase() === wanted;
+}
+
+/** The listed provider with this ID, or an error naming its ID when a name was passed. */
+function listedProvider(providers: ReadonlyArray<WispModelProvider>, providerId: string): WispModelProvider {
+  const provider = providers.find(({ id }) => id === providerId);
+  if (provider) return provider;
+  const named = providers.find((candidate) => sameName(candidate, providerId));
+  throw new WispBackendError(
+    "invalid_configuration",
+    named
+      ? `"${providerId}" is a provider name. Pass its ID, "${named.id}".`
+      : `No provider with ID "${providerId}" is available to Wisps: it is unknown or has no API key or sign-in. Call list_models for the provider IDs to use.`,
+  );
+}
+
+function formatModelProvider(provider: WispModelProvider): string[] {
+  return [
+    `${provider.name} (provider ID ${provider.id})${provider.fallback ? "" : ". Not as a fallback."}`,
+    ...provider.models.map(
+      (model) => `- ${model.name} (model ID ${model.id}). Reasoning: ${model.thinkingLevels.join(", ")}`,
+    ),
+  ];
 }
 
 function formatWispSummary(wisp: Wisp, selfId: string, settings: WispSettings): string {
@@ -740,7 +842,7 @@ function formatWispDetail(wisp: Wisp, selfId: string, settings: WispSettings): s
     `Appearance: color ${describeColor(wisp.color)}, body ${wisp.appearance.body}`,
     `Model: ${describeModel(settings)}`,
     ...(settings.model ? [`Reasoning: ${settings.model.thinkingLevel ?? "off"}`] : []),
-    `Fallback model: ${settings.fallback ? modelName(settings.fallback) : "none"}`,
+    `Fallback model: ${settings.fallback ? `${modelName(settings.fallback)} (${modelIds(settings.fallback)})` : "none"}`,
     `Memory: ${wisp.memoryOff ? "off" : "on"}`,
   ];
   if (settings.circles !== undefined) {

@@ -139,6 +139,20 @@ describe("ModelService", () => {
     ).resolves.toMatchObject({ selection: { providerId: "provider-b", modelId: "model-b" } });
   });
 
+  it("lists only providers whose key or sign-in lets their models answer", async () => {
+    const { service, credentials } = await createService();
+    await credentials.modify("provider-b", async () => ({ type: "api_key", key: "secret-provider-key" }));
+    await credentials.modify("openrouter", async () => ({ type: "oauth", access: "a", refresh: "r", expires: 1 }));
+
+    const providers = await service.listUsableProviders();
+
+    expect(providers.map(({ id }) => id)).toEqual(["provider-b"]);
+    expect(providers[0]!.models.map(({ id, thinkingLevels }) => [id, thinkingLevels])).toEqual([
+      ["model-b", ["off", "low", "medium", "high", "xhigh"]],
+      ["vision-b", ["off"]],
+    ]);
+  });
+
   it("rehydrates persisted provider authentication in a new runtime", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-restart-"));
     directories.push(directory);
@@ -932,6 +946,14 @@ describe("ModelService with Claude Code", () => {
     expect(provider?.models.map(({ id }) => id).sort()).toEqual(["default", "haiku", "opus", "sonnet"]);
     expect(provider?.models[0]?.thinkingLevels).not.toContain("minimal");
     expect(view.claudeCode).toEqual(ready);
+  });
+
+  it("lists Claude Code among usable providers only while it is ready", async () => {
+    const { service, setStatus } = await createClaudeCodeService(ready);
+    expect((await service.listUsableProviders()).map(({ id }) => id)).toEqual([CLAUDE_CODE_PROVIDER]);
+
+    setStatus({ state: "missing" });
+    expect(await service.listUsableProviders()).toEqual([]);
   });
 
   it("selects a Claude Code model without a key once Claude Code is ready", async () => {
