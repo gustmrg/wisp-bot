@@ -9,7 +9,10 @@ on Pi or on Claude Code ([ADR 011](decisions/011-circles.md)).
 The create dialog (the button beside Search) creates a Wisp or a circle. A
 circle has a name, a description of what it works on, which its Wisps read,
 its members, and a lead. A circle gathers Wisps you already have, so create
-a Wisp first.
+a Wisp first. You can also ask **Chief** (or any Wisp) to inspect circles,
+create a new circle, or update a circle's members, lead, description, or
+responder mode — every creation or change asks in an approval card first
+([ADR 049](decisions/049-wisp-communication-and-management.md)).
 
 A circle's gear (or "…" on a phone) opens its settings in **General** (name,
 label, description, notifications), **Members** (members and lead),

@@ -10,7 +10,12 @@ import { systemTimeZone } from "../../shared/time-zone.js";
 import { CONTEXT_SETTINGS_FILE, loadContextSettings, saveContextSettings } from "../context-session.js";
 import type { ConversationAgentContext } from "../conversation-agent.js";
 import type { RuntimeSession } from "../runtime-session.js";
-import { defaultToolRevision, type JobSessionSpec, type WispSessionBuilder } from "../wisp-session-plan.js";
+import {
+  defaultToolRevision,
+  type ConsultationSessionSpec,
+  type JobSessionSpec,
+  type WispSessionBuilder,
+} from "../wisp-session-plan.js";
 import type { ClaudeCodeActivity } from "./claude-code-activity.js";
 import { ClaudeCodeJobSession } from "./claude-code-job-session.js";
 import { claudeCodeEnvironment, claudeCodeQueryOptions, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
@@ -165,7 +170,28 @@ export class ClaudeCodeSessionFactory {
     selection: ModelSelection,
     job: JobSessionSpec,
   ): Promise<ClaudeCodeJobSession> {
-    const prepared = await this.prepare(context, selection, job);
+    const prepared = await this.prepare(context, selection, { job });
+    const effort = claudeCodeEffort(selection.thinkingLevel ?? "off");
+    return new ClaudeCodeJobSession({
+      query: prepared.query,
+      ...(this.options.activity ? { activity: this.options.activity } : {}),
+      toolNames: prepared.toolNames,
+      queryOptions: () =>
+        prepared.queryOptions({ model: prepared.model.id, ...(effort ? { effort } : {}), session: null }),
+    });
+  }
+
+  /**
+   * One `ask_wisp` consultation (ADR 049): the Wisp's identity, memory, skills,
+   * workspace, and integrations, without `ask_wisp`, `manage_wisp`, or job tools,
+   * in a Claude Code process that keeps no session.
+   */
+  async createConsultationSession(
+    context: ConversationAgentContext,
+    selection: ModelSelection,
+    consultation: ConsultationSessionSpec,
+  ): Promise<ClaudeCodeJobSession> {
+    const prepared = await this.prepare(context, selection, { consultation });
     const effort = claudeCodeEffort(selection.thinkingLevel ?? "off");
     return new ClaudeCodeJobSession({
       query: prepared.query,
@@ -179,8 +205,9 @@ export class ClaudeCodeSessionFactory {
   private async prepare(
     context: ConversationAgentContext,
     selection: ModelSelection,
-    job?: JobSessionSpec,
+    mode: { job?: JobSessionSpec; consultation?: ConsultationSessionSpec } = {},
   ): Promise<Prepared> {
+    const { job, consultation } = mode;
     const status = await this.options.status.refresh();
     const unavailable = claudeCodeUnavailableMessage(status);
     const executable = this.options.status.executable();
@@ -188,10 +215,13 @@ export class ClaudeCodeSessionFactory {
       throw new WispBackendError("configuration_required", unavailable ?? claudeCodeUnavailableMessage(undefined)!);
     }
     const model = this.resolveModel(selection);
-    const plan = await this.options.builder.plan(context, job);
+    const plan = consultation
+      ? await this.options.builder.plan(context, job, { consultation })
+      : await this.options.builder.plan(context, job);
     const searchesWithClaude = () => this.options.webSearch?.(context.wispId) ?? false;
     const tools = await this.options.builder.tools(context, plan, {
       ...(job ? { job } : {}),
+      ...(consultation ? { consultation } : {}),
       searchHistory: (query) => this.options.searchHistory?.(context.conversationId, query),
       runtimeTools: () => (searchesWithClaude() ? [WEB_SEARCH_METADATA.name] : []),
     });

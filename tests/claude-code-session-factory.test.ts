@@ -341,4 +341,27 @@ describe("ClaudeCodeSessionFactory", () => {
     expect(launches[0]!.sessionId).toBeUndefined();
     await expect(readFile(path.join(root, "claude-code-session.json"), "utf8")).rejects.toThrow();
   });
+
+  it("runs an ask_wisp consultation in a process that keeps no session", async () => {
+    const { factory, context, launches, root, builder } = await setup();
+    const consultation = {
+      runId: "consult-1",
+      runDirectory: path.join(root, "consultations"),
+      callerName: "Chief",
+    };
+
+    const run = await factory.createConsultationSession(
+      context,
+      { providerId: "claude-code", modelId: "sonnet" },
+      consultation,
+    );
+    await run.prompt("Question.", new AbortController().signal);
+    run.dispose();
+
+    expect(builder.plan).toHaveBeenCalledWith(context, undefined, { consultation });
+    expect(builder.tools).toHaveBeenCalledWith(context, expect.anything(), expect.objectContaining({ consultation }));
+    expect(launches[0]).toMatchObject({ model: "sonnet", persistSession: false });
+    expect(launches[0]!.sessionId).toBeUndefined();
+    await expect(readFile(path.join(root, "claude-code-session.json"), "utf8")).rejects.toThrow();
+  });
 });

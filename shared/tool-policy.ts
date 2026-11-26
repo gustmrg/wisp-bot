@@ -192,16 +192,34 @@ export interface JobApprovalDetails {
   tools: ReadonlyArray<string>;
 }
 
-/** A Wisp as its approval card shows it (ADR 024). */
+/** A Wisp or circle as its approval card shows it (ADR 024, ADR 049). */
 export interface WispApprovalDetails {
+  /** Absent means "wisp", matching servers before circle management tools. */
+  target?: "wisp" | "circle";
   action: "create" | "update" | "delete";
-  /** The Wisp's name; for an update, its name before the change. */
+  /** The Wisp's or circle's name; for an update, its name before the change. */
   name: string;
   /** Fields set by a create or changed by an update; a delete has none. */
   changes?: {
     name?: string;
     role?: string;
     soul?: string;
+    color?: string;
+    body?: string;
+    /** Whether memory is on or off. */
+    memory?: "on" | "off";
+    /** Human-readable model summary, or "App default". */
+    model?: string;
+    /** Human-readable fallback model summary, "App default", or "None". */
+    fallback?: string;
+    /** Circle description. */
+    description?: string;
+    /** Circle member names in order (lead first). */
+    members?: ReadonlyArray<string>;
+    /** Circle lead name. */
+    lead?: string;
+    /** Circle responder mode: "lead" or "auto". */
+    responder?: "lead" | "auto";
   };
 }
 

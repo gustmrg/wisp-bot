@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { MessageCircleIcon } from "lucide-react";
 
-import type { ChatId, ChatView } from "@/chat-data";
+import type { ChatId, ChatView, WispCollection } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { ToolApprovalCard, approvalAsk, needsReview, remainingLabel } from "@/components/tool-approval-card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ function accentStyle(chat: ChatView): CSSProperties | undefined {
 
 interface ApprovalSummaryProps {
   chat: ChatView;
+  wisps?: Readonly<WispCollection>;
   request: ToolApprovalRequest;
   onResolve: (decision: ToolApprovalDecision) => void;
   onReview: () => void;
@@ -27,9 +28,9 @@ interface ApprovalSummaryProps {
  * An approval on a phone, small enough for several to fit on screen: who asks, what for, the
  * request in one or two lines, and the two answers it takes most often. Tapping it shows the rest.
  */
-export function ApprovalSummary({ chat, request, onResolve, onReview }: ApprovalSummaryProps) {
+export function ApprovalSummary({ chat, wisps, request, onResolve, onReview }: ApprovalSummaryProps) {
   const now = useClock(1_000);
-  const name = approvalWispName(chat, request);
+  const name = approvalWispName(chat, request, wisps);
   const remaining = Math.max(0, Math.ceil((Date.parse(request.expiresAt) - now.getTime()) / 1_000));
   return (
     <article className="approval-summary" aria-label={`${name}: ${request.summary}`} style={accentStyle(chat)}>
@@ -72,6 +73,7 @@ export function ApprovalSummary({ chat, request, onResolve, onReview }: Approval
 
 interface ApprovalSheetProps {
   chat: ChatView;
+  wisps?: Readonly<WispCollection>;
   request: ToolApprovalRequest;
   onResolve: (decision: ToolApprovalDecision) => void;
   onClose: () => void;
@@ -80,8 +82,8 @@ interface ApprovalSheetProps {
 }
 
 /** The whole request and every answer it can take, in a sheet from the bottom of the screen. */
-export function ApprovalSheet({ chat, request, onResolve, onClose, onOpenChat }: ApprovalSheetProps) {
-  const name = approvalWispName(chat, request);
+export function ApprovalSheet({ chat, wisps, request, onResolve, onClose, onOpenChat }: ApprovalSheetProps) {
+  const name = approvalWispName(chat, request, wisps);
   return (
     <Dialog open onOpenChange={(open) => (open ? null : onClose())}>
       <DialogContent className="approval-sheet" viewportClassName="approval-sheet-viewport" style={accentStyle(chat)}>
@@ -120,12 +122,13 @@ export function ApprovalSheet({ chat, request, onResolve, onClose, onOpenChat }:
 interface ApprovalSummariesProps {
   requests: ReadonlyArray<ToolApprovalRequest>;
   chatOf: (request: ToolApprovalRequest) => ChatView;
+  wisps?: Readonly<WispCollection>;
   onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onOpenChat?: (chatId: ChatId) => void;
 }
 
 /** Several approvals, one small card each, and the sheet that shows any of them whole. */
-export function ApprovalSummaries({ requests, chatOf, onResolve, onOpenChat }: ApprovalSummariesProps) {
+export function ApprovalSummaries({ requests, chatOf, wisps, onResolve, onOpenChat }: ApprovalSummariesProps) {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const reviewing = requests.find(({ approvalId }) => approvalId === reviewingId);
   return (
@@ -134,6 +137,7 @@ export function ApprovalSummaries({ requests, chatOf, onResolve, onOpenChat }: A
         <ApprovalSummary
           key={request.approvalId}
           chat={chatOf(request)}
+          wisps={wisps}
           request={request}
           onResolve={(decision) => onResolve(request, decision)}
           onReview={() => setReviewingId(request.approvalId)}
@@ -142,6 +146,7 @@ export function ApprovalSummaries({ requests, chatOf, onResolve, onOpenChat }: A
       {reviewing ? (
         <ApprovalSheet
           chat={chatOf(reviewing)}
+          wisps={wisps}
           request={reviewing}
           onResolve={(decision) => onResolve(reviewing, decision)}
           onClose={() => setReviewingId(null)}

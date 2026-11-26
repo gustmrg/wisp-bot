@@ -8,11 +8,19 @@ import type {
   SequencedConversationAgentEvent,
   WispFallback,
 } from "../shared/contracts.js";
-import type { ConversationDelta, Wisp, WispsView } from "../shared/conversations.js";
-import type { JobsView } from "../shared/jobs.js";
+import {
+  circleLeadId,
+  type CircleChat,
+  type CircleSummary,
+  type ConversationDelta,
+  type Wisp,
+  type WispsView,
+} from "../shared/conversations.js";
+import { isJobFinished, type JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
-import type { PluginSettingsView } from "../shared/plugins.js";
+import { pluginCatalogEntry, type PluginSettingsView } from "../shared/plugins.js";
 import type { MessageQueueView } from "../shared/message-queue.js";
+import { describeSchedule } from "../shared/schedule.js";
 import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
 import { AgentRegistry } from "./agent-registry.js";
@@ -20,7 +28,7 @@ import { CircleAgentFactory } from "./circle-conversation-agent.js";
 import { appendDecisionUsage, CircleRouter } from "./circle-router.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import { isCircleContext, type ConversationAgentFactory } from "./conversation-agent.js";
-import { normalizeWisp, normalizeWispChanges } from "./conversation-normalizer.js";
+import { normalizeChat, normalizeChatChanges, normalizeWisp, normalizeWispChanges } from "./conversation-normalizer.js";
 import { ConversationRepository } from "./conversation-repository.js";
 import { ConversationService } from "./conversation-service.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
@@ -53,17 +61,19 @@ import { SessionReportService } from "./session-report-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
 import { WispToolPolicyStore } from "./wisp-tool-policy-store.js";
 import type { WispToolHost } from "./wisp-tools.js";
+import { WispConsultationRunner } from "./wisp-consultation.js";
+import { SkillStore } from "./skill-store.js";
 import { ToolAuditStore } from "./tool-audit-store.js";
 import { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { ToolPolicyStore } from "./tool-policy-store.js";
 import { fakeTranscriptionFetch, TranscriptionService } from "./transcription-service.js";
 import { StorageService } from "./storage-service.js";
-import { readWorkspaceQuota, WorkspaceService } from "./workspace-service.js";
+import { readWorkspaceQuota, SKILLS_DIRECTORY, WorkspaceService } from "./workspace-service.js";
 import { WispTemplateStore } from "./wisp-template-store.js";
 import { ContainerRuntimeDetector, type ContainerCli } from "./container-cli.js";
 import { ContainerManager } from "./container-manager.js";
 import { BrowserService } from "./browser-service.js";
-import { ExecutionService } from "./execution-service.js";
+import { ExecutionService, readCircleCommands, readExecutionSettings } from "./execution-service.js";
 
 /** Host capabilities the runtime needs, injected so any host (desktop or server) can compose it. */
 export interface BackendRuntimeOptions {
@@ -211,6 +221,10 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
   let messageScheduler: MessageScheduler | undefined;
   let messageQueue: MessageQueue | undefined;
   let storageService: StorageService | undefined;
+  let workspaceServiceRef: WorkspaceService | undefined;
+  let pluginServiceRef: PluginService | undefined;
+  let mcpServiceRef: McpService | undefined;
+  let consultationRunner: WispConsultationRunner | undefined;
   let jobScheduler: JobScheduler | undefined;
   const requireJobs = (): JobScheduler => {
     if (!jobScheduler) throw new Error("Jobs are not ready.");
@@ -236,36 +250,213 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     if (!wisp) throw new WispBackendError("not_found", "The Wisp was not found.");
     return wisp;
   };
+  const validateWispModel = async (selection: ModelSelection) => {
+    await modelService.validateConversationSelection(selection);
+    modelService.assertSupportedThinkingLevel(selection);
+    return {
+      ...modelService.describeSelection(selection),
+      ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
+    };
+  };
+  const validateWispFallback = async (selection: ModelSelection, modelOverride: ModelSelection | null) => {
+    await modelService.assertUsableFallback(selection, modelOverride);
+    return modelService.describeSelection(selection);
+  };
+  const circleSummaryOf = async (chat: CircleSummary) => {
+    let commandsEnabled = false;
+    try {
+      const target = conversationRepository.getCircleExecutionTarget(chat.id);
+      commandsEnabled = await readCircleCommands(target.settingsDirectory);
+    } catch {
+      commandsEnabled = false;
+    }
+    return {
+      id: chat.id,
+      name: chat.name,
+      description: chat.description,
+      memberIds: [...chat.memberIds],
+      responder: chat.responder ?? ("lead" as const),
+      commandsEnabled,
+    };
+  };
   const wispHost: WispToolHost = {
     list: () => Object.values(requireConversations().readWisps()),
-    create: async (wisp) => {
+    create: async (wisp, createOptions) => {
+      const modelOverride = createOptions?.model ?? null;
+      if (modelOverride) await validateWispModel(modelOverride);
+      if (createOptions?.fallback && typeof createOptions.fallback === "object") {
+        await validateWispFallback(createOptions.fallback, modelOverride);
+      }
       // A Wisp's own conversation shares its ID; normalizing checks it as the IPC handler does.
       const created = normalizeWisp({ ...wisp, id: randomUUID() });
-      await requireConversations().createWisp(created, { notifyOnUpdatesEnabled: true, model: null });
+      await requireConversations().createWisp(created, { notifyOnUpdatesEnabled: true, model: modelOverride });
+      if (createOptions?.fallback !== undefined) {
+        await requireConversations().applyConversationFallback(created.id, createOptions.fallback);
+      }
       return storedWisp(created.id);
     },
-    update: async (wispId, changes) => {
-      await requireConversations().updateWisp(wispId, normalizeWispChanges(changes));
+    update: async (wispId, changes, updateOptions) => {
+      const currentContext = conversationRepository.getAgentContext(wispId);
+      const nextModelOverride =
+        updateOptions?.model !== undefined ? updateOptions.model : (currentContext.modelOverride ?? null);
+      if (updateOptions?.model) await validateWispModel(updateOptions.model);
+      if (updateOptions?.fallback && typeof updateOptions.fallback === "object") {
+        await validateWispFallback(updateOptions.fallback, nextModelOverride);
+      }
+      if (Object.keys(changes).length > 0) {
+        await requireConversations().updateWisp(wispId, normalizeWispChanges(changes));
+      }
+      if (updateOptions?.model !== undefined) {
+        await requireConversations().applyConversationModel(wispId, updateOptions.model);
+      }
+      if (updateOptions?.fallback !== undefined) {
+        await requireConversations().applyConversationFallback(wispId, updateOptions.fallback);
+      }
       return storedWisp(wispId);
     },
     delete: async (wispId) => {
       await requireConversations().deleteWisp(wispId);
     },
-    settings: async (wispId) => {
+    settings: async (wispId, settingsOptions) => {
       const context = conversationRepository.getAgentContext(wispId);
       const modelOverride = context.modelOverride ?? null;
       const selection = modelOverride ?? (await modelService.getSelection());
       const fallback = await modelService.getFallbackModel(modelOverride, context.fallback ?? null);
-      return {
+      const circles = Object.values(conversationRepository.readChats())
+        .filter((chat): chat is CircleSummary => chat.kind === "circle" && chat.memberIds.includes(wispId))
+        .map((circle) => ({
+          id: circle.id,
+          name: circle.name,
+          isLead: circleLeadId(circle) === wispId,
+        }));
+      const exec = await readExecutionSettings(context.configDirectory).catch(() => ({
+        mode: "off" as const,
+        image: null,
+        localNetwork: false,
+        browser: false,
+      }));
+      const base = {
         model: selection
           ? {
               ...modelService.describeSelection(selection),
               ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
             }
           : null,
-        modelSource: modelOverride ? "wisp" : "app",
+        modelSource: (modelOverride ? "wisp" : "app") as "wisp" | "app",
+        modelOverride,
         fallback: fallback ? modelService.describeSelection(fallback) : null,
+        circles,
+        capabilities: {
+          commands: exec.mode === "container",
+          localNetwork: exec.localNetwork,
+          browser: exec.browser,
+        },
       };
+      if (!settingsOptions?.detail) return base;
+      const [skills, allJobs, workspaceView] = await Promise.all([
+        new SkillStore(path.join(context.configDirectory, SKILLS_DIRECTORY)).summaries().catch(() => []),
+        jobScheduler
+          ? jobScheduler
+              .getView()
+              .then((view) => view.jobs)
+              .catch(() => [])
+          : Promise.resolve([]),
+        workspaceServiceRef ? workspaceServiceRef.getView(wispId).catch(() => undefined) : Promise.resolve(undefined),
+      ]);
+      const jobs = allJobs
+        .filter((job) => job.conversationId === wispId && !isJobFinished(job))
+        .map((job) => ({
+          title: job.title,
+          schedule: describeSchedule(job.schedule, job.timeZone),
+          paused: Boolean(job.paused),
+        }));
+      // Non-secret names and access levels only: never read credentials, endpoints, headers, or auth config.
+      const plugins = pluginServiceRef
+        ? pluginServiceRef
+            .getAccess({ conversationId: wispId })
+            .grants.filter((grant) => grant.access !== "none")
+            .map((grant) => ({
+              name: pluginCatalogEntry(grant.pluginId).name,
+              access: grant.access === "write" && grant.alwaysAllowAll ? "write (without asking)" : grant.access,
+            }))
+        : [];
+      const mcpNames = mcpServiceRef?.getServerNames();
+      const mcpServers = mcpServiceRef
+        ? mcpServiceRef
+            .getAccess({ conversationId: wispId })
+            .grants.filter((grant) => grant.access !== "none")
+            .map((grant) => ({
+              name: mcpNames?.get(grant.serverId) ?? grant.serverId,
+              access: grant.access === "allow_all" ? "use_without_asking" : grant.access,
+            }))
+        : [];
+      return {
+        ...base,
+        skills: skills.map(({ name, description }) => ({ name, description })),
+        jobs,
+        capabilities: {
+          ...base.capabilities,
+          ...(workspaceView
+            ? {
+                workspaceUsedBytes: workspaceView.usedBytes,
+                workspaceQuotaBytes: workspaceView.quotaBytes,
+                workspaceUnlimited: workspaceView.unlimited,
+              }
+            : {}),
+        },
+        integrations: { plugins, mcpServers },
+      };
+    },
+    validateModel: validateWispModel,
+    validateFallback: validateWispFallback,
+    listCircles: async () => {
+      const circles = Object.values(conversationRepository.readChats()).filter(
+        (chat): chat is CircleSummary => chat.kind === "circle",
+      );
+      return Promise.all(circles.map(circleSummaryOf));
+    },
+    createCircle: async ({ name, description, memberIds, responder }) => {
+      const circle = normalizeChat({
+        id: randomUUID(),
+        kind: "circle",
+        name,
+        label: "",
+        description,
+        memberIds,
+        notifyOnUpdatesEnabled: true,
+        preview: "Ready for the first task.",
+        messages: [],
+        ...(responder === "auto" ? { responder: "auto" } : {}),
+      }) as CircleChat;
+      await requireConversations().create(circle);
+      const stored = conversationRepository.readChat(circle.id);
+      if (!stored || stored.kind !== "circle") {
+        throw new WispBackendError("internal_error", "The circle could not be read after creation.");
+      }
+      return circleSummaryOf(stored);
+    },
+    updateCircle: async (circleId, changes) => {
+      const normalized = normalizeChatChanges({ kind: "circle", ...changes });
+      await requireConversations().update(circleId, normalized);
+      const stored = conversationRepository.readChat(circleId);
+      if (!stored || stored.kind !== "circle") {
+        throw new WispBackendError("not_found", "The circle was not found.");
+      }
+      return circleSummaryOf(stored);
+    },
+    ask: async (request, signal) => {
+      if (options.agentMode === "fake") {
+        if (request.targetWispId === request.callerWispId) {
+          throw new WispBackendError("invalid_request", "A Wisp cannot consult itself.");
+        }
+        if (signal?.aborted) throw new WispBackendError("aborted", "The consultation was cancelled.");
+        const target = storedWisp(request.targetWispId);
+        return `Fake reply from ${target.name}: ${request.message}`;
+      }
+      if (!consultationRunner) {
+        throw new WispBackendError("unavailable", "Consulting another Wisp is not ready.");
+      }
+      return consultationRunner.consult(request, signal);
     },
   };
   const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
@@ -308,6 +499,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     ...(options.onPluginSettingsChanged ? { onSettingsChanged: options.onPluginSettingsChanged } : {}),
   });
   await pluginService.load();
+  pluginServiceRef = pluginService;
   const mcpService = new McpService({
     dataDirectory,
     encryption,
@@ -321,6 +513,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     logger,
   });
   await mcpService.load();
+  mcpServiceRef = mcpService;
   const containerRuntime = new ContainerRuntimeDetector(
     options.containerPrograms ?? (options.agentMode === "fake" ? [] : undefined),
   );
@@ -406,6 +599,12 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     activity: claudeCodeActivity,
   });
   const sessionFactory = new RoutingSessionFactory(piSessionFactory, claudeCodeSessionFactory);
+  consultationRunner = new WispConsultationRunner({
+    sessionFactory,
+    getContext: (wispId) => conversationRepository.getAgentContext(wispId),
+    getSelection: async (context) => context.modelOverride ?? (await modelService.getSelection()),
+    routeApprovals: (conversationId, run) => toolAuthorizationBroker.routeApprovals(conversationId, run),
+  });
   const runtimeEvents = new RuntimeEventLog({
     directory: path.join(dataDirectory, "runtime-events"),
     // Only this environment's credentials: each environment keeps its own (see docs/security.md).
@@ -594,6 +793,7 @@ async function composeBackendRuntime(options: BackendRuntimeOptions): Promise<{
     selectFiles: options.selectFiles,
     workspaceRoot: path.join(dataDirectory, "workspaces"),
   });
+  workspaceServiceRef = workspaceService;
   const transcriptionService = new TranscriptionService({
     credentials: modelService,
     logger,

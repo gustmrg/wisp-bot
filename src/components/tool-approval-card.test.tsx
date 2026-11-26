@@ -2,7 +2,9 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { AllowAllApprovals, ToolApprovalCard } from "@/components/tool-approval-card";
+import { AllowAllApprovals, approvalAsk, ToolApprovalCard } from "@/components/tool-approval-card";
+import { approvalWispName } from "@/lib/chat-schema";
+import { wispChatView } from "@/test/chat-fixtures";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 describe("ToolApprovalCard", () => {
@@ -75,6 +77,115 @@ describe("ToolApprovalCard", () => {
     expect(screen.queryByRole("button", { name: /block/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create" }));
     expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
+  it("shows extended Wisp fields including model, fallback, memory, and appearance", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <ToolApprovalCard
+        request={{
+          approvalId: "approval-wisp-ext",
+          conversationId: "chief",
+          toolCallId: "tool-wisp-ext",
+          toolName: "update_wisp",
+          category: "manage_wisp",
+          scope: { kind: "wisp", display: "Quill" },
+          summary: 'Change the Wisp "Quill"',
+          wisp: {
+            action: "update",
+            name: "Quill",
+            changes: {
+              color: "blue",
+              body: "drop",
+              model: "GPT-5 from OpenAI (reasoning: high)",
+              fallback: "Claude Haiku from Anthropic",
+              memory: "off",
+            },
+          },
+          expiresAt: "2026-10-11T12:01:00.000Z",
+        }}
+        wispName="Chief"
+        onResolve={onResolve}
+      />,
+    );
+
+    expect(screen.getByText("Approve Wisp change?")).toBeVisible();
+    expect(screen.getByText("color blue, body drop")).toBeVisible();
+    expect(screen.getByText("GPT-5 from OpenAI (reasoning: high)")).toBeVisible();
+    expect(screen.getByText("Claude Haiku from Anthropic")).toBeVisible();
+    expect(screen.getByText("Off")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Always/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /block/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
+  it("shows circle creation and update details clearly with no lasting allow or block choices", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    const createRequest: ToolApprovalRequest = {
+      approvalId: "approval-circle-create",
+      conversationId: "chief",
+      toolCallId: "tool-circle-create",
+      toolName: "create_circle",
+      category: "manage_wisp",
+      scope: { kind: "wisp", display: "Engineering" },
+      summary: 'Create the circle "Engineering"',
+      wisp: {
+        target: "circle",
+        action: "create",
+        name: "Engineering",
+        changes: {
+          name: "Engineering",
+          description: "Ship features together",
+          members: ["Atlas", "Quill"],
+          lead: "Atlas",
+          responder: "auto",
+        },
+      },
+      expiresAt: "2026-10-11T12:01:00.000Z",
+    };
+
+    const { rerender } = render(<ToolApprovalCard request={createRequest} wispName="Chief" onResolve={onResolve} />);
+
+    expect(approvalAsk(createRequest)).toBe("wants to create a circle");
+    expect(screen.getByText("Approve new circle?")).toBeVisible();
+    expect(screen.getByText("Engineering")).toBeVisible();
+    expect(screen.getByText("Ship features together")).toBeVisible();
+    expect(screen.getByText("Atlas, Quill")).toBeVisible();
+    expect(screen.getByText("Atlas")).toBeVisible();
+    expect(screen.getByText("Decision model")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Always/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /block/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(onResolve).toHaveBeenLastCalledWith("allow_once");
+
+    const updateRequest: ToolApprovalRequest = {
+      ...createRequest,
+      approvalId: "approval-circle-update",
+      toolName: "update_circle",
+      wisp: {
+        target: "circle",
+        action: "update",
+        name: "Engineering",
+        changes: { name: "Platform", responder: "lead" },
+      },
+    };
+    rerender(<ToolApprovalCard request={updateRequest} wispName="Chief" onResolve={onResolve} />);
+    expect(approvalAsk(updateRequest)).toBe("wants to change a circle");
+    expect(screen.getByText("Approve circle change?")).toBeVisible();
+    expect(screen.getByText("Platform")).toBeVisible();
+    expect(screen.getByText("Lead")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(onResolve).toHaveBeenLastCalledWith("allow_once");
+  });
+
+  it("attributes consultation approvals to the consulted Wisp inside the caller's conversation", () => {
+    const chiefChat = wispChatView("chief", { wisp: { name: "Chief" } });
+    const atlasWisp = wispChatView("atlas", { wisp: { name: "Atlas" } }).wisp;
+    expect(approvalWispName(chiefChat, { wispId: "atlas" }, { chief: chiefChat.wisp, atlas: atlasWisp })).toBe("Atlas");
+    expect(approvalWispName(chiefChat, {}, { chief: chiefChat.wisp, atlas: atlasWisp })).toBe("Chief");
   });
 
   it("asks to confirm deleting a Wisp, as deleting it from its settings does", async () => {

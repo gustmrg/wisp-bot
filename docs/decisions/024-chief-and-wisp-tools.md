@@ -7,6 +7,7 @@
   onboarding; what an empty conversation offers
 - Related: [ADR 008](008-wisp-skills.md), [ADR 010](010-wisp-entity.md),
   [ADR 019](019-scheduled-jobs.md), [ADR 023](023-wisp-permissions.md),
+  [ADR 049](049-wisp-communication-and-management.md),
   [security](../security.md), SWE-175
 
 ## Context
@@ -42,9 +43,11 @@ default model, as the create form's defaults do.
 and its provider, and whether the model is the Wisp's own or the app's
 default. For one Wisp it adds the reasoning level, the fallback model and
 whether memory is on. A model that is not configured, or a fallback the Wisp
-does not have, is said so. It never shows a credential, and it leaves out the
-Wisp's integrations, permissions, skills and jobs: the tool says so, and the
-Wisp tells the person to look in the Wisp's settings (SWE-327).
+does not have, is said so. It never shows a credential.
+([ADR 049](049-wisp-communication-and-management.md) extends `list_wisps` with
+non-secret team metadata, adds `list_circles`, extends `create_wisp` and
+`update_wisp` with model, fallback, and memory settings, adds `create_circle`
+and `update_circle`, and introduces `ask_wisp` for direct Wisp consultation.)
 
 ### The person approves every change
 

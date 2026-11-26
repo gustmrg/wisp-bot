@@ -30,6 +30,7 @@ import {
   BlockMutationAuthorizer,
   defaultToolRevision,
   WispSessionBuilder,
+  type ConsultationSessionSpec,
   type JobSessionSpec,
 } from "./wisp-session-plan.js";
 
@@ -148,7 +149,22 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     selection: ModelSelection,
     job: JobSessionSpec,
   ): Promise<RuntimeJobSession> {
-    const { session, sessionManager, snapshot, version } = await this.build(context, selection, job);
+    const { session, sessionManager, snapshot, version } = await this.build(context, selection, { job });
+    recordSessionIdentity(sessionManager, version, snapshot?.metadata ?? []);
+    return adaptJobSession(session);
+  }
+
+  /**
+   * A session for one `ask_wisp` consultation (ADR 049): the Wisp's own model,
+   * identity, memory, skills, workspace, and integrations, without its
+   * conversation history and without `ask_wisp`, `manage_wisp`, or job tools.
+   */
+  async createConsultationSession(
+    context: ConversationAgentContext,
+    selection: ModelSelection,
+    consultation: ConsultationSessionSpec,
+  ): Promise<RuntimeJobSession> {
+    const { session, sessionManager, snapshot, version } = await this.build(context, selection, { consultation });
     recordSessionIdentity(sessionManager, version, snapshot?.metadata ?? []);
     return adaptJobSession(session);
   }
@@ -156,8 +172,9 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
   private async build(
     context: ConversationAgentContext,
     selection: ModelSelection,
-    job?: JobSessionSpec,
+    mode: { job?: JobSessionSpec; consultation?: ConsultationSessionSpec } = {},
   ): Promise<BuiltSession> {
+    const { job, consultation } = mode;
     const model = this.resolveModel(selection);
     const {
       createAgentSession,
@@ -183,7 +200,10 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
       retries: MODEL_RETRIES,
     });
     let continuity: ContextSession | undefined;
-    const plan = await this.builder.plan(context, job, { deferTools: true });
+    const plan = await this.builder.plan(context, job, {
+      deferTools: true,
+      ...(consultation ? { consultation } : {}),
+    });
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
@@ -221,6 +241,10 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     let sessionManager;
     if (job) {
       sessionManager = SessionManager.create(context.workspaceDirectory, job.runDirectory, { id: job.runId });
+    } else if (consultation) {
+      sessionManager = SessionManager.create(context.workspaceDirectory, consultation.runDirectory, {
+        id: consultation.runId,
+      });
     } else if (context.piSessionFile && (await fileExists(context.piSessionFile))) {
       sessionManager = SessionManager.open(context.piSessionFile, context.sessionDirectory, context.workspaceDirectory);
     } else {
@@ -242,6 +266,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
       : undefined;
     const tools = await this.builder.tools(context, plan, {
       ...(job ? { job } : {}),
+      ...(consultation ? { consultation } : {}),
       ...(transcriber ? { transcriber } : {}),
       searchHistory: (query) => continuity?.search(query),
     });
@@ -283,7 +308,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
       session,
       path.join(context.configDirectory, "context-settings.json"),
       (kind, createdAt) => {
-        if (!job) context.onContextRenewed?.(kind, createdAt);
+        if (!job && !consultation) context.onContextRenewed?.(kind, createdAt);
       },
       undefined,
       () => context.userTimeZone?.() ?? systemTimeZone(),

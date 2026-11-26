@@ -41,6 +41,9 @@ function approvalAsk(request: ToolApprovalRequest): string {
     case "schedule_job":
       return "wants to schedule a job";
     case "manage_wisp":
+      if (request.wisp?.target === "circle") {
+        return request.wisp.action === "update" ? "wants to change a circle" : "wants to create a circle";
+      }
       return request.wisp?.action === "delete"
         ? "wants to delete a Wisp"
         : request.wisp?.action === "update"
@@ -113,14 +116,20 @@ function JobDetails({ job }: { job: JobApprovalDetails }) {
   );
 }
 
-/** The Wisp to create, change or delete, as its approval card shows it (ADR 024). */
+/** The Wisp or circle to create, change or delete, as its approval card shows it (ADR 024, ADR 049). */
 function WispDetails({ wisp }: { wisp: WispApprovalDetails }) {
   const changes = wisp.changes ?? {};
+  const isUpdate = wisp.action === "update";
+  const isCircle = wisp.target === "circle";
+  const appearanceParts = [
+    ...(changes.color ? [`color ${changes.color}`] : []),
+    ...(changes.body ? [`body ${changes.body}`] : []),
+  ];
   return (
     <dl className="my-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
-      <dt className="text-dim">Wisp</dt>
+      <dt className="text-dim">{isCircle ? "Circle" : "Wisp"}</dt>
       <dd className="m-0 break-words font-medium">{wisp.name}</dd>
-      {changes.name !== undefined && wisp.action === "update" ? (
+      {changes.name !== undefined && isUpdate ? (
         <>
           <dt className="text-dim">New name</dt>
           <dd className="m-0 break-words">{changes.name}</dd>
@@ -128,13 +137,61 @@ function WispDetails({ wisp }: { wisp: WispApprovalDetails }) {
       ) : null}
       {changes.role !== undefined ? (
         <>
-          <dt className="text-dim">{wisp.action === "update" ? "New role" : "Role"}</dt>
+          <dt className="text-dim">{isUpdate ? "New role" : "Role"}</dt>
           <dd className="m-0 break-words">{changes.role || "None"}</dd>
+        </>
+      ) : null}
+      {appearanceParts.length ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New appearance" : "Appearance"}</dt>
+          <dd className="m-0 break-words">{appearanceParts.join(", ")}</dd>
+        </>
+      ) : null}
+      {changes.model !== undefined ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New model" : "Model"}</dt>
+          <dd className="m-0 break-words">{changes.model}</dd>
+        </>
+      ) : null}
+      {changes.fallback !== undefined ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New fallback" : "Fallback model"}</dt>
+          <dd className="m-0 break-words">{changes.fallback}</dd>
+        </>
+      ) : null}
+      {changes.memory !== undefined ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New memory" : "Memory"}</dt>
+          <dd className="m-0 break-words">{changes.memory === "on" ? "On" : "Off"}</dd>
+        </>
+      ) : null}
+      {changes.description !== undefined ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New description" : "Description"}</dt>
+          <dd className="m-0 break-words whitespace-pre-wrap">{changes.description || "None"}</dd>
+        </>
+      ) : null}
+      {changes.members !== undefined ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New members" : "Members"}</dt>
+          <dd className="m-0 break-words">{changes.members.length ? changes.members.join(", ") : "None"}</dd>
+        </>
+      ) : null}
+      {changes.lead !== undefined ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New lead" : "Lead"}</dt>
+          <dd className="m-0 break-words">{changes.lead}</dd>
+        </>
+      ) : null}
+      {changes.responder !== undefined ? (
+        <>
+          <dt className="text-dim">{isUpdate ? "New responder" : "Without a mention"}</dt>
+          <dd className="m-0 break-words">{changes.responder === "auto" ? "Decision model" : "Lead"}</dd>
         </>
       ) : null}
       {changes.soul !== undefined ? (
         <>
-          <dt className="col-span-2 mt-1 text-dim">{wisp.action === "update" ? "New soul" : "Soul"}</dt>
+          <dt className="col-span-2 mt-1 text-dim">{isUpdate ? "New soul" : "Soul"}</dt>
           <dd className="col-span-2 m-0">
             <pre
               className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-xs text-foreground"
@@ -177,11 +234,15 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
           <div className="flex items-baseline gap-2">
             <strong className="min-w-0 flex-1 text-sm">
               {wisp
-                ? wisp.action === "delete"
-                  ? `Delete ${wisp.name}?`
-                  : wisp.action === "update"
-                    ? "Approve Wisp change?"
-                    : "Approve new Wisp?"
+                ? wisp.target === "circle"
+                  ? wisp.action === "update"
+                    ? "Approve circle change?"
+                    : "Approve new circle?"
+                  : wisp.action === "delete"
+                    ? `Delete ${wisp.name}?`
+                    : wisp.action === "update"
+                      ? "Approve Wisp change?"
+                      : "Approve new Wisp?"
                 : job
                   ? "Approve job?"
                   : skill
@@ -223,7 +284,13 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
           ) : null}
           <small className="text-faint">
             {wisp ? (
-              wisp.action === "delete" ? (
+              wisp.target === "circle" ? (
+                wisp.action === "update" ? (
+                  <>{wisp.name} uses these settings right away. You can edit it again in its settings.</>
+                ) : (
+                  <>The new circle gets its own shared workspace. You can edit or delete it in its settings.</>
+                )
+              ) : wisp.action === "delete" ? (
                 <>
                   {wispName} wants to permanently delete {wisp.name}, including its conversation history and settings.
                   This action cannot be undone.

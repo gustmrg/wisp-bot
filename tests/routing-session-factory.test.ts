@@ -4,6 +4,7 @@ import { RoutingSessionFactory } from "../backend/claude-code/routing-session-fa
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
 import type { JobSessionFactory } from "../backend/job-runner.js";
 import type { RuntimeSessionFactory } from "../backend/runtime-session.js";
+import type { ConsultationSessionFactory } from "../backend/wisp-consultation.js";
 import { ownConversation } from "../backend/integration-tool-source.js";
 
 describe("RoutingSessionFactory", () => {
@@ -13,12 +14,14 @@ describe("RoutingSessionFactory", () => {
     resolveModel: vi.fn(() => ({ id: "gpt" })),
     create: vi.fn(async () => piSession),
     createJobSession: vi.fn(async () => ({ kind: "pi-job" })),
+    createConsultationSession: vi.fn(async () => ({ kind: "pi-consultation" })),
     getToolRevision: vi.fn(async () => "rev-1"),
-  } as unknown as RuntimeSessionFactory & JobSessionFactory;
+  } as unknown as RuntimeSessionFactory & JobSessionFactory & ConsultationSessionFactory;
   const claudeCode = {
     resolveModel: vi.fn(() => ({ id: "sonnet" })),
     create: vi.fn(async () => claudeSession),
     createJobSession: vi.fn(async () => ({ kind: "claude-code-job" })),
+    createConsultationSession: vi.fn(async () => ({ kind: "claude-code-consultation" })),
   };
   const factory = new RoutingSessionFactory(pi, claudeCode as never);
   const context = { conversationId: "c1" } as ConversationAgentContext;
@@ -38,6 +41,17 @@ describe("RoutingSessionFactory", () => {
 
     await expect(factory.createJobSession(context, claude, job)).resolves.toEqual({ kind: "claude-code-job" });
     await expect(factory.createJobSession(context, openai, job)).resolves.toEqual({ kind: "pi-job" });
+  });
+
+  it("runs a Wisp's consultations on the same runtime as its conversations", async () => {
+    const consultation = { runId: "c1", runDirectory: "/consultations", callerName: "Chief" };
+
+    await expect(factory.createConsultationSession(context, claude, consultation)).resolves.toEqual({
+      kind: "claude-code-consultation",
+    });
+    await expect(factory.createConsultationSession(context, openai, consultation)).resolves.toEqual({
+      kind: "pi-consultation",
+    });
   });
 
   it("tells when a model change needs another kind of session", () => {
