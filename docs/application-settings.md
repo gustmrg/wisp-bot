@@ -84,6 +84,7 @@ saved key.
 ## General
 
 - **Application** — theme, Wisp colors, conversation order, reply speed, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
+- **Sidebar & Team** — on the desktop, the expanded sidebar shows compact **All**, **Working**, and **Unread** filter pills whenever you have two or more conversations. **Team**, pinned at the top of the sidebar, opens a full-panel overview of pending approvals, Wisps, and circles (with a **This environment** / **All environments** toggle when multiple environments are configured).
 - **Tools in circles** — under **Settings → General → Application**, choose **Show**
   (the default) or **Hide** for tool steps in all circles on this device.
   Approval requests, reply errors, and the working indicator stay visible.

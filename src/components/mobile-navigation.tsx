@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { MessageCircleIcon, SettingsIcon, ShieldAlertIcon, type LucideIcon } from "lucide-react";
 
 interface MobileNavigationProps {
-  current: "wisps" | "approvals" | "settings";
+  current: "wisps" | "approvals" | "settings" | "team";
   onConversations: () => void;
   /** Without it the Approvals tab is left out, as in component tests that do not need it. */
   onApprovals?: () => void;

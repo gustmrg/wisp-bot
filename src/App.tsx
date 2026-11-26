@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChatListAction } from "@/chat-data";
 import type { SettingsEntrySection } from "@/components/app-settings-dialog";
@@ -11,11 +11,13 @@ import { Onboarding, SetupStatus } from "@/components/onboarding";
 import { SearchDialog } from "@/components/search-dialog";
 import { SplashOverlay, SplashScreen } from "@/components/splash-screen";
 import { Sidebar } from "@/components/sidebar";
+import { TeamOverview } from "@/components/team-overview";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
 import { WispProfile } from "@/components/wisp-profile";
 import type { WispSettingsSection } from "@/components/wisp-settings";
 import { APP_METADATA } from "@/config/app-metadata";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
 import { useMessageQueue } from "@/hooks/use-message-queue";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
@@ -29,6 +31,7 @@ import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone, transcriptionFallbacks } from "@/lib/app-preferences";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
+import { consumePendingEnvironmentOpen } from "@/lib/pending-environment-open";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
@@ -36,6 +39,7 @@ import type { SettingsPluginId } from "@/lib/plugin-access";
 import { createWispFromTemplate } from "@/lib/create-wisp-from-template";
 import { uniqueWispName } from "@/lib/wisp-template-actions";
 import { CHIEF_WISP } from "../shared/chief-wisp";
+import { LOCAL_CONNECTION_ID } from "../shared/connections";
 import type { WispTemplateEntry } from "../shared/wisp-template";
 
 export default function App() {
@@ -84,8 +88,11 @@ function Workspace({
       .join("")
       .toUpperCase(),
   };
+  const connectionsView = useContext(ActiveConnectionContext);
+  const activeEnvironmentId = connectionsView?.activeId ?? LOCAL_CONNECTION_ID;
   const mobile = useMobileLayout();
-  const [mobilePage, setMobilePage] = useState<"list" | "chat" | "approvals">("list");
+  const [mainView, setMainView] = useState<"chat" | "team">("chat");
+  const [mobilePage, setMobilePage] = useState<"list" | "chat" | "approvals" | "team">("list");
   const [detailsOpen, setDetailsOpen] = useState(false);
   // On a phone a Wisp's settings start from its profile.
   const [profileOpen, setProfileOpen] = useState(false);
@@ -144,7 +151,8 @@ function Workspace({
 
   // A reply that arrives while its chat is on screen has been seen.
   const pageVisible = usePageVisible();
-  const activeChatShown = pageVisible && (!mobile || (mobilePage === "chat" && !detailsOpen && !profileOpen));
+  const activeChatShown =
+    pageVisible && (mobile ? mobilePage === "chat" && !detailsOpen && !profileOpen : mainView === "chat");
   const activeChatUnread = Boolean(workspace.activeChat?.unread);
   const { markActiveChatRead } = workspace;
   // A conversation the person marked unread stays so while it is open, until they choose it again.
@@ -164,6 +172,7 @@ function Workspace({
     const id = await workspace.createWisp(wisp, options);
     if (id) {
       navigationVersion.current += 1;
+      setMainView("chat");
       if (mobile) setDetailsOpen(false);
       setMobilePage("chat");
     }
@@ -174,10 +183,33 @@ function Workspace({
     setKeptUnreadChatId(null);
     navigationVersion.current += 1;
     workspace.selectChat(chatId);
+    setMainView("chat");
     if (mobile) setDetailsOpen(false);
     setProfileOpen(false);
     setMobilePage("chat");
   }
+
+  const pendingOpenCheckedRef = useRef(false);
+  useEffect(() => {
+    if (workspace.loading || pendingOpenCheckedRef.current) return;
+    pendingOpenCheckedRef.current = true;
+    const pending = consumePendingEnvironmentOpen(activeEnvironmentId);
+    if (!pending || !workspace.chats[pending.conversationId]) return;
+    setKeptUnreadChatId(null);
+    navigationVersion.current += 1;
+    workspace.selectChat(pending.conversationId);
+    setMainView("chat");
+    setProfileOpen(false);
+    setMobilePage("chat");
+    if (pending.openDetails) {
+      if (mobile && workspace.chats[pending.conversationId]?.kind === "wisp") {
+        setProfileOpen(true);
+      } else {
+        setDetailsSection(undefined);
+        setDetailsOpen(true);
+      }
+    }
+  }, [workspace.loading, workspace.chats, workspace.selectChat, activeEnvironmentId, mobile]);
 
   useSystemNotifications({
     preferences: workspace.preferences,
@@ -191,6 +223,7 @@ function Workspace({
     setKeptUnreadChatId(null);
     navigationVersion.current += 1;
     workspace.selectMessage(chatId, messageId);
+    setMainView("chat");
     if (mobile) setDetailsOpen(false);
     setProfileOpen(false);
     setMobilePage("chat");
@@ -201,6 +234,14 @@ function Workspace({
     setDetailsOpen(false);
     setProfileOpen(false);
     setMobilePage("list");
+  }
+
+  function showTeam() {
+    navigationVersion.current += 1;
+    setDetailsOpen(false);
+    setProfileOpen(false);
+    setMainView("team");
+    setMobilePage("team");
   }
 
   function showApprovals() {
@@ -238,10 +279,38 @@ function Workspace({
     else showDetails(true);
   }
 
-  function showSettings(section: SettingsEntrySection, pluginId?: SettingsPluginId, storageConversationId?: string) {
+  function showSettings(
+    section: SettingsEntrySection,
+    pluginId?: SettingsPluginId,
+    storageConversationId?: string,
+    environmentId?: string,
+  ) {
     navigationVersion.current += 1;
-    settingsDialog.current?.open(section, pluginId, storageConversationId);
+    settingsDialog.current?.open(section, pluginId, storageConversationId, environmentId);
   }
+
+  async function createCircle(circle: Parameters<typeof workspace.createCircle>[0]): Promise<boolean> {
+    const created = await workspace.createCircle(circle);
+    if (created) {
+      navigationVersion.current += 1;
+      setMainView("chat");
+      if (mobile) setDetailsOpen(false);
+      setMobilePage("chat");
+    }
+    return created;
+  }
+
+  const showTeamMain = mobile ? mobilePage === "team" : mainView === "team";
+  const activeWorkspaceSnapshot = useMemo(
+    () => ({
+      chats: workspace.chats,
+      wisps: workspace.wisps,
+      statuses: workspace.statuses,
+      activity: workspace.activity,
+      approvals: workspace.approvals,
+    }),
+    [workspace.chats, workspace.wisps, workspace.statuses, workspace.activity, workspace.approvals],
+  );
 
   function showSearch(open: boolean) {
     navigationVersion.current += 1;
@@ -307,17 +376,11 @@ function Workspace({
               createFromTemplate={templateToCustomize}
               onCreateFromTemplateClosed={() => setTemplateToCustomize(null)}
               onCreate={createWisp}
-              onCreateCircle={async (circle) => {
-                const created = await workspace.createCircle(circle);
-                if (created) {
-                  navigationVersion.current += 1;
-                  if (mobile) setDetailsOpen(false);
-                  setMobilePage("chat");
-                }
-                return created;
-              }}
+              onCreateCircle={createCircle}
               onOpenSearch={() => showSearch(true)}
               onOpenSettings={() => showSettings("general")}
+              onOpenTeam={showTeam}
+              teamActive={showTeamMain}
               onOpenTemplates={() => showSettings("templates")}
               onManageConnections={() => showSettings("connections")}
               onOpenApprovals={showApprovals}
@@ -325,7 +388,32 @@ function Workspace({
               onSelectChat={selectChat}
               onChatAction={applyChatAction}
             />
-            {workspace.activeChat ? (
+            {showTeamMain ? (
+              <TeamOverview
+                mobile={mobile}
+                activeWorkspace={activeWorkspaceSnapshot}
+                unreadCount={unreadCount}
+                approvalCount={approvalCount}
+                onCreateWisp={createWisp}
+                onCreateCircle={createCircle}
+                onOpenTemplates={() => showSettings("templates")}
+                onResolveActiveApproval={workspace.resolveApproval}
+                onOpenActiveChat={(conversationId, options) => {
+                  selectChat(conversationId);
+                  if (options?.openDetails) {
+                    if (mobile && workspace.chats[conversationId]?.kind === "wisp") setProfileOpen(true);
+                    else showDetails(true);
+                  }
+                }}
+                onOpenEnvironmentSettings={(environmentId, unpaired) => {
+                  if (unpaired) showSettings("connections");
+                  else showSettings("profile", undefined, undefined, environmentId);
+                }}
+                onConversations={showConversations}
+                onOpenApprovals={showApprovals}
+                onOpenSettings={() => showSettings("general")}
+              />
+            ) : workspace.activeChat ? (
               <ChatPanel
                 hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
                 onBack={mobile ? showConversations : undefined}

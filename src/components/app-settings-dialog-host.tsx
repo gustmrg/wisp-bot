@@ -10,12 +10,22 @@ import {
 import type { WispTemplateEntry } from "../../shared/wisp-template";
 
 export interface AppSettingsDialogHandle {
-  open(section: SettingsEntrySection, pluginId?: SettingsPluginId, storageConversationId?: string): void;
+  open(
+    section: SettingsEntrySection,
+    pluginId?: SettingsPluginId,
+    storageConversationId?: string,
+    environmentId?: string,
+  ): void;
 }
 
 type AppSettingsDialogHostProps = Omit<
   AppSettingsDialogProps,
-  "open" | "initialSection" | "initialPluginId" | "initialStorageConversationId" | "onOpenChange"
+  | "open"
+  | "initialSection"
+  | "initialEnvironmentId"
+  | "initialPluginId"
+  | "initialStorageConversationId"
+  | "onOpenChange"
 >;
 
 /**
@@ -28,13 +38,15 @@ export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSett
     const [section, setSection] = useState<SettingsEntrySection | null>(null);
     const [pluginId, setPluginId] = useState<SettingsPluginId | undefined>();
     const [storageConversationId, setStorageConversationId] = useState<string | undefined>();
+    const [environmentId, setEnvironmentId] = useState<string | undefined>();
     useImperativeHandle(
       ref,
       () => ({
-        open: (next, nextPluginId, nextStorageConversationId) => {
+        open: (next, nextPluginId, nextStorageConversationId, nextEnvironmentId) => {
           setSection(next);
           setPluginId(nextPluginId);
           setStorageConversationId(nextStorageConversationId);
+          setEnvironmentId(nextEnvironmentId);
         },
       }),
       [],
@@ -44,12 +56,14 @@ export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSett
         {...dialogProps}
         open={section !== null}
         initialSection={section ?? "general"}
+        initialEnvironmentId={environmentId}
         initialPluginId={pluginId}
         initialStorageConversationId={storageConversationId}
         onOpenChange={(nextOpen) => {
           setSection(nextOpen ? "general" : null);
           setPluginId(undefined);
           setStorageConversationId(undefined);
+          setEnvironmentId(undefined);
         }}
         {...(onCustomizeTemplate
           ? {

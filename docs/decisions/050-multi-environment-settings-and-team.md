@@ -37,8 +37,13 @@ The work is delivered in three stacked PRs:
   - All Environment panels and helper hooks use `useWispApi()` inside `WispApiProvider` keyed on `selectedEnvironmentId`, reusing active workspace props when targeting `activeId` and loading target environment Wisps, conversations, profile, and tool policy via scoped runtime operations otherwise.
   - **Templates** adds **Copy to…** on saved templates when two or more environments are connected, copying only the credential-free, grant-free template definition (`access` stripped).
   - **Settings → Connections** exposes **Keep this computer's Wisps running in the background** (`setKeepLocalRunning`) when two or more environments exist.
-- **PR B3 (follow-up): Team overview.**
-  - A cross-environment overview reads live `ConnectionsView.environments` summaries and uses scoped APIs to inspect and act across connected environments without forcing a workspace switch.
+- **PR B3 (delivered): Team overview and multi-environment sidebar.**
+  - The sidebar pins a **Team** navigation item above the conversation list (desktop expanded row, collapsed rail icon with tooltip, and mobile list entry) with a compact badge summarizing pending approvals or working Wisps across active and connected environments.
+  - Clicking **Team** opens `TeamOverview` in the main workspace panel while keeping the sidebar visible on desktop (and offering clean navigation back to Conversations, Approvals, and Settings on mobile). It provides **New Wisp** and **New circle** actions, search and status/kind filters, a **Waiting for you** approvals section (with direct **Allow once** / **Deny** for standard actions, full **Review** sheet for skills/memory/jobs/Wisp changes, and **Open**), an **Environments** grid when viewing **All environments**, and a **Wisps & circles** directory showing live status, model, and scheduled job counts.
+  - Switching from **This environment** to **All environments** loads and subscribes to other connected environments via `createEnvironmentApi` and `subscribeToConnectionEvents` only on demand, keeping background traffic minimal. Selecting a Wisp or approval from another environment switches via `activateConnection` and immediately opens that conversation once the target workspace mounts.
+  - Wisp cards offer **Copy to…** when two or more environments are connected, saving only the credential-free, grant-free definition (`name`, `role`, `soul`, `appearance`, `color`, `skills`) as a Wisp template (ADR 040) into the target environment.
+  - `ConnectionSwitcher` displays live per-environment status dots and non-zero badges (`working`, `approvals`, `unread`), shows an aggregate indicator on its trigger when another environment has pending approvals or unread messages, and shows the local-server stop warning only when `keepLocalRunning === false` and remote access is off.
+  - The expanded desktop sidebar includes compact **All**, **Working**, and **Unread** filter pills whenever two or more conversations exist, with an empty-filter state and **Show all** reset.
 
 ## Security and isolation invariants
 

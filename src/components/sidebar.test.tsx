@@ -572,3 +572,154 @@ describe("Sidebar conversation menu", () => {
 async function waitForMenuToClose() {
   await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
 }
+
+describe("Sidebar Team entry and desktop quick filters", () => {
+  const chats: ChatViewCollection = {
+    atlas: wispChatView("atlas", { wisp: { name: "Atlas" }, chat: { preview: "Working note" } }),
+    beta: wispChatView("beta", { wisp: { name: "Beta" }, chat: { preview: "Unread note", unread: true } }),
+  };
+
+  it("pins a Team entry above the conversation list with approval and working badges across environments", async () => {
+    const user = userEvent.setup();
+    const onOpenTeam = vi.fn();
+    const connections: ConnectionsView = {
+      activeId: "local",
+      profiles: [
+        { id: "local", kind: "local", name: "This computer", paired: true },
+        { id: "home", kind: "url", name: "Home server", url: "https://test-host.invalid", paired: true },
+      ],
+      status: { profileId: "local", phase: "local", epoch: 1 },
+      secureStorageAvailable: true,
+      environments: {
+        local: {
+          profileId: "local",
+          phase: "local",
+          workingWisps: 1,
+          pendingApprovals: 0,
+          unreadConversations: 1,
+          wispCount: 2,
+          circleCount: 0,
+        },
+        home: {
+          profileId: "home",
+          phase: "connected",
+          workingWisps: 0,
+          pendingApprovals: 2,
+          unreadConversations: 0,
+          wispCount: 1,
+          circleCount: 0,
+        },
+      },
+    };
+
+    const { rerender } = render(
+      <ActiveConnectionContext.Provider value={connections}>
+        <Sidebar
+          activeChatId="atlas"
+          chats={chats}
+          statuses={{ atlas: "working" }}
+          currentUser={currentUser}
+          width={280}
+          onOpenTeam={onOpenTeam}
+          teamActive
+          {...callbacks}
+        />
+      </ActiveConnectionContext.Provider>,
+    );
+
+    const teamButton = screen.getByRole("button", { name: "Team, 2 pending approvals" });
+    expect(teamButton).toHaveAttribute("aria-current", "page");
+    await user.click(teamButton);
+    expect(onOpenTeam).toHaveBeenCalledOnce();
+
+    // When Team is active, no conversation row is marked as current page.
+    const list = screen.getByRole("navigation", { name: "Wisps and circles" });
+    expect(within(list).getByRole("button", { name: /Atlas/ })).not.toHaveAttribute("aria-current");
+
+    // Collapsed rail keeps an accessible Team icon with badge state.
+    rerender(
+      <ActiveConnectionContext.Provider value={connections}>
+        <Sidebar
+          activeChatId="atlas"
+          chats={chats}
+          statuses={{ atlas: "working" }}
+          currentUser={currentUser}
+          width={280}
+          collapsed
+          onToggleCollapsed={vi.fn()}
+          onOpenTeam={onOpenTeam}
+          {...callbacks}
+        />
+      </ActiveConnectionContext.Provider>,
+    );
+    const railTeam = screen.getByRole("button", { name: "Team, 2 pending approvals" });
+    expect(railTeam).toHaveAttribute("title", "Team (2 pending approvals)");
+  });
+
+  it("shows working badge on Team when no approvals are pending", () => {
+    render(
+      <Sidebar
+        activeChatId="atlas"
+        chats={chats}
+        statuses={{ atlas: "working" }}
+        currentUser={currentUser}
+        width={280}
+        onOpenTeam={vi.fn()}
+        {...callbacks}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Team, 1 working" })).toBeVisible();
+  });
+
+  it("filters conversations on desktop expanded sidebar and offers a Show all reset when empty", async () => {
+    const user = userEvent.setup();
+    render(
+      <Sidebar
+        activeChatId="atlas"
+        chats={chats}
+        statuses={{ atlas: "idle", beta: "idle" }}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+
+    const filters = screen.getByRole("group", { name: "Filter conversations" });
+    const list = screen.getByRole("navigation", { name: "Wisps and circles" });
+
+    await user.click(within(filters).getByRole("button", { name: "Unread" }));
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
+    expect(within(list).getByRole("button", { name: /Beta/ })).toBeVisible();
+
+    await user.click(within(filters).getByRole("button", { name: "Working" }));
+    expect(screen.getByText("No working conversations")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Show all" }));
+    expect(within(list).getAllByRole("button")).toHaveLength(2);
+  });
+
+  it("hides desktop quick filters when collapsed or with fewer than two conversations", () => {
+    const { rerender } = render(
+      <Sidebar
+        activeChatId="atlas"
+        chats={{ atlas: chats.atlas! }}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(screen.queryByRole("group", { name: "Filter conversations" })).not.toBeInTheDocument();
+
+    rerender(
+      <Sidebar
+        activeChatId="atlas"
+        chats={chats}
+        collapsed
+        onToggleCollapsed={vi.fn()}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(screen.queryByRole("group", { name: "Filter conversations" })).not.toBeInTheDocument();
+  });
+});

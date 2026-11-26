@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactElement } from "react";
 
 import type { ModelSelection } from "../../shared/contracts";
@@ -35,6 +35,8 @@ interface CreateChatDialogProps {
   trigger?: ReactElement;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Which tab opens first when the dialog opens. */
+  initialKind?: CreateKind;
   /** A template the new Wisp starts from. */
   template?: WispTemplateEntry;
 }
@@ -51,17 +53,23 @@ function CreateChatDialog({
   trigger,
   open: controlledOpen,
   onOpenChange,
+  initialKind,
   template,
 }: CreateChatDialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
-  const [kind, setKind] = useState<CreateKind>("wisp");
+  const [kind, setKind] = useState<CreateKind>(initialKind === "circle" && onCreateCircle ? "circle" : "wisp");
   // A new key remounts both panels, which clears their drafts.
   const [draftKey, setDraftKey] = useState(0);
   const [statuses, setStatuses] = useState<Record<CreateKind, CreatePanelStatus>>({ wisp: IDLE, circle: IDLE });
   const saving = statuses.wisp.saving || statuses.circle.saving;
   const status = statuses[kind];
   const switchable = Boolean(onCreateCircle) && !statuses.wisp.done;
+
+  useEffect(() => {
+    if (!open || !initialKind) return;
+    setKind(initialKind === "circle" && onCreateCircle ? "circle" : "wisp");
+  }, [open, initialKind, onCreateCircle]);
 
   const onWispStatus = useCallback(
     (next: CreatePanelStatus) => setStatuses((current) => ({ ...current, wisp: next })),
