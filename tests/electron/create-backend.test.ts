@@ -32,6 +32,7 @@ const PUSH_CHANNELS = new Set<string>([
   WISP_IPC_CHANNELS.messageQueueChanged,
   WISP_IPC_CHANNELS.jobsChanged,
   WISP_IPC_CHANNELS.connectionsChanged,
+  WISP_IPC_CHANNELS.connectionEvent,
   WISP_IPC_CHANNELS.openNotificationTarget,
 ]);
 

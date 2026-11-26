@@ -1,9 +1,16 @@
 import type { StoredSession } from "../../client/remote-client";
 import { RemoteSession } from "../../client/remote-session";
 import { advance, connectSteps, createProgress, fail, failedAttempt } from "../../shared/connection-progress";
-import type { ConnectionProgress, ConnectionRetry, ConnectionsView, ConnectionStatus } from "../../shared/connections";
+import type {
+  ConnectionEventMessage,
+  ConnectionOperationRequest,
+  ConnectionProgress,
+  ConnectionRetry,
+  ConnectionsView,
+  ConnectionStatus,
+} from "../../shared/connections";
 import type { BackendResult, WispApi } from "../../shared/contracts";
-import { RUNTIME_OPERATIONS } from "../../shared/runtime-operations";
+import { isRuntimeOperation, RUNTIME_OPERATIONS } from "../../shared/runtime-operations";
 import type { AttachWorkspaceFilesOptions } from "../../shared/workspace";
 
 /** The browser app's single connection: the server that served it. */
@@ -46,6 +53,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     messageQueueChanged: new Set<Listener<unknown>>(),
     jobsChanged: new Set<Listener<unknown>>(),
     connections: new Set<Listener<ConnectionsView>>(),
+    connectionEvent: new Set<Listener<ConnectionEventMessage>>(),
   };
   let status: ConnectionStatus = { profileId: WEB_CONNECTION_ID, phase: "connecting", epoch: 0 };
   let linkCode: string | undefined;
@@ -146,6 +154,8 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     },
     onEvent: (type, payload) => {
       for (const listener of listeners[type]) listener(payload);
+      const scoped: ConnectionEventMessage = { connectionId: WEB_CONNECTION_ID, type, payload };
+      for (const listener of listeners.connectionEvent) listener(scoped);
     },
     onReset: () => {
       status = { ...status, epoch: status.epoch + 1 };
@@ -180,6 +190,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     subscribeToMessageQueue: subscribe(listeners.messageQueueChanged),
     subscribeToJobs: subscribe(listeners.jobsChanged),
     subscribeToConnections: subscribe(listeners.connections),
+    subscribeToConnectionEvents: subscribe(listeners.connectionEvent),
     getLaunchAtLoginState: async () =>
       ok({ supported: false, enabled: false, reason: "Launch at login is part of the Wisp desktop app." }),
     setLaunchAtLogin: desktopOnly,
@@ -213,6 +224,26 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     cancelServerInstall: desktopOnly,
     cancelConnection: desktopOnly,
     answerSshPrompt: desktopOnly,
+    setKeepLocalRunning: desktopOnly,
+    connectEnvironment: desktopOnly,
+    invokeConnectionOperation: async (request: ConnectionOperationRequest) => {
+      if (request?.connectionId !== WEB_CONNECTION_ID) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "That connection no longer exists.", retryable: false },
+        } as BackendResult<never>;
+      }
+      if (!isRuntimeOperation(request.operation)) {
+        return {
+          ok: false,
+          error: { code: "invalid_request", message: "The requested operation is not allowed.", retryable: false },
+        } as BackendResult<never>;
+      }
+      if (request.operation === "attachWorkspaceFiles") {
+        return (api.attachWorkspaceFiles as (payload: unknown) => Promise<BackendResult<unknown>>)(request.payload);
+      }
+      return session.call(request.operation, request.payload);
+    },
     retryConnection: async () => {
       session.start();
       return ok(view());

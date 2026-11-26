@@ -145,27 +145,30 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   const oauthRelay = new OAuthRedirectRelay({ openExternal: host.hostActions.openExternal });
   const openTunnel =
     host.openSshTunnel ??
-    ((profile, signal, _interaction, onServerPort) => openSshTunnel(profile, { signal, interaction, onServerPort }));
+    ((profile, signal, sshInteraction, onServerPort) =>
+      openSshTunnel(profile, { signal, interaction: sshInteraction, onServerPort }));
   const install =
     host.installServer ??
-    ((profile, onProgress, signal, _interaction, updateId) =>
+    ((profile, onProgress, signal, sshInteraction, updateId) =>
       installRemoteServer(profile, {
         version: host.appVersion,
         onProgress,
         signal,
-        interaction,
+        interaction: sshInteraction,
         updateId,
         ...(host.serverArchives ? { archives: host.serverArchives } : {}),
       }));
   const readUpdate =
-    host.readServerUpdate ?? ((profile, updateId) => readServerUpdate(profile, updateId, { interaction }));
+    host.readServerUpdate ??
+    ((profile, updateId, sshInteraction) => readServerUpdate(profile, updateId, { interaction: sshInteraction }));
   const manager = new ConnectionManager({
     store,
     localServer: host.localServer,
     onHostRequest: (request) => runHostAction(host.hostActions, oauthRelay, request),
     selectFiles: () => host.hostActions.selectFiles(),
     onSessionClosed: () => oauthRelay.closeAll(),
-    openSshTunnel: (profile, signal, onServerPort) => openTunnel(profile, signal, interaction, onServerPort),
+    openSshTunnel: (profile, signal, onServerPort, options) =>
+      openTunnel(profile, signal, options?.interactive === false ? undefined : interaction, onServerPort),
     installServer: (profile, onProgress, signal, updateId) =>
       install(profile, onProgress, signal, interaction, updateId),
     readServerUpdate: (profile, updateId) => readUpdate(profile, updateId, interaction),
@@ -197,14 +200,22 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     ...(host.systemNotifications
       ? [registerSystemNotificationHandlers(ipcMain, host.systemNotifications, authorize)]
       : []),
-    registerAuthorizedHandlers(
-      ipcMain,
-      authorize,
-      RUNTIME_OPERATIONS.map((operation) => {
+    registerAuthorizedHandlers(ipcMain, authorize, [
+      ...RUNTIME_OPERATIONS.map((operation) => {
         const channel = WISP_IPC_CHANNELS[operation];
-        return [channel, (payload) => manager.dispatch(channel, payload)] as const;
+        return [channel, (payload: unknown) => manager.dispatch(channel, payload)] as const;
       }),
-    ),
+      [
+        WISP_IPC_CHANNELS.invokeConnectionOperation,
+        (payload: unknown) => {
+          const request =
+            payload && typeof payload === "object" && !Array.isArray(payload)
+              ? (payload as { connectionId?: unknown; operation?: unknown; payload?: unknown })
+              : {};
+          return manager.dispatchTo(request.connectionId, request.operation, request.payload);
+        },
+      ] as const,
+    ]),
     registerGuardedHandlers(ipcMain, authorize, [
       [WISP_IPC_CHANNELS.getConnections, () => manager.view()],
       [
@@ -239,6 +250,8 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
       [WISP_IPC_CHANNELS.cancelConnection, () => manager.cancel()],
       [WISP_IPC_CHANNELS.answerSshPrompt, (payload) => manager.answerSshPrompt(payload)],
+      [WISP_IPC_CHANNELS.setKeepLocalRunning, (payload) => manager.setKeepLocalRunning(keepLocalRunningFlag(payload))],
+      [WISP_IPC_CHANNELS.connectEnvironment, (payload) => manager.connectEnvironment(connectionId(payload))],
       [WISP_IPC_CHANNELS.getRemoteAccess, () => remoteAccess.view()],
       [WISP_IPC_CHANNELS.saveRemoteAccess, (payload) => remoteAccess.save(payload)],
       [WISP_IPC_CHANNELS.pairRemoteDevice, () => remoteAccess.pair()],
@@ -304,4 +317,12 @@ function connectionId(payload: unknown): string {
     throw new WispBackendError("invalid_request", "The connection is invalid.");
   }
   return id;
+}
+
+function keepLocalRunningFlag(payload: unknown): boolean {
+  const enabled = (payload as { enabled?: unknown } | null)?.enabled;
+  if (typeof enabled !== "boolean") {
+    throw new WispBackendError("invalid_request", "The background setting is invalid.");
+  }
+  return enabled;
 }

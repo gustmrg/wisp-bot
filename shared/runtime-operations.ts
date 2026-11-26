@@ -117,3 +117,12 @@ export const RUNTIME_OPERATIONS = [
   "removeVoiceCredential",
   "transcribeAudio",
 ] as const satisfies ReadonlyArray<keyof typeof WISP_IPC_CHANNELS>;
+
+export type RuntimeOperation = (typeof RUNTIME_OPERATIONS)[number];
+
+/** Allowlist of operations that may be dispatched to any connected Wisp environment. */
+export const RUNTIME_OPERATION_SET: ReadonlySet<string> = new Set(RUNTIME_OPERATIONS);
+
+export function isRuntimeOperation(value: unknown): value is RuntimeOperation {
+  return typeof value === "string" && RUNTIME_OPERATION_SET.has(value);
+}

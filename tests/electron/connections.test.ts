@@ -389,11 +389,13 @@ describe("desktop connections", () => {
       ok: false,
       error: { message: expect.stringContaining("is not a readable file") },
     });
-    // Wisps on this computer stopped when the server was chosen.
-    expect(app.localServer.server).toBeUndefined();
+    // Wisps on this computer stay running in the background by default when another server is chosen.
+    expect(app.localServer.server).toBeDefined();
 
     await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
     await app.waitForPhase("local");
+    // Switching back reused the live local server instead of restarting it.
+    expect(app.localServer.starts).toBe(1);
     expect(await app.chats()).toEqual(["local"]);
     // The server kept its Wisp.
     expect(Object.keys(server.runtime.conversations.getState().chats)).toEqual(["remote"]);
@@ -494,9 +496,10 @@ describe("desktop connections", () => {
     ).toBeUndefined();
   });
 
-  it("reopens the last connection on restart without starting Wisps on this computer", async () => {
+  it("reopens the last connection on restart without starting Wisps on this computer when opted out", async () => {
     const { server, directory: serverDirectory } = await startServer();
     const first = await desktop();
+    await first.invoke(WISP_IPC_CHANNELS.setKeepLocalRunning, { enabled: false });
     const { profiles } = await first.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "url",
       name: "Home server",
@@ -1242,6 +1245,7 @@ describe("remote access to this computer", () => {
     const { server } = await startServer();
     const app = await desktop();
     await app.waitForPhase("local");
+    await app.invoke(WISP_IPC_CHANNELS.setKeepLocalRunning, { enabled: false });
     const port = await freePort();
     // As if tailscale serve --bg had been run by hand.
     app.tailscale.serveByHand(port);

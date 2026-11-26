@@ -147,7 +147,11 @@ const WISP_IPC_CHANNELS = {
   cancelServerInstall: "wisp:connections:cancel-server-install",
   cancelConnection: "wisp:connections:cancel",
   answerSshPrompt: "wisp:connections:answer-ssh-prompt",
+  setKeepLocalRunning: "wisp:connections:keep-local-running",
+  connectEnvironment: "wisp:connections:connect-environment",
+  invokeConnectionOperation: "wisp:connections:invoke-operation",
   connectionsChanged: "wisp:connections:changed",
+  connectionEvent: "wisp:connections:event",
   getRemoteAccess: "wisp:remote-access:get",
   saveRemoteAccess: "wisp:remote-access:save",
   pairRemoteDevice: "wisp:remote-access:pair",
@@ -344,11 +348,20 @@ const wispApi: WispApi = {
   cancelServerInstall: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelServerInstall),
   cancelConnection: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelConnection),
   answerSshPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerSshPrompt, request),
+  setKeepLocalRunning: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setKeepLocalRunning, request),
+  connectEnvironment: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.connectEnvironment, request),
+  invokeConnectionOperation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.invokeConnectionOperation, request),
   subscribeToConnections: (listener) => {
     const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
       listener(view);
     ipcRenderer.on(WISP_IPC_CHANNELS.connectionsChanged, handleView);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.connectionsChanged, handleView);
+  },
+  subscribeToConnectionEvents: (listener) => {
+    const handleEvent = (_event: Electron.IpcRendererEvent, event: Parameters<typeof listener>[0]): void =>
+      listener(event);
+    ipcRenderer.on(WISP_IPC_CHANNELS.connectionEvent, handleEvent);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.connectionEvent, handleEvent);
   },
   getRemoteAccess: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getRemoteAccess),
   saveRemoteAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, request),

@@ -406,7 +406,11 @@ function createApi(initialState: ConversationStateView): WispApi {
     cancelServerInstall: async () => ({ ok: true as const, value: localConnections }),
     cancelConnection: async () => ({ ok: true as const, value: localConnections }),
     answerSshPrompt: async () => ({ ok: true as const, value: localConnections }),
+    setKeepLocalRunning: async () => ({ ok: true as const, value: localConnections }),
+    connectEnvironment: async () => ({ ok: true as const, value: localConnections }),
+    invokeConnectionOperation: async () => ({ ok: true as const, value: {} }),
     subscribeToConnections: () => () => undefined,
+    subscribeToConnectionEvents: () => () => undefined,
     getRemoteAccess: async () => ({ ok: true as const, value: remoteAccessOff }),
     saveRemoteAccess: async () => ({ ok: true as const, value: remoteAccessOff }),
     pairRemoteDevice: async () => ({

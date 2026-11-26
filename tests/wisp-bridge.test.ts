@@ -313,7 +313,11 @@ function completeBridge(): WispApi {
     cancelServerInstall: async () => ({ ok: true, value: connections }),
     cancelConnection: async () => ({ ok: true, value: connections }),
     answerSshPrompt: async () => ({ ok: true, value: connections }),
+    setKeepLocalRunning: async () => ({ ok: true, value: connections }),
+    connectEnvironment: async () => ({ ok: true, value: connections }),
+    invokeConnectionOperation: async () => ({ ok: true, value: {} }),
     subscribeToConnections: () => () => undefined,
+    subscribeToConnectionEvents: () => () => undefined,
     getRemoteAccess: async () => ({ ok: true, value: remoteAccess }),
     saveRemoteAccess: async () => ({ ok: true, value: remoteAccess }),
     pairRemoteDevice: async () => ({
