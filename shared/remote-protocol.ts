@@ -30,6 +30,19 @@ export interface ServerDescriptor {
   operations: string[];
 }
 
+/** Lightweight operational state returned by `GET /api/v1/summary` to paired devices. */
+export interface ServerSummary {
+  serverId: string;
+  bootId: string;
+  version: string;
+  startedAt: string;
+  uptimeSeconds: number;
+  workingWisps: number;
+  pendingApprovals: number;
+  unreadConversations: number;
+  activeEventStreams: number;
+}
+
 /**
  * `POST /api/v1/workspace-files?conversationId=<id>&name=<file name>` sends
  * one file into a Wisp's workspace inbox. The body is the file's raw bytes

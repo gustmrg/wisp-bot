@@ -860,12 +860,12 @@ export function probeAddress(bind: string | undefined): string {
 }
 
 /** `systemctl --user` needs the user's runtime directory, which SSH commands do not always have. */
-function userBusEnvironment(host: SetupHost): NodeJS.ProcessEnv {
+export function userBusEnvironment(host: Pick<SetupHost, "env" | "uid">): NodeJS.ProcessEnv {
   if (host.env.XDG_RUNTIME_DIR) return host.env;
   return { ...host.env, XDG_RUNTIME_DIR: `/run/user/${host.uid}` };
 }
 
-function explainSystemdFailure(result: CommandResult): string {
+export function explainSystemdFailure(result: CommandResult): string {
   const detail = result.stderr.trim().split("\n").pop() ?? "";
   if (result.code === 127) {
     return "systemd is not available here. Add --no-service to only install the files, or run the server with Docker.";
