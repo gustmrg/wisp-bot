@@ -57,11 +57,9 @@
   width: 44px;
   height: 44px;
 }
-/* In the list and on Team cards the Wisp stands alone: no disc of its color behind it. The ring for its state stays. */
+/* In the list the Wisp stands alone: no disc of its color behind it. The ring for its state stays. */
 .conversation-avatar.wisp-halo,
-.conversation-avatar.wisp-halo[data-state="error"],
-.team-card-avatar.wisp-halo,
-.team-card-avatar.wisp-halo[data-state="error"] {
+.conversation-avatar.wisp-halo[data-state="error"] {
   background: none;
 }
 .conversation-avatar.wisp-halo > svg {

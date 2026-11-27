@@ -1,11 +1,4 @@
-import {
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BellIcon,
   BellOffIcon,
@@ -39,7 +32,6 @@ import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { messagePreview } from "../../shared/workspace";
 import type { CurrentUser } from "@/config/app-metadata";
-import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import { useClock } from "@/hooks/use-clock";
 import type { ChatListOrder } from "@/lib/app-preferences";
 import { sortChats } from "@/lib/chat-order";
@@ -176,7 +168,6 @@ function Sidebar({
   onSelectEnvironmentChat,
   onEnvironmentChatAction,
 }: SidebarProps) {
-  const connectionsView = useContext(ActiveConnectionContext);
   const [filter, setFilterState] = useState(() => workspaceMemory().sidebarFilter);
   const setFilter = (next: typeof filter) => {
     rememberWorkspace({ sidebarFilter: next });
@@ -214,26 +205,6 @@ function Sidebar({
   const rowStatus = (row: SidebarRow) => (row.environment ?? { statuses }).statuses[row.chat.id];
   const unreadCount = allRows.filter((row) => row.chat.unread).length;
   const activeWorkingCount = allRows.filter((row) => rowStatus(row) === "working").length;
-
-  let otherEnvApprovals = 0;
-  let otherEnvWorking = 0;
-  if (connectionsView?.environments) {
-    for (const [profileId, summary] of Object.entries(connectionsView.environments)) {
-      if (profileId === connectionsView.activeId) continue;
-      otherEnvApprovals += summary.pendingApprovals;
-      otherEnvWorking += summary.workingWisps;
-    }
-  }
-  const teamApprovals = activeApprovalCount + otherEnvApprovals;
-  const teamWorking = activeWorkingCount + otherEnvWorking;
-  const teamBadgeState = teamApprovals > 0 ? "approval" : teamWorking > 0 ? "working" : null;
-  const teamBadgeCount = teamApprovals > 0 ? teamApprovals : teamWorking;
-  const teamStatusText =
-    teamApprovals > 0
-      ? `${teamApprovals} pending ${teamApprovals === 1 ? "approval" : "approvals"}`
-      : teamWorking > 0
-        ? `${teamWorking} working`
-        : null;
 
   const showDesktopFilters = !mobile && !rail && allRows.length >= 2;
   const applyFilter = !rail && (mobile || showDesktopFilters);
@@ -340,25 +311,15 @@ function Sidebar({
                       )}
                       data-selected={teamActive || undefined}
                       aria-current={teamActive ? "page" : undefined}
-                      aria-label={teamStatusText ? `Team, ${teamStatusText}` : "Team"}
-                      title={teamStatusText ? `Team (${teamStatusText})` : "Team"}
+                      aria-label="Team"
+                      title="Team"
                       onClick={onOpenTeam}
                     >
                       <LayoutGridIcon aria-hidden="true" />
-                      {teamBadgeState ? (
-                        <span
-                          data-slot="team-badge"
-                          aria-hidden="true"
-                          className={cn(
-                            "absolute top-1 right-1 size-2 rounded-full border border-sidebar",
-                            teamBadgeState === "approval" ? "bg-warning-solid" : "bg-emerald-500",
-                          )}
-                        />
-                      ) : null}
                     </button>
                   }
                 />
-                <TooltipContent side="right">{teamStatusText ? `Team · ${teamStatusText}` : "Team"}</TooltipContent>
+                <TooltipContent side="right">Team</TooltipContent>
               </Tooltip>
             </div>
           ) : (
@@ -375,20 +336,6 @@ function Sidebar({
               >
                 <LayoutGridIcon aria-hidden="true" className="size-4 shrink-0 text-dim" />
                 <span className="min-w-0 flex-1 truncate">Team</span>
-                {teamBadgeState ? (
-                  <span
-                    data-slot="team-badge"
-                    className={cn(
-                      "inline-flex shrink-0 items-center rounded-full px-1.5 py-px text-2xs font-semibold tabular-nums",
-                      teamBadgeState === "approval"
-                        ? "bg-warning-solid/15 text-warning"
-                        : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-                    )}
-                  >
-                    <span aria-hidden="true">{teamBadgeCount > 99 ? "99+" : teamBadgeCount}</span>
-                    <span className="sr-only">{`, ${teamStatusText}`}</span>
-                  </span>
-                ) : null}
                 {mobile ? <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-faint" /> : null}
               </button>
             </div>

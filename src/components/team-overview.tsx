@@ -621,7 +621,7 @@ function TeamMemberCard({
           onClick={onOpen}
           className="group flex min-w-0 flex-1 items-start gap-3 rounded-lg border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="team-card-avatar wisp-halo relative flex-none" data-state={avatarState}>
+          <span className="relative flex-none">
             <ChatAvatar chat={chat} state={avatarState} />
             {chat.unread ? (
               <span
