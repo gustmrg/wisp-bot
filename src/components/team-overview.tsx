@@ -574,7 +574,7 @@ export function TeamOverview({
 
 function EnvironmentPill({ kind, name }: { kind: ConnectionProfileView["kind"]; name: string }) {
   return (
-    <span className="inline-flex max-w-[180px] items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-dim">
+    <span className="inline-flex max-w-[180px] items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-dim">
       <ProfileIcon kind={kind} className="size-3 shrink-0" />
       <span className="truncate">{name}</span>
     </span>
@@ -621,7 +621,7 @@ function TeamMemberCard({
           onClick={onOpen}
           className="group flex min-w-0 flex-1 items-start gap-3 rounded-lg border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="wisp-halo relative flex-none" data-state={avatarState}>
+          <span className="team-card-avatar wisp-halo relative flex-none" data-state={avatarState}>
             <ChatAvatar chat={chat} state={avatarState} />
             {chat.unread ? (
               <span
@@ -632,11 +632,10 @@ function TeamMemberCard({
           </span>
           <span className="min-w-0 flex-1 space-y-0.5">
             <span className="flex flex-wrap items-center gap-1.5">
-              <strong className="truncate text-sm font-semibold group-hover:underline">{name}</strong>
+              <strong className="truncate text-sm font-semibold">{name}</strong>
               {chat.kind === "circle" ? (
                 <span className="rounded-full bg-muted px-1.5 py-px text-2xs font-medium text-dim">Circle</span>
               ) : null}
-              {showEnvironment ? <EnvironmentPill kind={env.profile.kind} name={env.profile.name} /> : null}
             </span>
             {subtitle ? <span className="block truncate text-xs text-dim">{subtitle}</span> : null}
           </span>
@@ -656,7 +655,7 @@ function TeamMemberCard({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 text-2xs text-dim">
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-dim">
         {working ? (
           <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-600 dark:text-emerald-400">
             <LoaderCircleIcon aria-hidden="true" className="size-3 shrink-0 animate-spin" />
@@ -690,6 +689,7 @@ function TeamMemberCard({
             {jobCount} {jobCount === 1 ? "job" : "jobs"}
           </span>
         ) : null}
+        {showEnvironment ? <EnvironmentPill kind={env.profile.kind} name={env.profile.name} /> : null}
       </div>
     </article>
   );
