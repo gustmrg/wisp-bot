@@ -610,55 +610,24 @@ describe("Sidebar Team entry and desktop quick filters", () => {
     beta: wispChatView("beta", { wisp: { name: "Beta" }, chat: { preview: "Unread note", unread: true } }),
   };
 
-  it("pins a Team entry above the conversation list with approval and working badges across environments", async () => {
+  it("pins a Team entry above the conversation list without a status count", async () => {
     const user = userEvent.setup();
     const onOpenTeam = vi.fn();
-    const connections: ConnectionsView = {
-      activeId: "local",
-      profiles: [
-        { id: "local", kind: "local", name: "This computer", paired: true },
-        { id: "home", kind: "url", name: "Home server", url: "https://test-host.invalid", paired: true },
-      ],
-      status: { profileId: "local", phase: "local", epoch: 1 },
-      secureStorageAvailable: true,
-      environments: {
-        local: {
-          profileId: "local",
-          phase: "local",
-          workingWisps: 1,
-          pendingApprovals: 0,
-          unreadConversations: 1,
-          wispCount: 2,
-          circleCount: 0,
-        },
-        home: {
-          profileId: "home",
-          phase: "connected",
-          workingWisps: 0,
-          pendingApprovals: 2,
-          unreadConversations: 0,
-          wispCount: 1,
-          circleCount: 0,
-        },
-      },
-    };
 
     const { rerender } = render(
-      <ActiveConnectionContext.Provider value={connections}>
-        <Sidebar
-          activeChatId="atlas"
-          chats={chats}
-          statuses={{ atlas: "working" }}
-          currentUser={currentUser}
-          width={280}
-          onOpenTeam={onOpenTeam}
-          teamActive
-          {...callbacks}
-        />
-      </ActiveConnectionContext.Provider>,
+      <Sidebar
+        activeChatId="atlas"
+        chats={chats}
+        statuses={{ atlas: "working" }}
+        currentUser={currentUser}
+        width={280}
+        onOpenTeam={onOpenTeam}
+        teamActive
+        {...callbacks}
+      />,
     );
 
-    const teamButton = screen.getByRole("button", { name: "Team, 2 pending approvals" });
+    const teamButton = screen.getByRole("button", { name: "Team" });
     expect(teamButton).toHaveAttribute("aria-current", "page");
     await user.click(teamButton);
     expect(onOpenTeam).toHaveBeenCalledOnce();
@@ -667,39 +636,20 @@ describe("Sidebar Team entry and desktop quick filters", () => {
     const list = screen.getByRole("navigation", { name: "Wisps and circles" });
     expect(within(list).getByRole("button", { name: /Atlas/ })).not.toHaveAttribute("aria-current");
 
-    // Collapsed rail keeps an accessible Team icon with badge state.
     rerender(
-      <ActiveConnectionContext.Provider value={connections}>
-        <Sidebar
-          activeChatId="atlas"
-          chats={chats}
-          statuses={{ atlas: "working" }}
-          currentUser={currentUser}
-          width={280}
-          collapsed
-          onToggleCollapsed={vi.fn()}
-          onOpenTeam={onOpenTeam}
-          {...callbacks}
-        />
-      </ActiveConnectionContext.Provider>,
-    );
-    const railTeam = screen.getByRole("button", { name: "Team, 2 pending approvals" });
-    expect(railTeam).toHaveAttribute("title", "Team (2 pending approvals)");
-  });
-
-  it("shows working badge on Team when no approvals are pending", () => {
-    render(
       <Sidebar
         activeChatId="atlas"
         chats={chats}
         statuses={{ atlas: "working" }}
         currentUser={currentUser}
         width={280}
-        onOpenTeam={vi.fn()}
+        collapsed
+        onToggleCollapsed={vi.fn()}
+        onOpenTeam={onOpenTeam}
         {...callbacks}
       />,
     );
-    expect(screen.getByRole("button", { name: "Team, 1 working" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Team" })).toHaveAttribute("title", "Team");
   });
 
   it("filters conversations on desktop expanded sidebar and offers a Show all reset when empty", async () => {
