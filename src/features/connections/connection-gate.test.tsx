@@ -18,10 +18,7 @@ function view(status: Partial<ConnectionStatus> & Pick<ConnectionStatus, "phase"
 
 function withEnvironments(base: ConnectionsView, phases: Record<string, ConnectionPhase>): ConnectionsView {
   const environments = Object.fromEntries(
-    Object.entries(phases).map(([profileId, phase]) => [
-      profileId,
-      { profileId, phase, workingWisps: 0, pendingApprovals: 0, unreadConversations: 0, wispCount: 0, circleCount: 0 },
-    ]),
+    Object.entries(phases).map(([profileId, phase]) => [profileId, { profileId, phase }]),
   );
   return { ...base, environments };
 }

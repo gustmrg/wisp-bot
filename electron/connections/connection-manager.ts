@@ -37,7 +37,6 @@ import {
   type SshPromptView,
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
-import type { ConversationStateView } from "../../shared/conversations.js";
 import {
   REMOTE_HOST_REQUESTS,
   type DeviceCredentials,
@@ -48,7 +47,6 @@ import { isRuntimeOperation, type RuntimeOperation } from "../../shared/runtime-
 import { type ServerUpdateRecord, UNFINISHED_UPDATE_STATES } from "../../shared/server-update.js";
 import type { LocalServer, LocalServerExposure } from "../local-server/local-server.js";
 import { LOCAL_PROFILE, type ConnectionStore } from "./connection-store.js";
-import { EnvironmentSummaryTracker } from "./environment-summary.js";
 import { type InstallOutcome, type InstallStep, SetupOutcomeUnknownError } from "./ssh-install.js";
 
 export interface ConnectionManagerOptions {
@@ -116,30 +114,15 @@ const PUSHED: ReadonlySet<string> = new Set<ConnectionPushedEventType>([
   "messageQueueChanged",
   "jobsChanged",
 ]);
-/** Operations that return a complete `ConversationStateView` snapshot without always emitting `wispsChanged`. */
-const STATE_RETURNING_OPERATIONS: ReadonlySet<RuntimeOperation> = new Set([
-  "getConversationState",
-  "initializeConversations",
-  "createWisp",
-  "updateWisp",
-  "deleteWisp",
-  "createConversation",
-  "updateConversation",
-  "deleteConversation",
-]);
-
 interface ManagedSession {
   profile: ConnectionProfile;
   session: RemoteSession;
-  summary: EnvironmentSummaryTracker;
   connected: boolean;
   phase: ConnectionPhase;
   message?: string;
   serverVersion?: string;
   /** Whether this session was opened interactively for the active workspace. */
   interactive: boolean;
-  hydrating: boolean;
-  hydrateQueued: boolean;
 }
 
 /**
@@ -257,29 +240,24 @@ export class ConnectionManager {
     for (const profile of profiles) {
       const managed = this.sessions.get(profile.id);
       if (managed) {
-        environments[profile.id] = managed.summary.snapshot();
+        environments[profile.id] = {
+          profileId: profile.id,
+          phase: managed.phase,
+          ...(managed.message ? { message: managed.message } : {}),
+          ...(managed.serverVersion ? { serverVersion: managed.serverVersion } : {}),
+        };
       } else if (profile.id === this.status.profileId) {
         environments[profile.id] = {
           profileId: profile.id,
           phase: this.status.phase,
           ...(this.status.message ? { message: this.status.message } : {}),
           ...(this.status.serverVersion ? { serverVersion: this.status.serverVersion } : {}),
-          workingWisps: 0,
-          pendingApprovals: 0,
-          unreadConversations: 0,
-          wispCount: 0,
-          circleCount: 0,
         };
       } else {
         const unpaired = profile.kind !== "local" && !store.loadCredentials(profile.id);
         environments[profile.id] = {
           profileId: profile.id,
           phase: unpaired ? "pairing_required" : "choosing",
-          workingWisps: 0,
-          pendingApprovals: 0,
-          unreadConversations: 0,
-          wispCount: 0,
-          circleCount: 0,
         };
       }
     }
@@ -396,16 +374,9 @@ export class ConnectionManager {
     payload: unknown,
   ): Promise<BackendResult<unknown>> {
     // A server on another computer cannot open this computer's file picker: the app does, and sends the files.
-    const result =
-      operation === "attachWorkspaceFiles" && managed.profile.id !== LOCAL_CONNECTION_ID
-        ? await this.attachFromThisComputer(managed.session, payload)
-        : await managed.session.call(operation, payload);
-    if (result.ok && STATE_RETURNING_OPERATIONS.has(operation) && this.sessions.get(managed.profile.id) === managed) {
-      if (managed.summary.applySnapshot(result.value as ConversationStateView)) {
-        this.publish();
-      }
-    }
-    return result;
+    return operation === "attachWorkspaceFiles" && managed.profile.id !== LOCAL_CONNECTION_ID
+      ? this.attachFromThisComputer(managed.session, payload)
+      : managed.session.call(operation, payload);
   }
 
   private async attachFromThisComputer(session: RemoteSession, payload: unknown): Promise<BackendResult<unknown>> {
@@ -844,7 +815,6 @@ export class ConnectionManager {
         ? advance(options.setup, "connect")
         : createProgress("connect", connectSteps(profile.kind, Boolean(store.loadCredentials(profile.id))));
 
-    const summary = new EnvironmentSummaryTracker(profile.id, "connecting", initialMessage);
     let managed!: ManagedSession;
 
     const session = new RemoteSession({
@@ -883,14 +853,10 @@ export class ConnectionManager {
         if (this.sessions.get(profile.id) !== managed) return;
         const mappedPhase = phaseOf(phase, local);
         const wasConnected = managed.connected;
+        const summaryChanged = managed.phase !== mappedPhase || managed.message !== message;
         managed.connected = phase === "connected";
         managed.phase = mappedPhase;
         managed.message = message;
-        const summaryChanged = managed.summary.setConnection(mappedPhase, message, managed.serverVersion);
-
-        if (phase === "connected") {
-          this.refreshSummary(managed);
-        }
 
         if (this.activeId === profile.id) {
           const now = Date.now();
@@ -954,8 +920,8 @@ export class ConnectionManager {
       onServer: (server) => {
         if (this.sessions.get(profile.id) !== managed) return;
         if (local) return;
+        const changed = managed.serverVersion !== server.version;
         managed.serverVersion = server.version;
-        const changed = managed.summary.setConnection(managed.phase, managed.message, server.version);
         if (this.activeId === profile.id) {
           if (profile.kind === "ssh") void this.checkPendingUpdate(profile, server.version);
         } else if (changed) {
@@ -971,9 +937,6 @@ export class ConnectionManager {
         }
         const scoped: ConnectionEventMessage = { connectionId: profile.id, type: eventType, payload };
         this.options.broadcast(WISP_IPC_CHANNELS.connectionEvent, scoped);
-        if (managed.summary.applyEvent(eventType, payload)) {
-          this.publish();
-        }
       },
       // Only the local server asks for screen actions, and only of the app that
       // started it; any server may relay a sign-in through this app.
@@ -983,7 +946,6 @@ export class ConnectionManager {
           : Promise.resolve({ ok: false, message: "Not available." }),
       onReset: () => {
         if (this.sessions.get(profile.id) !== managed) return;
-        this.refreshSummary(managed);
         if (this.activeId === profile.id) {
           this.setStatus({ ...this.status }, true);
         }
@@ -993,13 +955,10 @@ export class ConnectionManager {
     managed = {
       profile,
       session,
-      summary,
       connected: false,
       phase: "connecting",
       message: initialMessage,
       interactive: options.active,
-      hydrating: false,
-      hydrateQueued: false,
     };
     this.sessions.set(profile.id, managed);
 
@@ -1015,32 +974,6 @@ export class ConnectionManager {
 
     // This app pairs with its own server by itself; other servers only on explicit active user request.
     session.start(options.pairingCode, local || (options.active && options.userInitiated));
-  }
-
-  /** Refreshes a connected session's live summary from `getConversationState`. */
-  private refreshSummary(managed: ManagedSession): void {
-    if (this.disposed || !managed.connected || this.sessions.get(managed.profile.id) !== managed) return;
-    if (managed.hydrating) {
-      managed.hydrateQueued = true;
-      return;
-    }
-    managed.hydrating = true;
-    void managed.session
-      .call("getConversationState", undefined)
-      .then((result) => {
-        if (this.disposed || this.sessions.get(managed.profile.id) !== managed || !result.ok) return;
-        if (managed.summary.applySnapshot(result.value as ConversationStateView)) {
-          this.publish();
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        managed.hydrating = false;
-        if (managed.hydrateQueued) {
-          managed.hydrateQueued = false;
-          this.refreshSummary(managed);
-        }
-      });
   }
 
   /** The local server runs from the first choice of where Wisps run, or earlier while remote access needs it. */

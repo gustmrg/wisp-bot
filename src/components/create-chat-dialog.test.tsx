@@ -551,7 +551,6 @@ describe("CreateChatDialog environments", () => {
     });
     const activateConnection = vi.fn(async () => ({ ok: true, value: {} }));
     Object.assign(window.wisp, { invokeConnectionOperation, activateConnection });
-    const summary = { workingWisps: 0, pendingApprovals: 0, unreadConversations: 0, wispCount: 0, circleCount: 0 };
     const view: ConnectionsView = {
       activeId: "local",
       profiles: [
@@ -561,8 +560,8 @@ describe("CreateChatDialog environments", () => {
       status: { profileId: "local", phase: "local", epoch: 1 },
       secureStorageAvailable: true,
       environments: {
-        local: { profileId: "local", phase: "local", ...summary },
-        home: { profileId: "home", phase: "connected", ...summary },
+        local: { profileId: "local", phase: "local" },
+        home: { profileId: "home", phase: "connected" },
       },
     };
     const user = userEvent.setup();
