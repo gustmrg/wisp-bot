@@ -11,7 +11,6 @@ import { StructuredLogger } from "../../backend/structured-logger.js";
 import type { RemoteTransport } from "../../client/remote-session.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
-import { EnvironmentSummaryTracker } from "../../electron/connections/environment-summary.js";
 import type { SshInteraction } from "../../electron/connections/ssh-auth.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { Tailscale } from "../../electron/local-server/tailscale.js";
@@ -177,194 +176,11 @@ const makeWisp = (id: string, name: string): Wisp => ({
   appearance: DEFAULT_WISP_APPEARANCE,
 });
 
-describe("EnvironmentSummaryTracker", () => {
-  it("hydrates from ConversationStateView and updates live from pushed events", () => {
-    const tracker = new EnvironmentSummaryTracker("remote", "connected");
-    const state: ConversationStateView = {
-      initialized: true,
-      wisps: {
-        a: makeWisp("a", "Atlas"),
-        b: makeWisp("b", "Bramble"),
-      },
-      chats: {
-        a: {
-          id: "a",
-          kind: "wisp",
-          wispId: "a",
-          notifyOnUpdatesEnabled: true,
-          preview: "",
-          messages: [],
-          unread: true,
-        },
-        b: {
-          id: "b",
-          kind: "wisp",
-          wispId: "b",
-          notifyOnUpdatesEnabled: true,
-          preview: "",
-          messages: [],
-          unread: false,
-        },
-        team: {
-          id: "team",
-          kind: "circle",
-          name: "Team",
-          label: "Team",
-          description: "",
-          notifyOnUpdatesEnabled: true,
-          preview: "",
-          messages: [],
-          memberIds: ["a", "b"],
-          unread: false,
-        },
-      },
-      statuses: { a: "working", b: "idle", team: "idle" },
-      liveMessages: {},
-      agentEventSequence: 0,
-      pendingToolApprovals: [
-        {
-          approvalId: "ap-1",
-          conversationId: "a",
-          toolCallId: "tc-1",
-          toolName: "write",
-          category: "file_write",
-          summary: "Write notes.md",
-          createdAt: "2026-11-26T10:00:00.000Z",
-          expiresAt: "2026-11-26T10:30:00.000Z",
-        },
-      ],
-      recoveredCorruptState: false,
-    };
-
-    expect(tracker.applySnapshot(state)).toBe(true);
-    expect(tracker.snapshot()).toEqual({
-      profileId: "remote",
-      phase: "connected",
-      workingWisps: 1,
-      pendingApprovals: 1,
-      unreadConversations: 1,
-      wispCount: 2,
-      circleCount: 1,
-    });
-    // Applying the identical snapshot reports no change.
-    expect(tracker.applySnapshot(state)).toBe(false);
-
-    // Streaming text deltas do not dirty the summary.
-    expect(
-      tracker.applyEvent("agentEvent", {
-        type: "assistant_text_delta",
-        conversationId: "a",
-        requestId: "r1",
-        messageId: "m1",
-        delta: "hi",
-      }),
-    ).toBe(false);
-
-    // Status transitions update workingWisps.
-    expect(tracker.applyEvent("agentEvent", { type: "conversation_status", conversationId: "a", status: "idle" })).toBe(
-      true,
-    );
-    expect(tracker.snapshot().workingWisps).toBe(0);
-
-    // Approval requested & resolved update pendingApprovals.
-    expect(
-      tracker.applyEvent("agentEvent", {
-        type: "tool_approval_requested",
-        conversationId: "b",
-        request: {
-          approvalId: "ap-2",
-          conversationId: "b",
-          toolCallId: "tc-2",
-          toolName: "write",
-          category: "file_write",
-          summary: "Write x.md",
-          createdAt: "2026-11-26T10:01:00.000Z",
-          expiresAt: "2026-11-26T10:31:00.000Z",
-        },
-      }),
-    ).toBe(true);
-    expect(tracker.snapshot().pendingApprovals).toBe(2);
-
-    expect(
-      tracker.applyEvent("agentEvent", {
-        type: "tool_approval_resolved",
-        conversationId: "a",
-        approvalId: "ap-1",
-        toolCallId: "tc-1",
-        decision: "allow_once",
-      }),
-    ).toBe(true);
-    expect(tracker.snapshot().pendingApprovals).toBe(1);
-
-    // conversationChanged updates unreadConversations.
-    expect(
-      tracker.applyEvent("conversationChanged", {
-        chat: {
-          id: "a",
-          kind: "wisp",
-          wispId: "a",
-          notifyOnUpdatesEnabled: true,
-          preview: "done",
-          messages: [],
-          unread: false,
-        },
-        added: [],
-        updated: [],
-      }),
-    ).toBe(true);
-    expect(tracker.snapshot().unreadConversations).toBe(0);
-
-    // wispsChanged updates wispCount, circleCount, unreadConversations, and workingWisps.
-    expect(
-      tracker.applyEvent("wispsChanged", {
-        wisps: { a: makeWisp("a", "Atlas") },
-        chats: {
-          a: {
-            id: "a",
-            kind: "wisp",
-            wispId: "a",
-            notifyOnUpdatesEnabled: true,
-            preview: "",
-            unread: true,
-          },
-        },
-        statuses: { a: "working" },
-      }),
-    ).toBe(true);
-    expect(tracker.snapshot()).toMatchObject({
-      wispCount: 1,
-      circleCount: 0,
-      unreadConversations: 1,
-      workingWisps: 1,
-    });
-  });
-});
-
 describe("multi-environment session pool", () => {
   it("keeps the local server running in the background and switches instantly", async () => {
     const { server } = await startServer();
     const app = await desktop();
     await vi.waitFor(async () => expect((await app.view()).status.phase).toBe("local"), { timeout: 8_000 });
-
-    // Create a Wisp and circle locally so we can verify live summaries across both environments.
-    await app.invoke(WISP_IPC_CHANNELS.initializeConversations);
-    await app.invoke(WISP_IPC_CHANNELS.createWisp, {
-      wisp: makeWisp("local-wisp", "Local"),
-      notifyOnUpdatesEnabled: true,
-    });
-    await app.invoke(WISP_IPC_CHANNELS.createConversation, {
-      conversation: {
-        id: "local-circle",
-        kind: "circle",
-        name: "Local circle",
-        label: "Local circle",
-        description: "",
-        notifyOnUpdatesEnabled: true,
-        preview: "",
-        messages: [],
-        memberIds: ["local-wisp"],
-      },
-    });
 
     const added = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "url",
@@ -376,13 +192,13 @@ describe("multi-environment session pool", () => {
     await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: remote.id, pairingCode: code });
     await vi.waitFor(async () => expect((await app.view()).status.phase).toBe("connected"), { timeout: 8_000 });
 
-    // Local server remained running in the background and its live summary is populated.
+    // Local server remained running in the background and both environments report their phase.
     expect(app.localServer.server).toBeDefined();
     expect(app.localServer.starts).toBe(1);
     await vi.waitFor(async () => {
       const env = (await app.view()).environments;
-      expect(env?.local).toMatchObject({ phase: "local", wispCount: 1, circleCount: 1 });
-      expect(env?.[remote.id]).toMatchObject({ phase: "connected", wispCount: 0, circleCount: 0 });
+      expect(env?.local?.phase).toBe("local");
+      expect(env?.[remote.id]?.phase).toBe("connected");
     });
 
     // Switching back to local is instantaneous without restarting localServer; remote stays connected in the pool.
@@ -444,7 +260,7 @@ describe("multi-environment session pool", () => {
     const localState = await app.invoke<ConversationStateView>(WISP_IPC_CHANNELS.getConversationState);
     expect(Object.keys(localState.wisps)).toEqual(["local-wisp"]);
 
-    // Send a message on the background remote environment and observe scoped connectionEvent + live summary updates
+    // Send a message on the background remote environment and observe scoped connectionEvent updates
     // WITHOUT leaking onto the active workspace's agentEvent channel.
     const broadcastsBefore = app.broadcasts.length;
     await app.invoke(WISP_IPC_CHANNELS.invokeConnectionOperation, {
@@ -480,17 +296,6 @@ describe("multi-environment session pool", () => {
           (payload as { conversationId?: string }).conversationId === "remote-wisp",
       );
     expect(leakedActiveAgentEvents).toEqual([]);
-
-    // Live summary on the background remote environment reflects the new Wisp and unread reply.
-    await vi.waitFor(async () => {
-      const remoteSummary = (await app.view()).environments?.[remote.id];
-      expect(remoteSummary).toMatchObject({
-        phase: "connected",
-        wispCount: 1,
-        unreadConversations: 1,
-        workingWisps: 0,
-      });
-    });
 
     // Security allowlist: desktop-only operations and arbitrary strings are rejected.
     for (const forbidden of [

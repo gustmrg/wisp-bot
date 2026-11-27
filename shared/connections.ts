@@ -171,17 +171,12 @@ export interface ServerUpdateView {
 /** Pushed runtime event types forwarded from any connected environment. */
 export type ConnectionPushedEventType = Exclude<RemoteEventType, "resync" | "hostRequest">;
 
-/** Live operational summary for one saved environment, maintained in the main process. */
+/** Connection state for one saved environment, maintained in the main process. */
 export interface EnvironmentSummary {
   profileId: string;
   phase: ConnectionPhase;
   message?: string;
   serverVersion?: string;
-  workingWisps: number;
-  pendingApprovals: number;
-  unreadConversations: number;
-  wispCount: number;
-  circleCount: number;
 }
 
 export interface ConnectionsView {

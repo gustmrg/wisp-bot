@@ -372,20 +372,10 @@ it("copies a saved template without access grants to another connected environme
       local: {
         profileId: "local",
         phase: "local",
-        workingWisps: 0,
-        pendingApprovals: 0,
-        unreadConversations: 0,
-        wispCount: 1,
-        circleCount: 0,
       },
       prod: {
         profileId: "prod",
         phase: "connected",
-        workingWisps: 0,
-        pendingApprovals: 0,
-        unreadConversations: 0,
-        wispCount: 1,
-        circleCount: 0,
       },
     },
   };

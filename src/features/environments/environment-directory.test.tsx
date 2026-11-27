@@ -21,7 +21,6 @@ function state(id: string, name: string): ConversationStateView {
 }
 
 function view(homePhase: ConnectionPhase): ConnectionsView {
-  const summary = { workingWisps: 0, pendingApprovals: 0, unreadConversations: 0, wispCount: 1, circleCount: 0 };
   return {
     activeId: "local",
     profiles: [
@@ -31,8 +30,8 @@ function view(homePhase: ConnectionPhase): ConnectionsView {
     status: { profileId: "local", phase: "local", epoch: 1 },
     secureStorageAvailable: true,
     environments: {
-      local: { profileId: "local", phase: "local", ...summary },
-      home: { profileId: "home", phase: homePhase, ...summary },
+      local: { profileId: "local", phase: "local" },
+      home: { profileId: "home", phase: homePhase },
     },
   };
 }
